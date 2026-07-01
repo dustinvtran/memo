@@ -45,11 +45,7 @@ const updateEntry = (event) => toPromise(
         db.findOneByRef_(col, getSegment(1, event)),
       ]))
     )
-    .map(([uid, body, col, entry]) =>
-      entry.data.userId === uid
-        ? updateEntry_(uid, body, col, entry)
-        : responses.unauthorized()
-    )
+    .map(([uid, body, col, entry]) => updateEntry_(uid, body, col, entry))
     .mapErr(responses.fromError)
 )
 
@@ -117,27 +113,37 @@ const createEntry = ([userId, body, collection]) => {
     .match(responses.ok, responses.internalError)
 }
 
-const updateEntry_ = (uid, body, col, entry) => {
+const updateEntry_ = async (uid, body, col, entry) => {
+  if (entry.data.userId !== uid) return responses.unauthorized()
+
   const { review, ...entryWithoutReview } = body
+  // `review` is only absent when the request genuinely omitted it (e.g. a save
+  // that didn't include the comments field). An explicit empty string is a
+  // real value and must still clear the review. Treating "absent" as "clear"
+  // previously nulled out review text on unrelated saves.
+  const reviewProvided = review !== undefined
 
   /** @type any */
   const reviewCollection = col.replace('Entries', 'Reviews')
 
-  db.updateByRef(col, entry.ref.id, { ...entryWithoutReview, updatedDate: Date.now() })
+  if (reviewProvided) {
+    // Awaited so the write completes before the function returns; a
+    // serverless container can be frozen right after the response is sent.
+    await db.findOneByField_(reviewCollection, 'entryRef', entry.ref.id)
+      .andThen(({ ref }) =>
+        ref
+          ? db.updateByRef_(reviewCollection, ref.id, { text: review })
+          // Shouldn't be needed, but just in case.
+          : db.create_(reviewCollection, {
+              text: review,
+              entryRef: entry.ref.id,
+            })
+      )
+  }
 
-  db.findOneByField_(reviewCollection, 'entryRef', entry.ref.id)
-    .andThen(({ ref }) =>
-      ref
-        ? db.updateByRef_(reviewCollection, ref.id, { text: review })
-        // Shouldn't be needed, but just in case.
-        : db.create_(reviewCollection, {
-            text: review,
-            entryRef: entry.ref.id,
-          })
-    )
-
-  return entry.data.userId === uid
-    ? db.updateByRef(col, entry.ref.id, { ...body, updatedDate: Date.now() })
-    : responses.unauthorized()
+  return db.updateByRef(col, entry.ref.id, {
+    ...(reviewProvided ? body : entryWithoutReview),
+    updatedDate: Date.now(),
+  })
 }
 
