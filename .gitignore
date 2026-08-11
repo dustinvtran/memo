@@ -5,6 +5,10 @@
 /dist
 /src/site/_includes/css
 
+# db_maintenance backups and reports
+/src/db_maintenance/backups
+/mongobackup
+
 # secrets and errors
 .env
 /yarn-error.log
