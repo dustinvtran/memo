@@ -27,13 +27,7 @@ GET http://localhost:8888/.netlify/functions/<function_file_name_without_extensi
 
 **2. Deploying.** `main` is the only long-lived branch. Netlify publishes nil.moe from `main`
 automatically on every push, so there is no separate staging or production branch and no manual
-promotion step. Pull requests aren't really necessary due to the small team size, but if you'd
-like code review send a PR to merge to `main`.
-
-Because there is no buffer, merging to `main` goes straight to the live site. Netlify does build a
-deploy preview for every PR, but Auth0's `redirect_uri` is derived from Netlify's `URL` variable,
-which always points at production — so logging in from a preview bounces you to nil.moe. Anything
-touching the login flow can only be exercised for real after it ships.
+promotion step.
 
 ## Web Development Stack
 
