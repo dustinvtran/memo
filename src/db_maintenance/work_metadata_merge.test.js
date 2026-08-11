@@ -31,8 +31,7 @@ const freshGame = {
   ],
 };
 
-/** What mongodb_add_missing_durations.js left behind: a duration, but no
- * hltb ref and no HowLongToBeat link. */
+/** A game with a duration but no hltb ref and no HowLongToBeat link. */
 const staleGame = {
   _id: "a",
   entryType: "Game",

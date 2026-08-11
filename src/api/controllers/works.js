@@ -21,10 +21,8 @@ const retrieveWork = (event) => {
   const apiRefId = getUrlSegments(event)[2]
 
   // Hardcoded for now, but ideally shouldnt be.
-  // Books are cached under `ISBN__` by the Google Books adapter; looking them
-  // up as `google__` never hit the cache, so every retrieve created another
-  // duplicate book. `google__` stays as a fallback for anything already
-  // stored under the old name.
+  // The Google Books adapter caches books under `ISBN__`; `google__` is also
+  // accepted because some book documents are stored under that name.
   const apiNames = {
     films: ['tmdb'],
     books: ['ISBN', 'google'],

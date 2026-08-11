@@ -46,9 +46,8 @@ const corruptFieldsOf = (collection, work) => {
 };
 
 /**
- * Games that got a `duration` from mongodb_add_missing_durations.js but never
- * the matching `hltb__` apiRef or HowLongToBeat externalUrl — the original
- * symptom in issue #83, where the playtime column had nothing to link to.
+ * A game that has a duration but no HowLongToBeat ref or link: the playtime
+ * column has a number to show and nothing to link it to.
  */
 const isMissingHltbLink = (collection, work) => {
   if (collection.type !== "games" || isEmptyValue(work.duration)) return false;

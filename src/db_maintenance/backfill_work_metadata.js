@@ -4,10 +4,7 @@
  *
  * For every document in films/tvShows/games/books it re-runs the same
  * adapter the API uses, then fills in what is missing and refreshes what is
- * stale. Notably it repairs games that got a `duration` from
- * mongodb_add_missing_durations.js but never got the matching `hltb__` apiRef
- * or HowLongToBeat externalUrl, which is why the playtime column had nothing
- * to link to.
+ * stale.
  *
  * User overrides are never touched: they live on the *entry* documents
  * (`entry.overrides`), and this script only ever writes to work documents.

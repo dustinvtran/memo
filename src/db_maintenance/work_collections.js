@@ -61,8 +61,8 @@ const COLLECTIONS = [
     entries: "bookEntries",
     entryType: "Book",
     adapterModule: "../api/utils/external_api_adapters/books/google",
-    // Books were cached under `ISBN__` by the adapter, but the works
-    // controller used to look them up as `google__`, so both may exist.
+    // The adapter caches books under `ISBN__`; some documents carry
+    // `google__` instead, naming the same ISBN.
     apiRefPrefixes: ["ISBN", "google"],
     // Both name the same ISBN, so either establishes identity.
     identityPrefixes: ["ISBN", "google"],

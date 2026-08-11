@@ -272,10 +272,10 @@ const playtimeFormatter = (_, row) => {
 }
 
 /**
- * apiRefs are flat strings (`hltb__12345`) since the work collections were
- * flattened, so the old `{ name, ref }` lookup never matched and no playtime
- * ever linked out. Both shapes are read here, and the externalUrls entry the
- * adapter writes alongside the ref is preferred when present.
+ * apiRefs are flat strings (`hltb__12345`), though some documents still hold
+ * the older `{ name, ref }` objects, so both shapes are read. The
+ * externalUrls entry the adapter writes alongside the ref is preferred when
+ * present.
  */
 const toHltbUrl = (row) => {
   const { apiRefs, externalUrls } = get(row, ['apiRefs', 'externalUrls'])

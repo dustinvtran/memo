@@ -169,8 +169,8 @@ test("an hltb ref never establishes identity on its own", () => {
 });
 
 test("games sharing the placeholder hltb__N/A are never grouped", () => {
-  // The database really holds 27 of these. Grouping on the placeholder would
-  // present 27 unrelated games as copies and delete 26 of them.
+  // 27 games carry this placeholder. Grouping on it would present them as
+  // copies of one another and delete all but one.
   const games = COLLECTIONS.find((c) => c.type === "games");
   const placeholder = (id, title) => ({
     _id: id,

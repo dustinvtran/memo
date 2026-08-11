@@ -44,10 +44,10 @@ const updateAllCachedGameEntriesWithoutPublishers = async (books) => {
     const isbn = book.apiRefs
       .find((ref) => ref.startsWith("ISBN"))
       .replace("ISBN__", "");
-    // This used to store the un-awaited Promise itself, which Mongo wrote as
-    // an empty object, and it mapped over every result instead of taking the
-    // first, producing an array of arrays. `publishers` must be a flat array
-    // of strings — see the bookParser in ../api/utils/parsers/books.js.
+    // `publishers` must end up a flat array of strings — see the bookParser
+    // in ../api/utils/parsers/books.js. Await the response and take the first
+    // result: an un-awaited Promise is stored by Mongo as an empty object,
+    // and mapping over every result gives an array of arrays.
     const publisher = await axios({
       method: "get",
       url: `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`,

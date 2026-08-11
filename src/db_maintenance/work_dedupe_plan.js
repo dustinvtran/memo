@@ -1,11 +1,8 @@
 /**
  * @file Works out which duplicate works to collapse and into what.
  *
- * populate_work_collections.js created one work document per *entry*, so the
- * same film cached for two users became two documents. The books path made it
- * worse: the works controller looked books up as `google__<isbn>` while the
- * adapter cached them as `ISBN__<isbn>`, so every retrieve missed the cache
- * and created another copy.
+ * The work collections hold multiple documents describing the same work —
+ * in some cases one per entry that referenced it.
  *
  * Pure and dependency-free: dedupe_works.js deletes documents based on what
  * this returns, so the decisions are unit tested
@@ -40,10 +37,10 @@ const groupWorksByApiRef = (collection, works) => {
  * The first prefix the work has a ref for, in `identityPrefixes` order.
  *
  * Only prefixes that actually establish identity count. An hltb id names a
- * HowLongToBeat page rather than the game, and 27 games in the database carry
- * the placeholder `hltb__N/A` — grouping on that would present 27 unrelated
- * games as copies of one another. `parseApiRef` drops placeholder values, so
- * a work whose only ref is one of those is left ungrouped and untouched.
+ * HowLongToBeat page rather than the game, and 27 games carry the placeholder
+ * `hltb__N/A`, so grouping on one would present unrelated games as copies of
+ * one another. `parseApiRef` drops placeholder values, so a work whose only
+ * ref is one of those is left ungrouped and untouched.
  */
 const groupKey = (collection, work) => {
   const refs = (Array.isArray(work.apiRefs) ? work.apiRefs : [])
@@ -69,11 +66,11 @@ const groupKey = (collection, work) => {
  * re-running after a partial failure converges.
  *
  * Groups whose members disagree about the title are NOT returned unless
- * `includeTitleMismatches` is set. Sharing an apiRef turns out not to mean
- * being the same work: the database has "Fargo - Season 1" and
- * "Fargo - Season 2" under one show id, five Haruhi Suzumiya volumes under
- * one ISBN, and "Demons" filed under The Da Vinci Code's. Merging those
- * would destroy distinct entries, so a title disagreement is a stop sign.
+ * `includeTitleMismatches` is set. Sharing an apiRef does not mean being the
+ * same work: "Fargo - Season 1" and "Fargo - Season 2" sit under one show id,
+ * five Haruhi Suzumiya volumes share one ISBN, and "Demons" is filed under
+ * The Da Vinci Code's. Those are distinct works, so a title disagreement is a
+ * stop sign.
  *
  * @type {(collection: any, works: any[], entries: any[], options?: { includeTitleMismatches?: boolean }) => Array<{
  *   key: string,

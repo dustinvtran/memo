@@ -56,17 +56,20 @@ Notes on its behaviour:
 
 ## Collapsing duplicate works
 
-`populate_work_collections.js` created one work document per *entry*, so the
-same film cached for two users became two documents; books were worse,
-because the works controller looked them up under a different apiRef prefix
-than the one they were stored under, so every retrieve made another copy.
+The work collections hold multiple documents describing the same work — in
+some cases one per entry that referenced it.
 
 `dedupe_works.js` merges each group of duplicates into the most complete
 document, repoints the entries' `workRef` at it, and deletes the leftovers.
-It only groups works that share an API identifier — never by title — and it
-is a **dry run unless you pass `--apply`**. Read the dry run before applying:
-it prints the survivor, what gets filled in, and a warning when duplicates
-disagree about the title.
+It is a **dry run unless you pass `--apply`**.
+
+A group is only merged when its documents share an API identifier **and**
+agree about the title. Sharing an apiRef does not mean being the same work:
+"Fargo - Season 1" and "Fargo - Season 2" sit under one show id, five Haruhi
+Suzumiya volumes share one ISBN, and "Demons" is filed under The Da Vinci
+Code’s. Groups that disagree are printed and skipped —
+`--merge-title-mismatches` forces them through, and you should read every one
+of them first.
 
 ```
 node dedupe_works.js --only=books
@@ -74,8 +77,8 @@ node dedupe_works.js --only=books --apply
 ```
 
 Useful flags: `--only=...`, `--keep-duplicates` (merge and repoint but delete
-nothing), `--json=path`, `--backup-dir=path`. Both the work and the entry
-collection are backed up before anything is written.
+nothing), `--merge-title-mismatches`, `--json=path`, `--backup-dir=path`. Both
+the work and the entry collection are backed up before anything is written.
 
 Run it before a full `backfill_work_metadata.js`, so you aren't paying for an
 API call per duplicate.
@@ -98,14 +101,11 @@ in a module that can be tested without a database or an API key.
 We migrated from FaunaDB to MongoDB Atlas on 2022-10-10. The scripts that
 use `faunadb` / `./utils.js` predate that migration and no longer run.
 
-Two one-off scripts left the database in a state the backfill now repairs:
+Two conditions in the data that `backfill_work_metadata.js` repairs:
 
-- `mongodb_add_missing_durations.js` set `duration` only, and not the
-  `hltb__` apiRef or the HowLongToBeat `externalUrls` entry that should
-  accompany it — which is why playtimes stopped linking out.
-- `mongodb_add_missing_book_publishers.js` stored an un-awaited Promise,
-  which Mongo wrote as an empty object, so those books have a `publishers`
-  field that isn't a list of strings. The script itself is fixed now.
+- Games carrying a `duration` with no `hltb__` apiRef and no HowLongToBeat
+  `externalUrls` entry, so the playtime has nothing to link to.
+- Books whose `publishers` is an empty object rather than a list of strings.
 
 ## Backing up the production DB
 

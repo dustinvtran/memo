@@ -9,12 +9,12 @@
  * identifier AND agree about the title. Which document survives and what gets
  * merged into it is decided by ./work_dedupe_plan.js, which is unit tested.
  *
- * The title check is not paranoia. Sharing an apiRef does not mean being the
- * same work in this database: "Fargo - Season 1" and "Fargo - Season 2" sit
- * under one show id, five Haruhi Suzumiya volumes share one ISBN, and
- * "Demons" is filed under The Da Vinci Code's. Those groups are reported and
- * skipped; --merge-title-mismatches forces them through, and you should read
- * every one of them first.
+ * The title check matters: sharing an apiRef does not mean being the same
+ * work. "Fargo - Season 1" and "Fargo - Season 2" sit under one show id, five
+ * Haruhi Suzumiya volumes share one ISBN, and "Demons" is filed under The Da
+ * Vinci Code's. Those groups are reported and skipped;
+ * --merge-title-mismatches forces them through, and you should read every one
+ * of them first.
  *
  * Order of operations per group: update the survivor, repoint the entries,
  * then delete the duplicates. If the run dies half way, re-running converges
