@@ -57,6 +57,12 @@ You might need to run `npx netlify login` inside the project.
 
 We currently use mongoDB, logged into via the MONGODB_URL
 
+**Backups.** `src/db_maintenance/backup_database.js` takes a timestamped
+snapshot of every collection and prunes old ones to a retention policy, so
+there is a history of backups rather than one overwritten dump;
+`restore_backup.js` puts a snapshot (or one collection of it) back. See
+[src/db_maintenance/README.md](src/db_maintenance/README.md).
+
 **Error handling.**
 Error handling is done using `neverthrow`, which is similar to
 Rust Result or FP Either. Learn more about its API at:
