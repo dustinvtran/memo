@@ -42,6 +42,17 @@ const deleteEntry = (type, ref) => Http.del(
   ENDPOINTS.deleteEntry(type, ref)
 )
 
+const getVersions = (type, ref) => Http.get(ENDPOINTS.versions(type, ref))
+
+const getDraft = (type, ref) => Http.get(ENDPOINTS.draft(type, ref))
+
+const saveDraft = (type, ref, snapshot) => Http.put(
+  ENDPOINTS.draft(type, ref),
+  snapshot
+)
+
+const deleteDraft = (type, ref) => Http.del(ENDPOINTS.draft(type, ref))
+
 
 // UTILITY
 
@@ -66,6 +77,10 @@ Netlify = {
   getReview,
   updateEntry,
   deleteEntry,
+  getVersions,
+  getDraft,
+  saveDraft,
+  deleteDraft,
   getStats,
   setBio,
 }
@@ -87,4 +102,6 @@ const ENDPOINTS = {
   stats: (username) => `${API_URL_BASE}/stats/${username}`,
   bio: `${API_URL_BASE}/bio/`,
   retrieveReview: (type, entryRef) => `${API_URL_BASE}/reviews/${type}/${entryRef}`,
+  versions: (type, dbRef) => `${API_URL_BASE}/revisions/${type}/${dbRef}`,
+  draft: (type, dbRef) => `${API_URL_BASE}/revisions/${type}/${dbRef}/draft`,
 }

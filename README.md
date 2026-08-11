@@ -63,6 +63,33 @@ there is a history of backups rather than one overwritten dump;
 `restore_backup.js` puts a snapshot (or one collection of it) back. See
 [src/db_maintenance/README.md](src/db_maintenance/README.md).
 
+**Entry history and drafts.** Saving an entry stores the version it replaced
+in the `entryRevisions` collection, and the edit form autosaves what is in it
+to the same collection while it is open. The edit modal grows a *History*
+section listing every version, what it changed, a diff of the comments, and a
+"Restore into form" button; a leftover draft is offered when the form opens.
+Both are owner-only, and a restore is an ordinary edit — nothing is written
+until the user presses the button. The API is
+`GET /api/revisions/:type/:dbRef` and
+`GET|PUT|DELETE /api/revisions/:type/:dbRef/draft`.
+
+At most 50 versions are kept per entry, and every lookup is by `entryRef`, so
+give the collection an index once it has grown:
+`db.entryRevisions.createIndex({ entryRef: 1 })`.
+
+The history, collapsed — one row per save, with the fields it touched:
+
+![The history of an entry](docs/img/entry-history.png)
+
+A version opened, with the old and new value of each field and a diff of the
+comments:
+
+![A version of an entry, opened](docs/img/entry-history-version.png)
+
+The draft, offered when the form opens on an entry with unsaved changes:
+
+![The draft notice](docs/img/draft-notice.png)
+
 **Error handling.**
 Error handling is done using `neverthrow`, which is similar to
 Rust Result or FP Either. Learn more about its API at:

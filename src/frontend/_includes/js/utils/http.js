@@ -10,6 +10,8 @@ const post = (url, data) => makeRequest('post', url, data)
 
 const patch = (url, data) => makeRequest('patch', url, data)
 
+const put = (url, data) => makeRequest('put', url, data)
+
 const del = (url) => makeRequest('delete', url)
 
 /** Returns the Netlify token or undefined if not logged in */
@@ -30,6 +32,7 @@ Http = {
   get,
   post,
   patch,
+  put,
   del,
   getToken,
   getNameFromUrl,

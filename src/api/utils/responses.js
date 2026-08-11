@@ -22,6 +22,9 @@ const fromError = (error) => match(error.error)
   .with('DBError', () => response(500)(error.context))
   .with('RequestError', () => response(400)(error.context))
   .with('UnauthorizedError', () => response(401)(error.context))
+  // A URL naming something that doesn't exist — an unknown entry type, say —
+  // is the caller's mistake, not a server fault.
+  .with('NotFound', () => response(404)(error.context))
   .with('InternalError', () => response(500)(error.context))
   .otherwise(() => response(500)(error.context))
 

@@ -17,7 +17,7 @@
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../errors').Error} Error */
 const { ResultAsync } = require('neverthrow')
-const { _findOneByField, _findOneByRef, _findAllByField, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
+const { _findOneByField, _findOneByRef, _findAllByField, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
 const { compose } = require('ramda')
 const { toResponse, toResult } = require('./into_safe_values')
 
@@ -54,6 +54,12 @@ const updateByRef_ = compose(toResult, _updateOneByRef)
 /** @type {(collection: ValidCollection, ref: string) => Promise<Response>} */
 const deleteByRef = compose(toResponse, _deleteOneByRef)
 
+/** @type {(collection: ValidCollection, ref: string) => ResultAsync<any, Error>} */
+const deleteByRef_ = compose(toResult, _deleteOneByRef)
+
+/** @type {(collection: ValidCollection, field: string, value: any) => ResultAsync<any, Error>} */
+const deleteAllByField_ = compose(toResult, _deleteAllByField)
+
 /** @type {(collection: ValidCollection, data: ExprArg) => Promise<Response>} */
 const create = compose(toResponse, _create)
 
@@ -74,4 +80,6 @@ module.exports = {
   create,
   create_,
   deleteByRef,
+  deleteByRef_,
+  deleteAllByField_,
 }

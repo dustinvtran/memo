@@ -1,7 +1,9 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('@netlify/functions').HandlerContext} Context */
 /** @typedef {import('../errors').Error} Error */
-const { Result, ResultAsync } = require('neverthrow')
+/** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
+const { Result, ResultAsync, err, ok } = require('neverthrow')
+const { match } = require('ts-pattern')
 const errors = require('../utils/errors')
 const db = require('../utils/db')
 const { validateExists } = require('../utils/general')
@@ -37,11 +39,46 @@ const findIdOfName = (name) =>
   db.findOneByField_('users', 'username', name)
     .map(result => result?.data?.userId)
 
+/**
+ * The `:type` URL segment every entry-scoped route starts with.
+ * @type {(segment: string) => Result<ValidCollection, Error>}
+ */
+const toEntryCollection = (segment) =>
+  match(segment)
+    .with('films', () => ok('filmEntries'))
+    .with('books', () => ok('bookEntries'))
+    .with('tv', () => ok('tvShowEntries'))
+    .with('games', () => ok('gameEntries'))
+    .otherwise(() => err(errors.notFound()))
+
+/**
+ * The inverse of toEntryCollection, for the code that has a collection in
+ * hand rather than a URL.
+ * @type {(entryCollection: ValidCollection) => string | undefined}
+ */
+const toEntryType = (entryCollection) => ({
+  filmEntries: 'films',
+  bookEntries: 'books',
+  tvShowEntries: 'tv',
+  gameEntries: 'games',
+}[entryCollection])
+
+/**
+ * An entry's review lives in the collection of the same name, with
+ * `Entries` swapped for `Reviews`.
+ * @type {(entryCollection: ValidCollection) => ValidCollection}
+ */
+const toReviewCollection = (entryCollection) =>
+  /** @type any */ (entryCollection.replace('Entries', 'Reviews'))
+
 module.exports = {
   getUserId,
   getSegment,
   getUrlSegments,
   getReqBody,
-  findIdOfName
+  findIdOfName,
+  toEntryCollection,
+  toEntryType,
+  toReviewCollection,
 }
 
