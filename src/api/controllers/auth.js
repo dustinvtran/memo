@@ -5,7 +5,8 @@ const { JWT } = require("jose")
 const cookie = require("cookie")
 
 const NETLIFY_JWT_EXPIRATION_SECONDS = 14 * 24 * 3600
-const LOGIN_COOKIE_MAX_AGE = 30 * 60 * 1000
+// cookie's maxAge is in seconds, not milliseconds
+const LOGIN_COOKIE_MAX_AGE = 30 * 60
 const AUTH0_LOGIN_COOKIE_NAME = "auth0_login_cookie"
 const NETLIFY_COOKIE_NAME = "nf_jwt"
 const isRunningLocally = process.env.NETLIFY_DEV === "true"
@@ -19,21 +20,18 @@ const getOpenIDClient = async () => {
   })
 }
 
-const generateNetlifyJWT = async (tokenData) => {
+//Refer to Netlify Documentation for token formatting - https://docs.netlify.com/visitor-access/role-based-access-control/#external-providers
+const signNetlifyJWT = async ({ aud, sub, roles }) => {
   const iat = Math.floor(Date.now() / 1000)
   const exp = Math.floor(iat + NETLIFY_JWT_EXPIRATION_SECONDS)
-  //copy over appropriate properties from the original token data
-  //Refer to Netlify Documentation for token formatting - https://docs.netlify.com/visitor-access/role-based-access-control/#external-providers
   const tokenPayload = {
     exp,
     iat,
     updated_at: iat,
-    aud: tokenData.aud,
-    sub: tokenData.sub,
+    aud,
+    sub,
     app_metadata: {
-      authorization: {
-        roles: tokenData[`${process.env.AUTH0_TOKEN_NAMESPACE}/roles`],
-      },
+      authorization: { roles },
     },
   }
   return await JWT.sign(tokenPayload, process.env.TOKEN_SECRET, {
@@ -44,6 +42,14 @@ const generateNetlifyJWT = async (tokenData) => {
   })
 }
 
+//copy over appropriate properties from the original token data
+const generateNetlifyJWT = (tokenData) =>
+  signNetlifyJWT({
+    aud: tokenData.aud,
+    sub: tokenData.sub,
+    roles: tokenData[`${process.env.AUTH0_TOKEN_NAMESPACE}/roles`],
+  })
+
 const generateAuth0LoginCookie = (nonce, encodedStateStr) => {
   const cookieData = { nonce, state: encodedStateStr }
   return cookie.serialize(AUTH0_LOGIN_COOKIE_NAME, JSON.stringify(cookieData), {
@@ -51,6 +57,10 @@ const generateAuth0LoginCookie = (nonce, encodedStateStr) => {
     path: "/",
     maxAge: LOGIN_COOKIE_MAX_AGE,
     httpOnly: true,
+    // Auth0 posts the callback back to us cross-site (response_mode: form_post),
+    // so the browser only sends this cookie along if it is SameSite=None.
+    // That requires Secure, hence the fallback for plain http local dev.
+    sameSite: isRunningLocally ? "lax" : "none",
   })
 }
 
@@ -78,13 +88,25 @@ const generateLogoutCookie = () => {
   })
 }
 
-const generateNetlifyCookieFromAuth0Token = async (tokenData) => {
-  const netlifyToken = await generateNetlifyJWT(tokenData)
-  return cookie.serialize(NETLIFY_COOKIE_NAME, netlifyToken, {
+const generateNetlifyCookie = (netlifyToken) =>
+  cookie.serialize(NETLIFY_COOKIE_NAME, netlifyToken, {
     secure: !isRunningLocally,
     path: "/",
     maxAge: NETLIFY_JWT_EXPIRATION_SECONDS,
   })
+
+const generateNetlifyCookieFromAuth0Token = async (tokenData) =>
+  generateNetlifyCookie(await generateNetlifyJWT(tokenData))
+
+const getNetlifyJWTFromEvent = (event) => {
+  const authHeader = event.headers?.authorization
+  if (authHeader) {
+    return authHeader.replace("Bearer ", "")
+  }
+  const cookieHeader = event.headers?.cookie
+  return cookieHeader
+    ? cookie.parse(cookieHeader)[NETLIFY_COOKIE_NAME]
+    : undefined
 }
 
 const generateAuth0LogoutUrl = () => {
@@ -173,6 +195,53 @@ const handleCallback = async (event) => {
   }
 }
 
+/* Re-issues the nf_jwt cookie with a fresh expiry so that an active session
+   slides forward instead of hard-expiring NETLIFY_JWT_EXPIRATION_SECONDS after
+   login. The frontend calls this once the current token is past halfway
+   through its lifetime. */
+const handleRenew = async (event) => {
+  const currentToken = getNetlifyJWTFromEvent(event)
+  if (!currentToken) {
+    return {
+      statusCode: 401,
+      headers: { "Cache-Control": "no-store" },
+      body: JSON.stringify({ error: "Not logged in" }),
+    }
+  }
+
+  let claims
+  try {
+    /* A token still inside its renewal window verifies fine, so a failure here
+       means the session is genuinely over and the user has to log in again. */
+    claims = JWT.verify(currentToken, process.env.TOKEN_SECRET)
+  } catch (err) {
+    return {
+      statusCode: 401,
+      headers: {
+        "Cache-Control": "no-store",
+        "Set-Cookie": generateLogoutCookie(),
+      },
+      body: JSON.stringify({ error: "Session expired" }),
+    }
+  }
+
+  const renewedToken = await signNetlifyJWT({
+    aud: claims.aud,
+    sub: claims.sub,
+    roles: claims.app_metadata?.authorization?.roles,
+  })
+
+  return {
+    statusCode: 200,
+    headers: {
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json",
+      "Set-Cookie": generateNetlifyCookie(renewedToken),
+    },
+    body: JSON.stringify({ token: renewedToken }),
+  }
+}
+
 const handleLogout = async () => {
   return {
     statusCode: 302,
@@ -188,4 +257,5 @@ module.exports = {
   handleLogin,
   handleCallback,
   handleLogout,
+  handleRenew,
 }
