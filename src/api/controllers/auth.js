@@ -5,7 +5,7 @@ const { JWT } = require("jose")
 const cookie = require("cookie")
 
 const NETLIFY_JWT_EXPIRATION_SECONDS = 14 * 24 * 3600
-// cookie's maxAge is in seconds, not milliseconds
+// cookie's maxAge is in seconds
 const LOGIN_COOKIE_MAX_AGE = 30 * 60
 const AUTH0_LOGIN_COOKIE_NAME = "auth0_login_cookie"
 const NETLIFY_COOKIE_NAME = "nf_jwt"
