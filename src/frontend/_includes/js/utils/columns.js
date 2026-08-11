@@ -263,12 +263,35 @@ const playtimeFormatter = (_, row) => {
     : rawMins < 40 ?  '&frac12'
     : '&frac34'
   const durationText = `${hours}h${minsAsHrFraction}`
-  const hltbRef = row.commonMetadata.apiRefs?.find(ref => ref.name === 'hltb')?.ref
-  return durationInMin && hltbRef
-    ? `<a href="https://howlongtobeat.com/game?id=${hltbRef}">${durationText}</a>`
+  const hltbUrl = toHltbUrl(row)
+  return durationInMin && hltbUrl
+    ? `<a href="${hltbUrl}">${durationText}</a>`
     : durationInMin
     ? durationText
     : '-'
+}
+
+/**
+ * apiRefs are flat strings (`hltb__12345`) since the work collections were
+ * flattened, so the old `{ name, ref }` lookup never matched and no playtime
+ * ever linked out. Both shapes are read here, and the externalUrls entry the
+ * adapter writes alongside the ref is preferred when present.
+ */
+const toHltbUrl = (row) => {
+  const { apiRefs, externalUrls } = get(row, ['apiRefs', 'externalUrls'])
+
+  const url = externalUrls?.find((link) => link?.name === 'hltb')?.url
+  if (url) return url
+
+  const ref = apiRefs
+    ?.map((apiRef) =>
+      typeof apiRef === 'string'
+        ? apiRef.startsWith('hltb__') ? apiRef.slice('hltb__'.length) : undefined
+        : apiRef?.name === 'hltb' ? apiRef.ref : undefined
+    )
+    ?.find((hltbRef) => hltbRef)
+
+  return ref ? `https://howlongtobeat.com/game?id=${ref}` : undefined
 }
 
 const relativeTime = (ts) => {
