@@ -25,11 +25,15 @@ If you use `npx netlify dev` your serverless functions will also be available at
 GET http://localhost:8888/.netlify/functions/<function_file_name_without_extension>
 ```
 
-**2. Staging branch.** Generally you should push commits directly to staging. Pull requests aren't really necessary
-due to the small team size, but if you'd like code review send a PR to merge to staging.
+**2. Deploying.** `main` is the only long-lived branch. Netlify publishes nil.moe from `main`
+automatically on every push, so there is no separate staging or production branch and no manual
+promotion step. Pull requests aren't really necessary due to the small team size, but if you'd
+like code review send a PR to merge to `main`.
 
-**3. Production branch.** Merge staging to production whenever you think the changes are ready. Deploys to
-the website from production are automatic.
+Because there is no buffer, merging to `main` goes straight to the live site. Netlify does build a
+deploy preview for every PR, but Auth0's `redirect_uri` is derived from Netlify's `URL` variable,
+which always points at production — so logging in from a preview bounces you to nil.moe. Anything
+touching the login flow can only be exercised for real after it ships.
 
 ## Web Development Stack
 
