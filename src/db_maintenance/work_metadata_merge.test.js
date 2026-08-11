@@ -8,37 +8,42 @@ const {
   mergeApiRefs,
   mergeExternalUrls,
   corruptFieldsOf,
+  isMissingPlaytimeLink,
   completeness,
 } = require("./work_metadata_merge");
 
 const games = COLLECTIONS.find((c) => c.type === "games");
 const books = COLLECTIONS.find((c) => c.type === "books");
 
+/** What the games adapter returns now: IGDB for the metadata and the playtime. */
 const freshGame = {
   entryType: "Game",
   englishTranslatedTitle: "Hollow Knight",
   releaseYear: 2017,
-  duration: 1500,
+  duration: 750,
+  durationSource: "igdb",
   imageUrl: "https://img",
   genres: ["Platform"],
   platforms: ["PC"],
   studios: ["Team Cherry"],
   publishers: ["Team Cherry"],
-  apiRefs: ["igdb__14593", "hltb__26286"],
-  externalUrls: [
-    { name: "igdb", url: "https://igdb.com/hk" },
-    { name: "hltb", url: "https://howlongtobeat.com/game?id=26286" },
-  ],
+  apiRefs: ["igdb__14593"],
+  externalUrls: [{ name: "igdb", url: "https://igdb.com/hk" }],
 };
 
-/** A game with a duration but no hltb ref and no HowLongToBeat link. */
+/**
+ * A game cached back when HowLongToBeat still answered: its playtime and its
+ * link, and little else. 775 games look like this.
+ */
 const staleGame = {
   _id: "a",
   entryType: "Game",
   englishTranslatedTitle: "Hollow Knight",
   duration: 1500,
-  apiRefs: ["igdb__14593"],
-  externalUrls: [{ name: "igdb", url: "https://igdb.com/hk" }],
+  apiRefs: ["igdb__14593", "hltb__26286"],
+  externalUrls: [
+    { name: "hltb", url: "https://howlongtobeat.com/game?id=26286" },
+  ],
 };
 
 const backfilled = () => ({
@@ -46,21 +51,89 @@ const backfilled = () => ({
   ...mergeWork(games, staleGame, freshGame).updates,
 });
 
-test("a game with a duration but no HowLongToBeat link is flagged", () => {
-  assert.equal(hasGaps(games, staleGame), true);
-});
-
-test("backfilling adds the hltb ref and url without losing the igdb ones", () => {
+test("a HowLongToBeat playtime is kept, and IGDB's is not written over it", () => {
+  // The requirement this whole change hangs on. IGDB says 750 minutes, from a
+  // median of three submissions; the stored 1500 came from far more.
   const { updates, notes } = mergeWork(games, staleGame, freshGame);
 
-  assert.deepEqual(updates.apiRefs, ["igdb__14593", "hltb__26286"]);
-  assert.deepEqual(updates.externalUrls, [
-    { name: "igdb", url: "https://igdb.com/hk" },
+  assert.equal("duration" in updates, false);
+  assert.equal("durationSource" in updates, false);
+  assert.match(notes.join("\n"), /kept the stored duration 1500/);
+});
+
+test("provenance is never written next to a duration it didn't produce", () => {
+  // A `durationSource: "igdb"` on a HowLongToBeat playtime would make the
+  // record less trustworthy than having no record at all.
+  assert.equal(backfilled().durationSource, undefined);
+  assert.equal(backfilled().duration, 1500);
+});
+
+test("a playtime IGDB does fill in is tagged with where it came from", () => {
+  const empty = { ...staleGame, duration: undefined };
+  const { updates } = mergeWork(games, empty, freshGame);
+
+  assert.equal(updates.duration, 750);
+  assert.equal(updates.durationSource, "igdb");
+});
+
+test("IGDB may refresh a playtime it wrote itself", () => {
+  const own = { ...staleGame, duration: 700, durationSource: "igdb" };
+  const { updates } = mergeWork(games, own, freshGame);
+
+  assert.equal(updates.duration, 750);
+  assert.equal(updates.durationSource, "igdb");
+});
+
+test("a film's runtime still refreshes, having never carried a source", () => {
+  const films = COLLECTIONS.find((c) => c.type === "films");
+  const { updates } = mergeWork(
+    films,
+    { entryType: "Film", duration: 140, apiRefs: ["tmdb__1"] },
+    { entryType: "Film", duration: 148, apiRefs: ["tmdb__1"] }
+  );
+
+  assert.equal(updates.duration, 148);
+  assert.equal("durationSource" in updates, false);
+});
+
+test("backfilling keeps the HowLongToBeat ref and link the game already has", () => {
+  // The adapter no longer reports them — the API is gone — but the pages
+  // still exist and 775 games link to them.
+  const refreshed = backfilled();
+
+  assert.deepEqual(refreshed.apiRefs, ["igdb__14593", "hltb__26286"]);
+  assert.deepEqual(refreshed.externalUrls, [
     { name: "hltb", url: "https://howlongtobeat.com/game?id=26286" },
+    { name: "igdb", url: "https://igdb.com/hk" },
   ]);
-  assert.deepEqual(updates.genres, ["Platform"]);
-  assert.equal("duration" in updates, false, "unchanged values aren't rewritten");
-  assert.deepEqual(notes, []);
+  assert.deepEqual(refreshed.genres, ["Platform"]);
+});
+
+test("a playtime with nothing to link to is reported but not chased", () => {
+  // No API can add a HowLongToBeat link any more, so re-running the adapter
+  // at these forever would only burn the call.
+  const unlinkable = { ...staleGame, apiRefs: ["igdb__14593"], externalUrls: [] };
+
+  assert.equal(isMissingPlaytimeLink(games, unlinkable), true);
+  assert.equal(hasGaps(games, { ...backfilled(), externalUrls: [] }), false);
+});
+
+test("an IGDB playtime is linked by its IGDB url, not a HowLongToBeat one", () => {
+  const igdbSourced = { ...staleGame, duration: 750, durationSource: "igdb" };
+
+  assert.equal(isMissingPlaytimeLink(games, igdbSourced), true);
+  assert.equal(
+    isMissingPlaytimeLink(games, {
+      ...igdbSourced,
+      externalUrls: [{ name: "igdb", url: "https://igdb.com/hk" }],
+    }),
+    false
+  );
+});
+
+test("a game with no playtime has no playtime link to miss", () => {
+  assert.equal(isMissingPlaytimeLink(games, { ...staleGame, duration: null }), false);
+  assert.equal(isMissingPlaytimeLink(books, { duration: 412 }), false);
 });
 
 test("a backfilled game is left alone on the next pass", () => {
@@ -103,8 +176,7 @@ test("a changed title is applied but called out for review", () => {
   });
 
   assert.equal(updates.englishTranslatedTitle, "Silksong");
-  assert.equal(notes.length, 1);
-  assert.match(notes[0], /Hollow Knight.*Silksong/);
+  assert.match(notes.join("\n"), /Hollow Knight.*Silksong/);
 });
 
 test("legacy object-shaped apiRefs are normalised to flat strings", () => {
@@ -113,19 +185,11 @@ test("legacy object-shaped apiRefs are normalised to flat strings", () => {
   assert.equal(hasGaps(games, legacy), true);
   assert.deepEqual(mergeWork(games, legacy, freshGame).updates.apiRefs, [
     "igdb__14593",
-    "hltb__26286",
   ]);
 });
 
 test("a ref the API stops reporting still survives a refresh", () => {
-  const work = backfilled();
-  const withoutHltb = {
-    ...freshGame,
-    apiRefs: ["igdb__14593"],
-    externalUrls: [{ name: "igdb", url: "https://igdb.com/hk" }],
-  };
-
-  assert.deepEqual(mergeWork(games, work, withoutHltb).updates, {});
+  assert.deepEqual(mergeWork(games, backfilled(), freshGame).updates, {});
 });
 
 test("mergeApiRefs prefers fresh refs, or existing ones with missingOnly", () => {
@@ -235,7 +299,6 @@ test("a placeholder ref is dropped rather than carried forward", () => {
 
   assert.deepEqual(mergeWork(games, work, freshGame).updates.apiRefs, [
     "igdb__14593",
-    "hltb__26286",
   ]);
 });
 

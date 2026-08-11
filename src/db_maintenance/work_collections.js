@@ -42,9 +42,11 @@ const COLLECTIONS = [
     works: "games",
     entries: "gameEntries",
     entryType: "Game",
-    adapterModule: "../api/utils/external_api_adapters/games/igdb_and_hltb",
-    // `hltb` is a secondary ref: it is added by the adapter alongside `igdb`,
-    // but only `igdb` can be used to re-retrieve the work.
+    adapterModule: "../api/utils/external_api_adapters/games/igdb",
+    // `hltb` is a legacy secondary ref: the adapter used to add it alongside
+    // `igdb`, and 775 games still carry one. HowLongToBeat's API is gone so
+    // no new ones are written, but the pages are still worth linking to.
+    // Only `igdb` can be used to re-retrieve the work.
     apiRefPrefixes: ["igdb", "hltb"],
     // An hltb id identifies a HowLongToBeat page, not the game, and plenty of
     // games share the placeholder `hltb__N/A`. Only igdb establishes identity.
@@ -52,8 +54,8 @@ const COLLECTIONS = [
     retrievePrefix: "igdb",
     stringArrayFields: ["genres", "platforms", "studios", "publishers"],
     numberFields: ["releaseYear", "duration"],
-    // IGDB caps at 4 req/s and the HLTB lookup scrapes the site, so go slow.
-    defaultDelayMs: 1500,
+    // IGDB caps at 4 requests a second, and a retrieve costs three of them.
+    defaultDelayMs: 1000,
   },
   {
     type: "books",
