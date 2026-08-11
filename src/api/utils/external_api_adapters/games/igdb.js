@@ -1,6 +1,12 @@
 /**
- * @file A lot of this code is duplicated
+ * @file The games adapter. A lot of this code is duplicated
  * with the Film adapter...
+ *
+ * Metadata and playtime both come from IGDB. Playtime used to come from the
+ * `howlongtobeat` npm package; HowLongToBeat's API is now behind
+ * authentication and every route into it is gone. See docs/API_choices.md.
+ * Games added while that package was quietly failing have no playtime, which
+ * src/db_maintenance/backfill_game_playtimes.js exists to fill in.
  */
 /** @typedef {import('../types').Adapter} Adapter */
 /** @typedef {import('../types').SearchFunction} SearchFunction */
@@ -12,20 +18,25 @@ const { ResultAsync } = require('neverthrow')
 const errors = require('../../errors')
 const igdb = require('igdb-api-node').default
 const axios = require('axios').default
-const Hltb = require('howlongtobeat')
-const hltb = new Hltb.HowLongToBeatService()
+const {
+  TIME_TO_BEATS_URL,
+  timeToBeatQuery,
+  toPlaytime,
+} = require('./time_to_beat')
 
 const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET } = process.env
 if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) {
   throw "Must set TWITCH_CLIENT_SECRET and TWITCH_CLIENT_ID environment variables."
 }
 
-const igdbClient =
+const twitchToken =
   axios({
     method: 'post',
     url: `https://id.twitch.tv/oauth2/token?client_id=${TWITCH_CLIENT_ID}&client_secret=${TWITCH_CLIENT_SECRET}&grant_type=client_credentials`
   })
-    .then(({ data }) => igdb(TWITCH_CLIENT_ID, data.access_token))
+    .then(({ data }) => data.access_token)
+
+const igdbClient = twitchToken.then((token) => igdb(TWITCH_CLIENT_ID, token))
 
 /** @type SearchFunction */
 const search = (titleSearch) => ResultAsync.fromPromise(
@@ -69,11 +80,7 @@ const retrieve = (ref) => ResultAsync.fromPromise(
         .request('/games')
         .then(({ data }) => data[0])
 
-      const hltbEntry = await hltb.search(mainData.name)
-        .then((results) => results[0])
-        .catch(() => undefined)
-
-      const duration = hltbEntry ? hltbEntry.gameplayMain * 60 : undefined
+      const playtime = toPlaytime(await retrieveTimeToBeat(mainData.id))
 
       const publisherIds =
         mainData
@@ -127,19 +134,16 @@ const retrieve = (ref) => ResultAsync.fromPromise(
           ?.find((n) => n.comment?.includes('riginal'))
           ?.name,
         releaseYear,
-        duration,
+        // `duration` and `durationSource` together, or neither of them.
+        ...playtime,
         imageUrl: mainData.cover.url ? 'https:' + mainData.cover.url : '',
         genres: mainData.genres?.map((g) => g.name) ?? [],
         platforms: mainData.platforms?.map((p) => p.abbreviation ?? '?') ?? [],
         studios: studioNames,
         publishers: publisherNames,
-        apiRefs: [
-          `igdb__${mainData.id}`,
-          ...(hltbEntry ? [`hltb__${hltbEntry.id}`] : []),
-        ],
+        apiRefs: [`igdb__${mainData.id}`],
         externalUrls: [
           ...(mainData.url ? [{ name: 'igdb', url: mainData.url }] : []),
-          ...(hltbEntry ? [{ name: 'hltb', url: 'https://howlongtobeat.com/game?id=' + String(hltbEntry.id) }] : []),
         ]
       }
     } catch (e) {
@@ -147,8 +151,43 @@ const retrieve = (ref) => ResultAsync.fromPromise(
       throw "Something went very wrong..."
     }
   })(),
-  () => errors.internal('Problem retrieving game with igdb and hltb.')
+  () => errors.internal('Problem retrieving game with igdb.')
 )
+
+/**
+ * IGDB holds no time to beat for roughly a third of games. That is ordinary,
+ * and comes back as undefined.
+ *
+ * A failed *request* is not ordinary, so it is logged. The lookup this
+ * replaced ended in `.catch(() => undefined)`, which is why the package dying
+ * cost every game added since then its playtime without anyone noticing.
+ * It still doesn't fail the whole retrieve — a game is worth caching without
+ * its playtime, and backfill_game_playtimes.js can fill the gap later — but
+ * it no longer fails in silence.
+ *
+ * @type {(gameId: number | string) => Promise<any | undefined>}
+ */
+const retrieveTimeToBeat = async (gameId) => {
+  try {
+    const { data } = await axios({
+      method: 'post',
+      url: TIME_TO_BEATS_URL,
+      headers: {
+        'Client-ID': TWITCH_CLIENT_ID,
+        Authorization: `Bearer ${await twitchToken}`,
+        Accept: 'application/json',
+      },
+      data: timeToBeatQuery([gameId]),
+    })
+    return data?.[0]
+  } catch (e) {
+    console.error(
+      `IGDB time to beat lookup failed for game ${gameId}: ` +
+      `${e?.response?.status ?? ''} ${e?.response?.data ?? e?.message ?? e}`
+    )
+    return undefined
+  }
+}
 
 /** @type Adapter */
 module.exports = {
