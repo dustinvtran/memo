@@ -75,6 +75,47 @@ const cookies = () =>
   )
 
 
+/* The nf_jwt cookie is minted with a fixed lifetime, so without renewal it just
+   expires and silently logs the user out. Renewing once it is past halfway
+   through that lifetime keeps an active session sliding forward. */
+const RENEWAL_THRESHOLD_SECONDS = 7 * 24 * 3600
+const RENEWAL_URL = '/.netlify/functions/auth/renew'
+
+let pendingRenewal = null
+
+const base64UrlDecode = (segment) => {
+  const base64 = segment.replace(/-/g, '+').replace(/_/g, '/')
+  const padding = (4 - base64.length % 4) % 4
+  return atob(base64.padEnd(base64.length + padding, '='))
+}
+
+const secondsUntilExpiry = (jwt) => {
+  try {
+    const { exp } = JSON.parse(base64UrlDecode(jwt.split('.')[1]))
+    return exp - Math.floor(Date.now() / 1000)
+  } catch (e) {
+    return undefined
+  }
+}
+
+/* Falls back to the current token: it is still valid for a while, so a failed
+   renewal should not break the request that triggered it. */
+const renewToken = (token) =>
+  axios.get(RENEWAL_URL, { headers: toAuthHeader(token) })
+    .then(({ data }) => data.token)
+    .catch(() => token)
+    .finally(() => { pendingRenewal = null })
+
 const refreshTokenIfNecessary = async () => {
-  return cookies().nf_jwt
+  const token = cookies().nf_jwt
+  if (!token) {
+    return undefined
+  }
+  const remaining = secondsUntilExpiry(token)
+  if (remaining > RENEWAL_THRESHOLD_SECONDS) {
+    return token
+  }
+  // in-flight renewal is shared so concurrent requests only renew once
+  pendingRenewal = pendingRenewal ?? renewToken(token)
+  return pendingRenewal
 }
