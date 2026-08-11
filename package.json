@@ -7,7 +7,8 @@
   "scripts": {
     "start": "npm run dev",
     "dev": "cross-env ELEVENTY_ENV=dev eleventy --serve",
-    "build": "cross-env ELEVENTY_ENV=prod eleventy"
+    "build": "cross-env ELEVENTY_ENV=prod eleventy",
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
