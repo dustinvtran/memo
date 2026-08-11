@@ -55,7 +55,60 @@ Still the right choice. Note that `external_games.category` has been replaced
 by `external_games.external_game_source` (`1` = Steam); a query filtering on
 the old field silently returns nothing rather than erroring.
 
-### Playtime: the situation as of 2026-08-11
+### Playtime: IGDB `/game_time_to_beats`
+
+Playtime comes from IGDB's `/game_time_to_beats` endpoint. The games adapter
+([../src/api/utils/external_api_adapters/games/igdb.js](../src/api/utils/external_api_adapters/games/igdb.js))
+asks for it whenever it retrieves a game, and
+[../src/db_maintenance/backfill_game_playtimes.js](../src/db_maintenance/backfill_game_playtimes.js)
+fills in games that have none.
+
+Note the endpoint is **plural**; `game_time_to_beat` and `time_to_beat` both
+404, which makes it easy to conclude it doesn't exist.
+
+```
+POST https://api.igdb.com/v4/game_time_to_beats
+Client-ID: $TWITCH_CLIENT_ID, Authorization: Bearer <twitch app token>
+fields game_id,hastily,normally,completely,count; where game_id = (3042);
+
+{ "game_id": 3042, "hastily": 45000, "normally": 102780,
+  "completely": 165270, "count": 13 }
+```
+
+Times are in seconds; `duration` is in minutes. `hastily` / `normally` /
+`completely` are HowLongToBeat's Main / Main+Extra / Completionist. It takes
+the same Twitch credentials as the metadata, and up to 500 ids per query, so
+the whole library costs three requests.
+
+Three things follow from where the data comes from, and are enforced in code:
+
+1. **`normally` becomes `duration`** — how long the game takes a player who is
+   neither rushing it nor completing it. `hastily` is the closer match to what
+   is already stored (median ratio 0.90 against `normally`'s 1.36) but it is a
+   *rushed* time rather than a Main Story one: IGDB puts Hollow Knight at
+   16.7h against HowLongToBeat's ~25h and Astro Bot at 2.0h against ~11h.
+   `normally` is also the better-covered field, reaching 72 of the games that
+   need a playtime where `hastily` reaches 61.
+2. **Gaps are filled; existing playtimes are never overwritten.** IGDB's
+   numbers rest on a median of **3 submissions** (393 of 620 comparable games
+   have fewer than 5), the stored ones on far larger HowLongToBeat samples.
+   This matters more given the field chosen: `normally` runs about 1.36x the
+   stored playtimes, so re-sourcing what we already have would move a lot of
+   visible numbers a long way.
+3. **Every playtime records its source.** A duration IGDB supplied is stored
+   with `durationSource: "igdb"` beside it. No `durationSource` means the
+   playtime predates the field and came from HowLongToBeat. The two are
+   written together or not at all, so the tag can be trusted. The column now
+   holds two different measurements — HowLongToBeat Main Story and IGDB
+   typical — and this is what tells them apart. Establishing that distinction
+   after the fact, without a stored source, took a day of measurement.
+
+The `hltb__` apiRefs and HowLongToBeat `externalUrls` on 775 games are kept.
+Only the API is gone; the pages still exist and the playtime column still
+links to them for the games whose numbers came from there. An IGDB-sourced
+playtime links to its IGDB page instead.
+
+### How the other sources ruled themselves out, as of 2026-08-11
 
 | source | reachable | coverage of our library | metric | verdict |
 | --- | --- | --- | --- | --- |
@@ -96,33 +149,33 @@ use. Getting past that would mean defeating an access control on someone
 else's service, which we are not going to do, and their terms prohibit
 scraping in any case. **Treat HowLongToBeat as unavailable, not as broken.**
 
-**IGDB `/game_time_to_beats`.** Note the plural — `game_time_to_beat` and
-`time_to_beat` both 404, which makes this easy to conclude doesn't exist.
-
-```
-POST https://api.igdb.com/v4/game_time_to_beats
-fields game_id,hastily,normally,completely,count; where game_id = (3042);
-
-{ "game_id": 3042, "hastily": 45000, "normally": 102780,
-  "completely": 165270, "count": 13 }
-```
-
-Values are seconds. `hastily` / `normally` / `completely` line up with
-HowLongToBeat's Main / Main+Extra / Completionist.
-
+**IGDB `/game_time_to_beats`.** The one that worked; described above.
 Measured against our 1,145 games:
 
-- 1,105 have an `igdb__` ref; IGDB has a time for 698 of them (63%)
-- of the 167 games with no duration at all, IGDB can supply 69
-- of the 215 games holding a duration with no HowLongToBeat link, IGDB has a
-  time for 104
+- 1,105 have an `igdb__` ref, under 1,087 distinct ids; IGDB has a time for
+  687 of those ids (63%)
+- of the 190 games with no duration at all, IGDB can supply 72
+- of the 205 games holding a duration with no HowLongToBeat link, IGDB has a
+  time for 95 — but those durations are kept, so this only tells us how much
+  of the library a future re-sourcing could reach
 
-Quality is the caveat. Comparing 620 games that have both a stored
-(HowLongToBeat-derived) duration and IGDB times, agreement within ±20% is
-`hastily` 31%, `normally` 30%, `completely` 6% — no field is a drop-in
-substitute, and adopting one visibly changes playtimes. The sample sizes
-behind IGDB's numbers are small: **median 3 submissions per game**, and
-393 of 620 games have fewer than 5.
+Quality is the caveat, and it is what decided both which field to map and the
+rule against overwriting. Comparing the 620 games that have both a stored
+(HowLongToBeat-derived) duration and IGDB times:
+
+| field | n | median IGDB ÷ stored | within ±20% | within ±10% |
+| --- | --- | --- | --- | --- |
+| `hastily` | 469 | 0.90 | 43% | 24% |
+| `normally` | 567 | 1.36 | 30% | 16% |
+| `completely` | 466 | 2.41 | 6% | 4% |
+
+No field is a drop-in substitute: `hastily` is the only one in the same
+neighbourhood as what is already stored and even it disagrees with more than
+half the library by over 20%, so re-sourcing what we have would visibly
+change playtimes whichever field we picked. The sample sizes behind IGDB's
+numbers are small too: **median 3 submissions per game**, and 393 of 620
+games have fewer than 5. Hence: fill gaps, never overwrite, and record which
+measurement each number is.
 
 **SteamSpy.** Free, no key, `?request=appdetails&appid=N`. But
 `average_forever` and `median_forever` return `0` for every game sampled — the
@@ -138,22 +191,13 @@ a key means creating an account.
 
 </details>
 
-### Recommendation
+### If HowLongToBeat opens up again
 
-1. **Adopt IGDB `/game_time_to_beats` as the playtime source.** It needs no
-   new credentials, no new account, no scraping, and it is the only reachable
-   source that measures the right thing. Map `normally` to `duration`.
-2. **Record where a duration came from.** Store the source alongside it, so a
-   later switch can tell an IGDB figure from a HowLongToBeat one and from a
-   user override, instead of guessing as we now have to.
-3. **Don't overwrite existing HowLongToBeat-derived durations.** They come
-   from far larger samples than IGDB's median of 3 submissions. Fill gaps
-   only, or the numbers people already see will shift for no visible reason.
-4. **Keep the stored `hltb__` refs and HowLongToBeat links.** 775 games have
-   them, the pages still exist and are worth linking to; only the API is gone.
-5. **Revisit if HowLongToBeat opens up.** The 401 suggests a credentialed API
-   rather than a permanent closure. If they publish terms we can meet, it
-   remains the best data.
+The 401 suggests a credentialed API rather than a permanent closure. If they
+publish terms we can meet, theirs remains the better data — larger samples per
+game and better coverage. Switching back is a small job now: the playtimes to
+reconsider are exactly the ones tagged `durationSource: "igdb"`, and the
+`hltb__` refs needed to look them up were never thrown away.
 
 The original criteria still apply: real APIs over scrapers, lenient rate
 limits, a JS wrapper if possible. IGDB satisfies all three; every remaining
