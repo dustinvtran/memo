@@ -25,11 +25,9 @@ If you use `npx netlify dev` your serverless functions will also be available at
 GET http://localhost:8888/.netlify/functions/<function_file_name_without_extension>
 ```
 
-**2. Staging branch.** Generally you should push commits directly to staging. Pull requests aren't really necessary
-due to the small team size, but if you'd like code review send a PR to merge to staging.
-
-**3. Production branch.** Merge staging to production whenever you think the changes are ready. Deploys to
-the website from production are automatic.
+**2. Deploying.** `main` is the only long-lived branch. Netlify publishes nil.moe from `main`
+automatically on every push, so there is no separate staging or production branch and no manual
+promotion step.
 
 ## Web Development Stack
 
