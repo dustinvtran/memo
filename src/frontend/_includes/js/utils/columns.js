@@ -263,12 +263,37 @@ const playtimeFormatter = (_, row) => {
     : rawMins < 40 ?  '&frac12'
     : '&frac34'
   const durationText = `${hours}h${minsAsHrFraction}`
-  const hltbUrl = toHltbUrl(row)
-  return durationInMin && hltbUrl
-    ? `<a href="${hltbUrl}">${durationText}</a>`
+  const url = toPlaytimeUrl(row)
+  return durationInMin && url
+    ? `<a href="${url}">${durationText}</a>`
     : durationInMin
     ? durationText
     : '-'
+}
+
+/**
+ * The playtime links to wherever the number came from, so a reader can go and
+ * see what it means. `durationSource` records that; a playtime stored before
+ * we recorded it came from HowLongToBeat, which is what the absent case means.
+ *
+ * An IGDB-sourced playtime deliberately does *not* fall back to a
+ * HowLongToBeat link the game may still carry: the game's page there is a
+ * fine link, but it is not where this number came from, and pointing at it
+ * would invite exactly the comparison that made the two disagree.
+ */
+const toPlaytimeUrl = (row) => {
+  const { durationSource } = get(row, ['durationSource'])
+  return durationSource === 'igdb' ? toIgdbUrl(row) : toHltbUrl(row)
+}
+
+/**
+ * Only the stored url, never one built from the apiRef: igdb.com's game urls
+ * are slugs (`/games/hollow-knight`), not ids, so there is nothing to build
+ * one out of.
+ */
+const toIgdbUrl = (row) => {
+  const { externalUrls } = get(row, ['externalUrls'])
+  return externalUrls?.find((link) => link?.name === 'igdb')?.url
 }
 
 /**
