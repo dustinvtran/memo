@@ -283,13 +283,15 @@ const toHltbUrl = (row) => {
   const url = externalUrls?.find((link) => link?.name === 'hltb')?.url
   if (url) return url
 
+  // Some games carry `hltb__N/A` rather than an id. Only a numeric id makes a
+  // page that exists, so anything else is treated as no link at all.
   const ref = apiRefs
     ?.map((apiRef) =>
       typeof apiRef === 'string'
         ? apiRef.startsWith('hltb__') ? apiRef.slice('hltb__'.length) : undefined
-        : apiRef?.name === 'hltb' ? apiRef.ref : undefined
+        : apiRef?.name === 'hltb' ? String(apiRef.ref) : undefined
     )
-    ?.find((hltbRef) => hltbRef)
+    ?.find((hltbRef) => /^\d+$/.test(hltbRef ?? ''))
 
   return ref ? `https://howlongtobeat.com/game?id=${ref}` : undefined
 }

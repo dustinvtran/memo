@@ -37,20 +37,23 @@ const groupWorksByApiRef = (collection, works) => {
 };
 
 /**
- * The first prefix the work has a ref for, in `apiRefPrefixes` order, so a
- * book stored as `ISBN__x` and a book stored as `google__x` land in the same
- * group when they share the identifier.
+ * The first prefix the work has a ref for, in `identityPrefixes` order.
+ *
+ * Only prefixes that actually establish identity count. An hltb id names a
+ * HowLongToBeat page rather than the game, and 27 games in the database carry
+ * the placeholder `hltb__N/A` — grouping on that would present 27 unrelated
+ * games as copies of one another. `parseApiRef` drops placeholder values, so
+ * a work whose only ref is one of those is left ungrouped and untouched.
  */
 const groupKey = (collection, work) => {
   const refs = (Array.isArray(work.apiRefs) ? work.apiRefs : [])
     .map(parseApiRef)
     .filter((ref) => ref);
 
-  for (const prefix of collection.apiRefPrefixes) {
+  for (const prefix of collection.identityPrefixes) {
     const match = refs.find((ref) => ref.name === prefix);
     // Books are keyed on the bare identifier: ISBN__x and google__x are the
-    // same book. Everything else keeps its prefix, since an igdb id and an
-    // hltb id are different numbering schemes.
+    // same book. Everything else keeps its prefix.
     if (match) {
       return collection.type === "books" ? match.ref : `${prefix}__${match.ref}`;
     }
@@ -65,16 +68,29 @@ const groupKey = (collection, work) => {
  * already point at it and then by id, so the plan is deterministic and
  * re-running after a partial failure converges.
  *
- * @type {(collection: any, works: any[], entries: any[]) => Array<{
+ * Groups whose members disagree about the title are NOT returned unless
+ * `includeTitleMismatches` is set. Sharing an apiRef turns out not to mean
+ * being the same work: the database has "Fargo - Season 1" and
+ * "Fargo - Season 2" under one show id, five Haruhi Suzumiya volumes under
+ * one ISBN, and "Demons" filed under The Da Vinci Code's. Merging those
+ * would destroy distinct entries, so a title disagreement is a stop sign.
+ *
+ * @type {(collection: any, works: any[], entries: any[], options?: { includeTitleMismatches?: boolean }) => Array<{
  *   key: string,
  *   survivorId: string,
  *   duplicateIds: string[],
  *   updates: object,
  *   entriesToRepoint: string[],
  *   titles: string[],
+ *   titlesAgree: boolean,
  * }>}
  */
-const planDedupe = (collection, works, entries) => {
+const planDedupe = (
+  collection,
+  works,
+  entries,
+  { includeTitleMismatches = false } = {}
+) => {
   const entriesByWorkRef = new Map();
   for (const entry of entries) {
     if (!entry.workRef) continue;
@@ -99,6 +115,13 @@ const planDedupe = (collection, works, entries) => {
 
     const [survivor, ...duplicates] = ranked;
 
+    const titles = ranked.map(
+      (w) => w.englishTranslatedTitle ?? w.originalTitle ?? "(untitled)"
+    );
+    const titlesAgree = new Set(titles.map(normalizeTitle)).size === 1;
+
+    if (!titlesAgree && !includeTitleMismatches) continue;
+
     plans.push({
       key,
       survivorId: survivor._id,
@@ -107,14 +130,19 @@ const planDedupe = (collection, works, entries) => {
       entriesToRepoint: duplicates.flatMap((w) =>
         (entriesByWorkRef.get(w._id) ?? []).map((e) => e._id)
       ),
-      titles: ranked.map(
-        (w) => w.englishTranslatedTitle ?? w.originalTitle ?? "(untitled)"
-      ),
+      titles,
+      titlesAgree,
     });
   }
 
   return plans;
 };
+
+/** Punctuation and case vary between imports; a real difference doesn't. */
+const normalizeTitle = (title) =>
+  String(title)
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]/gu, "");
 
 /**
  * Nothing a duplicate knows is thrown away: any field the survivor is missing
@@ -158,6 +186,7 @@ const fillGapsFromDuplicates = (collection, survivor, duplicates) => {
 
 module.exports = {
   groupWorksByApiRef,
+  normalizeTitle,
   groupKey,
   planDedupe,
   fillGapsFromDuplicates,

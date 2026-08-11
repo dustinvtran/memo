@@ -159,21 +159,97 @@ test("a book cached as ISBN__ and as google__ is one book", () => {
   assert.deepEqual(plans[0].duplicateIds, ["b"]);
 });
 
-test("an igdb id and an hltb id are not confused for each other", () => {
-  const gamesCollection = COLLECTIONS.find((c) => c.type === "games");
+test("an hltb ref never establishes identity on its own", () => {
+  const games = COLLECTIONS.find((c) => c.type === "games");
 
-  assert.notEqual(
-    groupKey(gamesCollection, { apiRefs: ["igdb__100"] }),
-    groupKey(gamesCollection, { apiRefs: ["hltb__100"] })
+  // A HowLongToBeat id names a page, not the game, so two games that happen
+  // to share one are not duplicates.
+  assert.equal(groupKey(games, { apiRefs: ["hltb__100"] }), undefined);
+  assert.equal(groupKey(games, { apiRefs: ["igdb__100"] }), "igdb__100");
+});
+
+test("games sharing the placeholder hltb__N/A are never grouped", () => {
+  // The database really holds 27 of these. Grouping on the placeholder would
+  // present 27 unrelated games as copies and delete 26 of them.
+  const games = COLLECTIONS.find((c) => c.type === "games");
+  const placeholder = (id, title) => ({
+    _id: id,
+    entryType: "Game",
+    englishTranslatedTitle: title,
+    apiRefs: ["hltb__N/A"],
+  });
+
+  const works = [
+    placeholder("a", "Cards Against Humanity"),
+    placeholder("b", "Doom mod: Sigil"),
+    placeholder("c", "Resident Evil 4: Separate Ways"),
+  ];
+  const entries = works.map((w, i) => ({ _id: `e${i}`, workRef: w._id }));
+
+  assert.equal(groupKey(games, works[0]), undefined);
+  assert.deepEqual(planDedupe(games, works, entries), []);
+});
+
+test("films with undefined__undefined refs are never grouped", () => {
+  // 14 films in the database carry this.
+  const works = ["a", "b", "c"].map((id) => ({
+    _id: id,
+    entryType: "Film",
+    englishTranslatedTitle: `Film ${id}`,
+    apiRefs: ["undefined__undefined"],
+  }));
+
+  assert.equal(groupKey(films, works[0]), undefined);
+  assert.deepEqual(planDedupe(films, works, []), []);
+});
+
+test("a placeholder never masks a real identifier on the same work", () => {
+  const games = COLLECTIONS.find((c) => c.type === "games");
+
+  assert.equal(
+    groupKey(games, { apiRefs: ["hltb__N/A", "igdb__14593"] }),
+    "igdb__14593"
   );
 });
 
-test("duplicates with different titles are surfaced for review", () => {
-  const [plan] = planDedupe(
-    films,
-    [film("a", { imageUrl: "https://img" }), film("b", { englishTranslatedTitle: "Сталкер" })],
-    []
-  );
+test("works sharing an apiRef but not a title are not merged", () => {
+  // "Fargo - Season 1" and "Fargo - Season 2" really do sit under one tmdb
+  // id. Merging them would destroy one of the two seasons being tracked.
+  const works = [
+    film("a", { englishTranslatedTitle: "Fargo - Season 1", imageUrl: "https://img" }),
+    film("b", { englishTranslatedTitle: "Fargo - Season 2" }),
+  ];
 
-  assert.deepEqual(plan.titles, ["Stalker", "Сталкер"]);
+  assert.deepEqual(planDedupe(films, works, []), []);
+
+  const [forced] = planDedupe(films, works, [], {
+    includeTitleMismatches: true,
+  });
+  assert.equal(forced.titlesAgree, false);
+  assert.deepEqual(forced.titles, ["Fargo - Season 1", "Fargo - Season 2"]);
+});
+
+test("titles differing only in punctuation or case still count as agreeing", () => {
+  const works = [
+    film("a", { englishTranslatedTitle: "WALL·E", imageUrl: "https://img" }),
+    film("b", { englishTranslatedTitle: "Wall-E" }),
+  ];
+
+  const [plan] = planDedupe(films, works, []);
+
+  assert.equal(plan.titlesAgree, true);
+  assert.deepEqual(plan.duplicateIds, ["b"]);
+});
+
+test("a mixed group is skipped whole rather than partly merged", () => {
+  // Castlevania has Season 1 twice and Season 2 once under one id. The two
+  // Season 1 documents are genuine duplicates, but sorting that out means
+  // looking at it, so the whole group stays put.
+  const works = [
+    film("a", { englishTranslatedTitle: "Castlevania: Season 1" }),
+    film("b", { englishTranslatedTitle: "Castlevania: Season 1" }),
+    film("c", { englishTranslatedTitle: "Castlevania: Season 2" }),
+  ];
+
+  assert.deepEqual(planDedupe(films, works, []), []);
 });

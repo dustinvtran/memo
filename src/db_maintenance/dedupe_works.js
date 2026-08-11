@@ -6,8 +6,15 @@
  * This is the destructive half of the cleanup: it deletes documents. It is a
  * dry run unless you pass --apply, it backs up both the work and the entry
  * collection first, and it only ever groups works that share an API
- * identifier — never by title. Which document survives and what gets merged
- * into it is decided by ./work_dedupe_plan.js, which is unit tested.
+ * identifier AND agree about the title. Which document survives and what gets
+ * merged into it is decided by ./work_dedupe_plan.js, which is unit tested.
+ *
+ * The title check is not paranoia. Sharing an apiRef does not mean being the
+ * same work in this database: "Fargo - Season 1" and "Fargo - Season 2" sit
+ * under one show id, five Haruhi Suzumiya volumes share one ISBN, and
+ * "Demons" is filed under The Da Vinci Code's. Those groups are reported and
+ * skipped; --merge-title-mismatches forces them through, and you should read
+ * every one of them first.
  *
  * Order of operations per group: update the survivor, repoint the entries,
  * then delete the duplicates. If the run dies half way, re-running converges
@@ -24,6 +31,8 @@
  *   --apply             actually write (default: dry run)
  *   --only=a,b          restrict to these types (films, tv, games, books)
  *   --keep-duplicates   merge and repoint, but don't delete the leftovers
+ *   --merge-title-mismatches
+ *                       also merge groups whose titles disagree (dangerous)
  *   --json=path         write a machine-readable report
  *   --backup-dir=path   where to put backups (default ./backups)
  */
@@ -43,6 +52,7 @@ const args = parseArgs(process.argv);
 const options = {
   apply: args.apply === true,
   keepDuplicates: args["keep-duplicates"] === true,
+  mergeTitleMismatches: args["merge-title-mismatches"] === true,
   backupDir: String(args["backup-dir"] ?? path.join(__dirname, "backups")),
 };
 
@@ -90,7 +100,14 @@ const dedupeCollection = async (db, collection) => {
 
   const works = await db.collection(collection.works).find().toArray();
   const entries = await db.collection(collection.entries).find().toArray();
-  const plans = planDedupe(collection, works, entries);
+
+  const allGroups = planDedupe(collection, works, entries, {
+    includeTitleMismatches: true,
+  });
+  const plans = options.mergeTitleMismatches
+    ? allGroups
+    : allGroups.filter((p) => p.titlesAgree);
+  const skipped = allGroups.filter((p) => !plans.includes(p));
 
   const duplicateCount = plans.reduce((n, p) => n + p.duplicateIds.length, 0);
   const repointCount = plans.reduce((n, p) => n + p.entriesToRepoint.length, 0);
@@ -100,7 +117,17 @@ const dedupeCollection = async (db, collection) => {
       `${duplicateCount} documents to remove, ${repointCount} entries to repoint`
   );
 
-  if (plans.length === 0) return { works: works.length, groups: 0 };
+  if (skipped.length > 0) {
+    console.log(
+      `  ${skipped.length} group(s) skipped: the works share an apiRef but not ` +
+        `a title, so they are probably distinct works filed under one id`
+    );
+    for (const group of skipped) {
+      console.log(`      ${group.key}: ${JSON.stringify(group.titles)}`);
+    }
+  }
+
+  if (plans.length === 0) return { works: works.length, groups: 0, skipped };
 
   for (const plan of plans) {
     console.log(
@@ -128,7 +155,7 @@ const dedupeCollection = async (db, collection) => {
   }
 
   if (!options.apply) {
-    return { works: works.length, groups: plans.length, plans };
+    return { works: works.length, groups: plans.length, plans, skipped };
   }
 
   backup(collection.works, works);
@@ -162,7 +189,7 @@ const dedupeCollection = async (db, collection) => {
       `${options.keepDuplicates ? "kept" : "deleted"} ${duplicateCount} duplicates`
   );
 
-  return { works: works.length, groups: plans.length, plans };
+  return { works: works.length, groups: plans.length, plans, skipped };
 };
 
 const backup = (collectionName, documents) => {

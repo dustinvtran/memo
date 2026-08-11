@@ -66,3 +66,14 @@ test("a user's duration override still wins over the cached metadata", () => {
     '<a href="https://howlongtobeat.com/game?id=5">2h</a>'
   );
 });
+
+test("a placeholder hltb ref renders no link at all", () => {
+  // 27 games in the database carry `hltb__N/A`; linking to
+  // howlongtobeat.com/game?id=N/A would be a dead link on every one of them.
+  assert.equal(playtime({ duration: 600, apiRefs: ["hltb__N/A"] }), "10h");
+  assert.equal(playtime({ duration: 600, apiRefs: ["hltb__"] }), "10h");
+  assert.equal(
+    playtime({ duration: 600, apiRefs: [{ name: "hltb", ref: "N/A" }] }),
+    "10h"
+  );
+});

@@ -208,3 +208,41 @@ test("completeness counts usable expected fields", () => {
   assert.equal(completeness(games, {}), 0);
   assert.ok(completeness(games, backfilled()) > completeness(games, staleGame));
 });
+
+test("placeholder refs are not treated as identifiers", () => {
+  const { parseApiRef, findApiRef } = require("./work_collections");
+
+  for (const bad of [
+    "hltb__N/A",
+    "undefined__undefined",
+    "igdb__",
+    "tmdb__null",
+    "igdb__0",
+    "ISBN__NaN",
+  ]) {
+    assert.equal(parseApiRef(bad), undefined, `${bad} should not parse`);
+  }
+
+  assert.deepEqual(parseApiRef("igdb__14593"), {
+    name: "igdb",
+    ref: "14593",
+    flat: true,
+  });
+  assert.equal(findApiRef(["hltb__N/A", "igdb__1"], "hltb"), undefined);
+});
+
+test("a placeholder ref is dropped rather than carried forward", () => {
+  const work = { ...staleGame, apiRefs: ["igdb__14593", "hltb__N/A"] };
+
+  assert.deepEqual(mergeWork(games, work, freshGame).updates.apiRefs, [
+    "igdb__14593",
+    "hltb__26286",
+  ]);
+});
+
+test("a work whose only ref is a placeholder cannot be refreshed", () => {
+  const { findApiRef } = require("./work_collections");
+  const work = { _id: "x", entryType: "Game", apiRefs: ["hltb__N/A"] };
+
+  assert.equal(findApiRef(work.apiRefs, games.retrievePrefix), undefined);
+});

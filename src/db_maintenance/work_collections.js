@@ -18,6 +18,7 @@ const COLLECTIONS = [
     entryType: "Film",
     adapterModule: "../api/utils/external_api_adapters/films/tmdb",
     apiRefPrefixes: ["tmdb"],
+    identityPrefixes: ["tmdb"],
     retrievePrefix: "tmdb",
     stringArrayFields: ["genres", "directors", "actors"],
     numberFields: ["releaseYear", "duration"],
@@ -30,6 +31,7 @@ const COLLECTIONS = [
     entryType: "TVShow",
     adapterModule: "../api/utils/external_api_adapters/tv_shows/tmdb",
     apiRefPrefixes: ["tmdb"],
+    identityPrefixes: ["tmdb"],
     retrievePrefix: "tmdb",
     stringArrayFields: ["genres", "directors", "actors"],
     numberFields: ["releaseYear", "duration", "episodes"],
@@ -44,6 +46,9 @@ const COLLECTIONS = [
     // `hltb` is a secondary ref: it is added by the adapter alongside `igdb`,
     // but only `igdb` can be used to re-retrieve the work.
     apiRefPrefixes: ["igdb", "hltb"],
+    // An hltb id identifies a HowLongToBeat page, not the game, and plenty of
+    // games share the placeholder `hltb__N/A`. Only igdb establishes identity.
+    identityPrefixes: ["igdb"],
     retrievePrefix: "igdb",
     stringArrayFields: ["genres", "platforms", "studios", "publishers"],
     numberFields: ["releaseYear", "duration"],
@@ -59,6 +64,8 @@ const COLLECTIONS = [
     // Books were cached under `ISBN__` by the adapter, but the works
     // controller used to look them up as `google__`, so both may exist.
     apiRefPrefixes: ["ISBN", "google"],
+    // Both name the same ISBN, so either establishes identity.
+    identityPrefixes: ["ISBN", "google"],
     retrievePrefix: "ISBN",
     stringArrayFields: ["genres", "authors", "publishers"],
     numberFields: ["releaseYear", "duration"],
@@ -77,12 +84,43 @@ const COMMON_FIELDS = [
 ];
 
 /**
+ * Values that were stored where an identifier should have been. The database
+ * really contains 27 games with `hltb__N/A` and 14 films with
+ * `undefined__undefined`; treating those as identifiers would make every one
+ * of them look like the same work.
+ */
+const PLACEHOLDER_REF_VALUES = new Set([
+  "",
+  "0",
+  "n/a",
+  "na",
+  "null",
+  "undefined",
+  "nan",
+  "none",
+  "false",
+]);
+
+const isPlaceholder = (value) =>
+  PLACEHOLDER_REF_VALUES.has(String(value).trim().toLowerCase());
+
+/**
  * apiRefs are flat strings (`igdb__1234`) since
  * flatten_api_refs_in_work_collections.js ran, but a few documents may still
  * hold the original `{ name, ref }` objects.
+ *
+ * Returns undefined for anything that isn't a usable identifier, so a
+ * placeholder can never be mistaken for one.
  * @type {(apiRef: unknown) => { name: string, ref: string, flat: boolean } | undefined}
  */
 const parseApiRef = (apiRef) => {
+  const parsed = parseApiRefShape(apiRef);
+  if (!parsed) return undefined;
+  if (isPlaceholder(parsed.name) || isPlaceholder(parsed.ref)) return undefined;
+  return parsed;
+};
+
+const parseApiRefShape = (apiRef) => {
   if (typeof apiRef === "string") {
     const separatorAt = apiRef.indexOf("__");
     if (separatorAt <= 0) return undefined;
@@ -156,6 +194,8 @@ const parseArgs = (argv) =>
 module.exports = {
   COLLECTIONS,
   COMMON_FIELDS,
+  PLACEHOLDER_REF_VALUES,
+  isPlaceholder,
   parseApiRef,
   findApiRef,
   isEmptyValue,
