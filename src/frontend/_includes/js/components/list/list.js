@@ -1,33 +1,31 @@
 const { html, css } = Utils
-const { getEntries, getUserName } = Netlify
 const { col, initTable, detailFormatter, allColumns, statuses, entryTypeToFullColumns, editColumn, filmStatuses } = Tables
 const { typeToTitle, statusToTitle } = Conversions
 const { initComponent, WithRemoteData, appendContent, Nothing } = Components
 const { Modal_ } = Components.UI
 const { AddEntryButton } = Components.List
-const { getEntryTypeFromUrl, getNameFromUrl } = Http
 const { EntryForm } = Components.List
 
-const List = (username) => initComponent({
+/** `entries` and `isOwner` are already in flight; see `list/index.js`. */
+const List = ({ username, entryType, entries, isOwner }) => initComponent({
   content: ({ include }) => html`
     <div class="container">
       <div class="row" style="padding:20px">
         <div id="list-header">
           ${include(
-            ListPageHeader(typeToTitle[getEntryTypeFromUrl()], username)
+            ListPageHeader(typeToTitle[entryType], username)
           )}
         </div>
           ${include(WithRemoteData({
-            remoteData: getUserName().unwrapOr(null),
-            component: (resp) =>
-              resp?.username === getNameFromUrl()
-                ? AddEntryButton(getEntryTypeFromUrl())
-                : Nothing()
+            remoteData: isOwner,
+            component: (isOwner) =>
+              isOwner ? AddEntryButton(entryType) : Nothing()
           }))}
           ${include(WithRemoteData({
-            remoteData: getEntries(getEntryTypeFromUrl(), username),
+            remoteData: entries,
             component: (entries) => SubLists(
-              getEntryTypeFromUrl(),
+              entryType,
+              isOwner,
               [...entries]
                 .sort((a, b) =>
                   a.commonMetadata.englishTranslatedTitle
@@ -125,10 +123,10 @@ const ListPageHeader = (title, username) => initComponent({
   `
 })
 
-const SubLists = (entryType, data) => initComponent({
+const SubLists = (entryType, isOwner, data) => initComponent({
   content: ({ include }) => html`
     ${(entryType === 'films' ? filmStatuses : statuses)
-      .map((status) => include(SubList(status, entryType, data)))
+      .map((status) => include(SubList(status, entryType, isOwner, data)))
       .join('')
     }
     <div id="global-stats">
@@ -148,7 +146,7 @@ const SubLists = (entryType, data) => initComponent({
   `
 })
 
-const SubList = (status, entryType, data) => initComponent({
+const SubList = (status, entryType, isOwner, data) => initComponent({
   content: ({ id }) => html`
     <div class="row">
       <div class="col-md-10 col-md-offset-1 sublist-wrapper">
@@ -161,24 +159,24 @@ const SubList = (status, entryType, data) => initComponent({
     </div>
   `,
   initializer: ({ id }) => {
-    getUserName()
-      .map((resp) => resp?.username === getNameFromUrl())
-      .unwrapOr(false)
-      .then((isOwner) => {
-        initFullTable(`#${id}-list`, data.filter((e) => e.status === status), entryType, isOwner, status)
-        $(`#${id}-title`).click(() => {
-          const nextEl = $(`#${id}-title`).next()
-          const elsToHide =
-            nextEl.attr('id') === 'click-to-see-comments'
-              ? [nextEl, nextEl.next(), nextEl.parent().parent().next()]
-              : [nextEl, nextEl.parent().parent().next()]
+    $(`#${id}-title`).click(() => {
+      const nextEl = $(`#${id}-title`).next()
+      const elsToHide =
+        nextEl.attr('id') === 'click-to-see-comments'
+          ? [nextEl, nextEl.next(), nextEl.parent().parent().next()]
+          : [nextEl, nextEl.parent().parent().next()]
 
-          elsToHide.forEach(el => {
-            el.toggle(200)
-            el.toggleClass('is-collapsed')
-          })
-        })
+      elsToHide.forEach(el => {
+        el.toggle(200)
+        el.toggleClass('is-collapsed')
       })
+    })
+
+    // Settled long before the entries arrive, so this is a microtask rather
+    // than the round trip per table it used to be.
+    isOwner.then((isOwner) => {
+      initFullTable(`#${id}-list`, data.filter((e) => e.status === status), entryType, isOwner, status)
+    })
   },
   style: () => css`
     .sublist-wrapper {
@@ -232,6 +230,11 @@ const SubList = (status, entryType, data) => initComponent({
 })
 
 const initFullTable = (selector, data, entryType, isOwner, status) => {
+  // The edit button names its row rather than carrying a copy of it, so
+  // rows are kept here for it to name. `dbRef` is unique across the page, so
+  // one registry serves every table on it.
+  data.forEach((row) => { Rows.byRef[row.dbRef] = row })
+
   initTable(selector, data, {
     detailView: true,
     detailFormatter,
@@ -246,10 +249,10 @@ const initFullTable = (selector, data, entryType, isOwner, status) => {
       ...(isOwner ? [Columns.edit()] : []),
     ]
   })
-  window.editEntry = (data) => {
+  window.editEntry = (dbRef) => {
     appendContent('body', Modal_({
       title: "Edit an entry",
-      content: EntryForm(entryType, data),
+      content: EntryForm(entryType, Rows.byRef[dbRef]),
       showCloseConfirmationDialog: () => window.hasUnsavedChange === true
     }))
   }

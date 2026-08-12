@@ -66,9 +66,14 @@ const _create = (collection, data) =>
     (err) => throwIt(err)
   )
 
-/** @type {(collection: 'filmEntries' | 'gameEntries' | 'tvShowEntries' | 'bookEntries', userId: string, limit?: number) => Promise<object>} */
+/**
+ * A whole list in one query. The ordering and the limit are the database's
+ * job rather than this function's, so a limited request joins the metadata
+ * onto the entries it is going to return instead of onto all of them.
+ *
+ * @type {(collection: 'filmEntries' | 'gameEntries' | 'tvShowEntries' | 'bookEntries', userId: string, limit?: number) => Promise<object>}
+ */
 const _findAllUserEntriesWithMetadata = async (collection, userId, limit) => {
-  console.log('in _findAllUserEntriesWithMetadata')
   const workCollection = {
     filmEntries: 'films',
     gameEntries: 'games',
@@ -87,6 +92,14 @@ const _findAllUserEntriesWithMetadata = async (collection, userId, limit) => {
     .collection(collection)
     .aggregate([
       { $match: { userId } },
+      // The order the caller used to sort into after the fact. A missing
+      // `updatedDate` sorts last here too. `_id` only breaks ties, of which
+      // there are a great many — a bulk import stamps a whole list with one
+      // millisecond — and it breaks them the same way every time, which the
+      // sort it replaces did not: that one left entries stamped the same
+      // millisecond in whatever order the database happened to return them.
+      { $sort: { updatedDate: -1, _id: 1 } },
+      ...(limit ? [{ $limit: limit }] : []),
       {
         $lookup: {
           from: workCollection,
@@ -95,25 +108,23 @@ const _findAllUserEntriesWithMetadata = async (collection, userId, limit) => {
           as: 'work',
         },
       },
+      // Nobody reads either of these from a list, and they are not small:
+      // `review` is the whole note, which the reviews endpoint serves when a
+      // row is actually opened, and `userId` is an auth0 id repeated once per
+      // entry for anyone who asks for the list.
+      { $project: { review: 0, userId: 0 } },
     ])
     .toArray()
-    .then((arr) => arr
-      .map(toSameFormatAsFaunaDb)
-      .map((entry) => ({ entry, work: { data: entry.data.work?.[0] ?? emptyWork }}))
-    )
+    // `work` is dropped from the entry it was joined onto: the caller returns
+    // it as `commonMetadata`, and left in place it would also travel back as a
+    // second, identical copy on every entry — a third of the response.
+    .then((arr) => arr.map(({ work, ...entry }) => ({
+      entry: toSameFormatAsFaunaDb(entry),
+      work: { data: work?.[0] ?? emptyWork },
+    })))
   )
 
-  const resultsByLastUpdatedIfPossible =
-    [...results].sort((a, b) =>
-      (b.entry?.data?.updatedDate ?? 0) - (a.entry?.data?.updatedDate ?? 0)
-    )
-
-  const finalResults =
-    limit
-      ? resultsByLastUpdatedIfPossible.slice(0, limit)
-      : resultsByLastUpdatedIfPossible
-
-  return { data: finalResults }
+  return { data: results }
 }
 
 module.exports = {
