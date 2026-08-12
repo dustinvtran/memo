@@ -11,9 +11,12 @@
 const MAX_LINES = 1500
 
 /**
- * @typedef {{ type: 'same' | 'added' | 'removed', text: string }} DiffLine
- * @type {(before: string, after: string) => DiffLine[]}
+ * @typedef {object} DiffLine
+ * @property {'same' | 'added' | 'removed'} type
+ * @property {string} text
  */
+
+/** @type {(before: string, after: string) => DiffLine[]} */
 const lineDiff = (before, after) => {
   const oldLines = toLines(before)
   const newLines = toLines(after)
