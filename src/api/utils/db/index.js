@@ -17,7 +17,7 @@
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../errors').Error} Error */
 const { ResultAsync } = require('neverthrow')
-const { _findOneByField, _findOneByRef, _findAllByField, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
+const { _findOneByField, _findOneByRef, _findAllByField, _findAllByFieldIn, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
 const { compose } = require('ramda')
 const { toResponse, toResult } = require('./into_safe_values')
 
@@ -38,6 +38,9 @@ const findAllByField = compose(toResponse, _findAllByField)
 
 /** @type {(collection: ValidCollection, field: string, value: any, limit?: number) => ResultAsync<any, Error>} */
 const findAllByField_ = compose(toResult, _findAllByField)
+
+/** @type {(collection: ValidCollection, field: string, values: any[]) => ResultAsync<any, Error>} */
+const findAllByFieldIn_ = compose(toResult, _findAllByFieldIn)
 
 /** @type {(collection: ValidCollection, userId: string, limit?: number) => ResultAsync<any, Error>} */
 const findAllUserEntriesWithMetadata_ = compose(toResult, _findAllUserEntriesWithMetadata)
@@ -72,6 +75,7 @@ module.exports = {
   findAll,
   findAllByField,
   findAllByField_,
+  findAllByFieldIn_,
   findOneByField,
   findOneByField_,
   findAllUserEntriesWithMetadata_,

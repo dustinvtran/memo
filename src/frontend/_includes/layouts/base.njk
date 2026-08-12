@@ -91,6 +91,30 @@
     </script>
   </head>
   <body>
+    {#
+      Every page is drawn client-side, so anything that fetches a url here and
+      reads the HTML — a language model, a scraper, `curl` — finds an empty
+      `#site` and concludes the list is empty. This is the one piece of the
+      page that is in the source, and it says where the data actually is.
+    #}
+    <noscript>
+      <h1>Memo</h1>
+      <p>
+        This page is rendered in the browser, so there is nothing to read in
+        its source. The same lists are served as data, and that is what to
+        fetch instead:
+      </p>
+      <ul>
+        <li><code>/api/export/&lt;type&gt;/&lt;username&gt;</code> — one list, where <code>&lt;type&gt;</code> is <code>films</code>, <code>tv</code>, <code>games</code> or <code>books</code></li>
+        <li><code>/api/export/&lt;username&gt;</code> — all four at once, if they fit in one response</li>
+        <li>append <code>?format=md</code> for Markdown instead of JSON, or <code>?limit=200</code> for the most recently updated entries only</li>
+      </ul>
+      <p>
+        Both include every entry with its metadata, its score and its notes.
+        For example, <a href="/api/export/films/nil">/api/export/films/nil</a>
+        is what <a href="/films/nil">/films/nil</a> draws.
+      </p>
+    </noscript>
     <div id="site"></div>
     <script>
       // The 0 timeout is necessary to detect netlify auth token
