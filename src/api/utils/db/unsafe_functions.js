@@ -10,6 +10,7 @@ const { mongo } = require('./db')
 const { v4: uuidv4 } = require('uuid')
 const { throwIt } = require('../general')
 const parsers = require('../parsers/')
+const { toSameFormatAsFaunaDb, toEntryWithMetadata } = require('./shapes')
 
 /** @type {(collection: ValidCollection, field: string, value: any) => Promise<object>} */
 const _findOneByField = (collection, field, value) =>
@@ -86,7 +87,6 @@ const _findAllUserEntriesWithMetadata = async (collection, userId, limit) => {
     tvShowEntries: 'TVShow',
     bookEntries: 'Book',
   }[collection]
-  const emptyWork = { data: { entryType } }
 
   const results = await mongo((db) => db
     .collection(collection)
@@ -115,13 +115,7 @@ const _findAllUserEntriesWithMetadata = async (collection, userId, limit) => {
       { $project: { review: 0, userId: 0 } },
     ])
     .toArray()
-    // `work` is dropped from the entry it was joined onto: the caller returns
-    // it as `commonMetadata`, and left in place it would also travel back as a
-    // second, identical copy on every entry — a third of the response.
-    .then((arr) => arr.map(({ work, ...entry }) => ({
-      entry: toSameFormatAsFaunaDb(entry),
-      work: { data: work?.[0] ?? emptyWork },
-    })))
+    .then((arr) => arr.map((row) => toEntryWithMetadata(row, entryType)))
   )
 
   return { data: results }
@@ -158,15 +152,6 @@ const find = (collection, filter) =>
     .toArray()
     .then((arr) => arr.map(toSameFormatAsFaunaDb))
   )
-
-/**
- * @type {(docOrDocs: any) => { data: any, ref: { id: string }}}
- * @info This function exists because we migrated from FaunaDB to MongoDB.
- */
-const toSameFormatAsFaunaDb = (dcmt) => ({
-  data: dcmt,
-  ref: { id: dcmt._id },
-})
 
 /** @type {(collection: ValidCollection, data: any) => Promise<object>} */
 const unsafeCreateDoc = (collection, data) =>
