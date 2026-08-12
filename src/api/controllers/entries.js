@@ -4,13 +4,21 @@
 /** @typedef {import('../utils/errors').Error} Error */
 /** @typedef {import('../utils/responses').Response} Response */
 const responses = require('../utils/responses')
-const { Result, combine, err, ok, okAsync } = require('neverthrow')
-const errors = require('../utils/errors')
-const { getUserId, getSegment, getReqBody, findIdOfName } = require('./utils')
+const { combine, okAsync } = require('neverthrow')
+const {
+  getUserId,
+  getSegment,
+  getReqBody,
+  findIdOfName,
+  toEntryCollection,
+  toEntryType,
+  toReviewCollection,
+} = require('./utils')
 const { triplet, quad, toPromise, toAsync } = require('../utils/general')
 const db = require('../utils/db/')
-const { match } = require('ts-pattern')
 const { toResponse } = require('../utils/db/into_safe_values')
+const { recordRevision, discardDraft, discardHistory } = require('./revisions')
+const { toSnapshot } = require('../utils/revision_history')
 
 /** @type {(event: Event) => Promise<Response>} */
 const getAllEntriesForUser = (event) => toPromise(
@@ -61,7 +69,7 @@ const deleteEntry = (event) => toPromise(
     )
     .map(([uid, col, entry]) =>
       entry.data?.userId === uid
-        ? db.deleteByRef(col, entry.ref.id)
+        ? deleteEntry_(col, entry)
         : responses.unauthorized()
     )
     .mapErr(responses.fromError)
@@ -77,18 +85,6 @@ module.exports = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/** @type {(segment: string) => Result<ValidCollection, Error>} */
-const toEntryCollection = (segment) =>
-  match(segment)
-    .with('films', () => okEntry('filmEntries'))
-    .with('books', () => okEntry('bookEntries'))
-    .with('tv', () => okEntry('tvShowEntries'))
-    .with('games', () => okEntry('gameEntries'))
-    .otherwise(() => err(errors.notFound()))
-
-/** @type {(collection: ValidCollection) => Result<ValidCollection, Error>} */
-const okEntry = (collection) => ok(collection)
-
 /** @type {([uid, col, limit]: [string, ValidCollection, string | undefined]) => Promise<any>} */
 const getUserEntries = ([uid, col, limit]) => toResponse(toPromise(
   db.findAllUserEntriesWithMetadata_(col, uid, parseInt(limit ?? '') || undefined)
@@ -102,8 +98,7 @@ const getUserEntries = ([uid, col, limit]) => toResponse(toPromise(
 /** @type {([userId, body, collection]: [string, any, ValidCollection]) => Promise<Response>} */
 const createEntry = ([userId, body, collection]) => {
   const { review, ...entryWithoutReview } = body
-  /** @type any */
-  const reviewCollection = collection.replace('Entries', 'Reviews')
+  const reviewCollection = toReviewCollection(collection)
 
   return db.create_(collection, { ...entryWithoutReview, userId, updatedDate: Date.now() })
     .andThen((entry) => db.create_(reviewCollection, {
@@ -111,6 +106,16 @@ const createEntry = ([userId, body, collection]) => {
       entryRef: entry.ref.id,
     }))
     .match(responses.ok, responses.internalError)
+}
+
+/** @type {(col: ValidCollection, entry: any) => Promise<Response>} */
+const deleteEntry_ = async (col, entry) => {
+  const response = await db.deleteByRef(col, entry.ref.id)
+
+  // The history and the draft only describe an entry that no longer exists.
+  await discardHistory(entry.ref.id)
+
+  return response
 }
 
 const updateEntry_ = async (uid, body, col, entry) => {
@@ -123,27 +128,44 @@ const updateEntry_ = async (uid, body, col, entry) => {
   // previously nulled out review text on unrelated saves.
   const reviewProvided = review !== undefined
 
-  /** @type any */
-  const reviewCollection = col.replace('Entries', 'Reviews')
+  const reviewCollection = toReviewCollection(col)
+
+  const existingReview = await db
+    .findOneByField_(reviewCollection, 'entryRef', entry.ref.id)
+    .unwrapOr({})
+
+  // Recorded before anything is written, so the version this save replaces —
+  // the long note included — can be read back and restored from the UI.
+  await recordRevision({
+    entryType: toEntryType(col),
+    entry,
+    previousReview: existingReview?.data?.text,
+    nextSnapshot: toSnapshot(
+      { ...entry.data, ...entryWithoutReview },
+      reviewProvided ? review : existingReview?.data?.text
+    ),
+  })
 
   if (reviewProvided) {
     // Awaited so the write completes before the function returns; a
     // serverless container can be frozen right after the response is sent.
-    await db.findOneByField_(reviewCollection, 'entryRef', entry.ref.id)
-      .andThen(({ ref }) =>
-        ref
-          ? db.updateByRef_(reviewCollection, ref.id, { text: review })
-          // Shouldn't be needed, but just in case.
-          : db.create_(reviewCollection, {
-              text: review,
-              entryRef: entry.ref.id,
-            })
-      )
+    await (existingReview?.ref
+      ? db.updateByRef_(reviewCollection, existingReview.ref.id, { text: review })
+      // Shouldn't be needed, but just in case.
+      : db.create_(reviewCollection, {
+          text: review,
+          entryRef: entry.ref.id,
+        }))
   }
 
-  return db.updateByRef(col, entry.ref.id, {
+  const response = await db.updateByRef(col, entry.ref.id, {
     ...(reviewProvided ? body : entryWithoutReview),
     updatedDate: Date.now(),
   })
+
+  // The draft has been saved for real now, so it has nothing left to recover.
+  await discardDraft(entry.ref.id, uid)
+
+  return response
 }
 

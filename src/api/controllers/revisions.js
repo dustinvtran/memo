@@ -1,0 +1,238 @@
+/**
+ * @file An entry's edit history and its autosaved draft.
+ *
+ * Both live in the `entryRevisions` collection, told apart by `kind`:
+ *
+ * - `revision`: what the entry looked like before a save replaced it. Written
+ *   by the entries controller, never by the client, so history can't be
+ *   forged or skipped.
+ * - `draft`: the edit-in-progress the form autosaves, one per entry. It is
+ *   what survives a closed tab or a browser crash, and it is deleted as soon
+ *   as the entry is saved.
+ *
+ * Everything here is owner-only: the lists on the site are public, but what
+ * someone typed and then deleted is not.
+ */
+/** @typedef {import('@netlify/functions').HandlerEvent} Event */
+/** @typedef {import('../utils/responses').Response} Response */
+/** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
+const { combine, okAsync } = require('neverthrow')
+const responses = require('../utils/responses')
+const db = require('../utils/db/')
+const parsers = require('../utils/parsers')
+const {
+  getUserId,
+  getSegment,
+  getReqBody,
+  toEntryCollection,
+  toEntryType,
+  toReviewCollection,
+} = require('./utils')
+const { triplet, toAsync, toPromise, warn } = require('../utils/general')
+const {
+  toSnapshot,
+  hasChanges,
+  toVersionList,
+  revisionsToPrune,
+} = require('../utils/revision_history')
+
+const COLLECTION = 'entryRevisions'
+
+/**
+ * The whole version list of an entry, newest first, starting with the entry
+ * as it stands now, each version carrying what it changed.
+ * @type {(event: Event) => Promise<Response>}
+ */
+const getVersions = (event) =>
+  withOwnedEntry(event, async ({ collection, entry }) => {
+    const review = await findReview(collection, entry.ref.id)
+    const revisions = await findRevisions(entry.ref.id)
+
+    return responses.ok({
+      versions: toVersionList(
+        {
+          id: 'current',
+          createdDate: entry.data.updatedDate ?? null,
+          snapshot: toSnapshot(entry.data, review?.text),
+        },
+        revisions.map((revision) => ({
+          id: revision._id,
+          createdDate: revision.createdDate,
+          supersededDate: revision.supersededDate,
+          snapshot: revision.snapshot,
+        }))
+      ),
+    })
+  })
+
+/** @type {(event: Event) => Promise<Response>} */
+const getDraft = (event) =>
+  withOwnedEntry(event, async ({ userId, entry }) => {
+    const draft = await findDraft(entry.ref.id, userId)
+
+    return responses.ok({
+      draft: draft
+        ? { createdDate: draft.data.createdDate, snapshot: draft.data.snapshot }
+        : null,
+    })
+  })
+
+/** @type {(event: Event) => Promise<Response>} */
+const saveDraft = (event) =>
+  withOwnedEntry(event, async ({ userId, entryType, entry }) => {
+    const body = getReqBody(event)
+    if (body.isErr()) return responses.fromError(body.error)
+
+    // Validated here rather than only on the way into the database, so that
+    // the update path (which doesn't go through a parser) can't store
+    // whatever the client felt like sending.
+    const draft = parsers[COLLECTION]({
+      entryRef: entry.ref.id,
+      entryType,
+      userId,
+      kind: 'draft',
+      createdDate: Date.now(),
+      snapshot: body.value,
+    })
+    if (draft.isErr()) return responses.fromError(draft.error)
+
+    const existing = await findDraft(entry.ref.id, userId)
+
+    return existing
+      ? db.updateByRef(COLLECTION, existing.ref.id, draft.value)
+      : db.create(COLLECTION, draft.value)
+  })
+
+/** @type {(event: Event) => Promise<Response>} */
+const deleteDraft = (event) =>
+  withOwnedEntry(event, async ({ userId, entry }) => {
+    const draft = await findDraft(entry.ref.id, userId)
+
+    return draft
+      ? db.deleteByRef(COLLECTION, draft.ref.id)
+      : responses.ok({ deleted: 0 })
+  })
+
+/**
+ * Stores what the entry looked like *before* the save that is about to
+ * happen. The entry itself is the current version, so only superseded ones
+ * are kept here.
+ *
+ * History is a convenience: a failure to record it must never fail the save
+ * that the user actually asked for.
+ *
+ * @type {(args: { entryType: string, entry: any, previousReview?: string, nextSnapshot: object }) => Promise<void>}
+ */
+const recordRevision = async ({
+  entryType,
+  entry,
+  previousReview,
+  nextSnapshot,
+}) => {
+  try {
+    const previous = toSnapshot(entry.data, previousReview)
+    if (!hasChanges(previous, nextSnapshot)) return
+
+    const now = Date.now()
+    const created = await db.create_(COLLECTION, {
+      entryRef: entry.ref.id,
+      entryType,
+      userId: entry.data.userId,
+      kind: 'revision',
+      // An entry without an `updatedDate` has no known save time, and "as of
+      // the moment it was replaced" is the closest honest answer.
+      createdDate: entry.data.updatedDate ?? now,
+      supersededDate: now,
+      snapshot: previous,
+    })
+    if (created.isErr()) {
+      warn(`Could not record a revision for ${entry.ref.id}: ${created.error}`)
+      return
+    }
+
+    await pruneRevisions(entry.ref.id)
+  } catch (error) {
+    warn(`Could not record a revision for ${entry?.ref?.id}: ${error}`)
+  }
+}
+
+/** @type {(entryRef: string, userId: string) => Promise<void>} */
+const discardDraft = async (entryRef, userId) => {
+  const draft = await findDraft(entryRef, userId)
+  if (draft) await db.deleteByRef_(COLLECTION, draft.ref.id).unwrapOr(undefined)
+}
+
+/** Called when an entry is deleted: its history has nothing left to describe. */
+/** @type {(entryRef: string) => Promise<void>} */
+const discardHistory = (entryRef) =>
+  db.deleteAllByField_(COLLECTION, 'entryRef', entryRef).unwrapOr(undefined)
+
+module.exports = {
+  getVersions,
+  getDraft,
+  saveDraft,
+  deleteDraft,
+  recordRevision,
+  discardDraft,
+  discardHistory,
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Resolves `/:type/:entryRef`, checks the caller owns that entry, and only
+ * then hands over to the handler. Anything else is a 401 — including an
+ * entry that doesn't exist, so this can't be used to probe for ids.
+ * @type {(event: Event, respond: (args: { userId: string, entryType: string, collection: ValidCollection, entry: any }) => Promise<Response>) => Promise<Response>}
+ */
+const withOwnedEntry = (event, respond) => toPromise(
+  toEntryCollection(getSegment(0, event))
+    .asyncAndThen((collection) =>
+      combine(triplet([
+        toAsync(getUserId(event)),
+        okAsync(collection),
+        db.findOneByRef_(collection, getSegment(1, event)),
+      ]))
+    )
+    .map(([userId, collection, entry]) =>
+      entry?.data?.userId === userId
+        ? respond({
+            userId,
+            entryType: toEntryType(collection),
+            collection,
+            entry,
+          })
+        : responses.unauthorized()
+    )
+    .mapErr(responses.fromError)
+)
+
+/** @type {(entryRef: string) => Promise<any[]>} */
+const findRevisions = async (entryRef) =>
+  (await db.findAllByField_(COLLECTION, 'entryRef', entryRef).unwrapOr([]))
+    .map(({ data }) => data)
+    .filter(({ kind }) => kind === 'revision')
+
+/**
+ * There is one draft per entry per user. `_findAllByField` only filters on a
+ * single field, so the user is filtered out here.
+ * @type {(entryRef: string, userId: string) => Promise<any | undefined>}
+ */
+const findDraft = async (entryRef, userId) =>
+  (await db.findAllByField_(COLLECTION, 'entryRef', entryRef).unwrapOr([]))
+    .find(({ data }) => data.kind === 'draft' && data.userId === userId)
+
+/** @type {(collection: ValidCollection, entryRef: string) => Promise<any | undefined>} */
+const findReview = async (collection, entryRef) =>
+  (
+    await db
+      .findOneByField_(toReviewCollection(collection), 'entryRef', entryRef)
+      .unwrapOr({})
+  )?.data
+
+const pruneRevisions = async (entryRef) => {
+  const revisions = await findRevisions(entryRef)
+  for (const id of revisionsToPrune(revisions)) {
+    await db.deleteByRef_(COLLECTION, id).unwrapOr(undefined)
+  }
+}

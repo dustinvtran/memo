@@ -41,6 +41,13 @@ const _deleteOneByRef = (collection, ref) =>
     .deleteOne({ _id: ref })
   )
 
+/** @type {(collection: ValidCollection, field: string, value: any) => Promise<object>} */
+const _deleteAllByField = (collection, field, value) =>
+  mongo((db) => db
+    .collection(collection)
+    .deleteMany({ [field]: value })
+  )
+
 /** @type {(collection: ValidCollection, data: any) => Promise<object>} */
 const _create = (collection, data) =>
   parsers[collection](data).match(
@@ -107,6 +114,7 @@ module.exports = {
   _updateOneByRef,
   _create,
   _deleteOneByRef,
+  _deleteAllByField,
 }
 
 ///////////////////////////////////////////////////////////////////////////////

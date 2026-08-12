@@ -4,12 +4,13 @@
  */
 const { html, css, waitForEl } = Utils
 const { initComponent } = Components
-const { SubmitButton, DeleteButton, ExternalFields, PersonalFields, CoverColumn } = Components.List
+const { SubmitButton, DeleteButton, ExternalFields, PersonalFields, CoverColumn, DraftNotice, EntryHistory } = Components.List
 
 const EntryForm = (type, data) => {
   const isEdit = data?.status ?? false
   return initComponent({
     content: ({ include }) => html`
+      ${isEdit ? include(DraftNotice(type, data)) : ''}
       <div id="submit-button-add-entry-wrapper">
         ${include(SubmitButton(type, data, isEdit))}
         ${isEdit ? include(DeleteButton(type, data)) : ''}
@@ -21,6 +22,7 @@ const EntryForm = (type, data) => {
           CoverColumn(data),
         ])}
       </div>
+      ${isEdit ? include(EntryHistory(type, data)) : ''}
     `,
     style: () => css`
       #add-entry-fields {
