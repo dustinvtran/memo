@@ -44,14 +44,18 @@ const updateAllCachedGameEntriesWithoutPublishers = async (books) => {
     const isbn = book.apiRefs
       .find((ref) => ref.startsWith("ISBN"))
       .replace("ISBN__", "");
-    const publishers = axios({
+    // `publishers` must end up a flat array of strings — see the bookParser
+    // in ../api/utils/parsers/books.js. Await the response and take the first
+    // result: an un-awaited Promise is stored by Mongo as an empty object,
+    // and mapping over every result gives an array of arrays.
+    const publisher = await axios({
       method: "get",
       url: `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`,
-    }).then(({ data }) =>
-      data.items?.map(({ volumeInfo }) =>
-        volumeInfo.publisher ? [volumeInfo.publisher] : undefined
-      )
-    );
+    })
+      .then(({ data }) => data.items?.[0]?.volumeInfo?.publisher)
+      .catch(() => undefined);
+
+    const publishers = publisher ? [publisher] : undefined;
 
     if (publishers) {
       console.log("Adding missing publisher for ", book.englishTranslatedTitle);

@@ -263,12 +263,37 @@ const playtimeFormatter = (_, row) => {
     : rawMins < 40 ?  '&frac12'
     : '&frac34'
   const durationText = `${hours}h${minsAsHrFraction}`
-  const hltbRef = row.commonMetadata.apiRefs?.find(ref => ref.name === 'hltb')?.ref
-  return durationInMin && hltbRef
-    ? `<a href="https://howlongtobeat.com/game?id=${hltbRef}">${durationText}</a>`
+  const hltbUrl = toHltbUrl(row)
+  return durationInMin && hltbUrl
+    ? `<a href="${hltbUrl}">${durationText}</a>`
     : durationInMin
     ? durationText
     : '-'
+}
+
+/**
+ * apiRefs are flat strings (`hltb__12345`), though some documents still hold
+ * the older `{ name, ref }` objects, so both shapes are read. The
+ * externalUrls entry the adapter writes alongside the ref is preferred when
+ * present.
+ */
+const toHltbUrl = (row) => {
+  const { apiRefs, externalUrls } = get(row, ['apiRefs', 'externalUrls'])
+
+  const url = externalUrls?.find((link) => link?.name === 'hltb')?.url
+  if (url) return url
+
+  // Some games carry `hltb__N/A` rather than an id. Only a numeric id makes a
+  // page that exists, so anything else is treated as no link at all.
+  const ref = apiRefs
+    ?.map((apiRef) =>
+      typeof apiRef === 'string'
+        ? apiRef.startsWith('hltb__') ? apiRef.slice('hltb__'.length) : undefined
+        : apiRef?.name === 'hltb' ? String(apiRef.ref) : undefined
+    )
+    ?.find((hltbRef) => /^\d+$/.test(hltbRef ?? ''))
+
+  return ref ? `https://howlongtobeat.com/game?id=${ref}` : undefined
 }
 
 const relativeTime = (ts) => {

@@ -20,19 +20,20 @@ const retrieveWork = (event) => {
   const type = getUrlSegments(event)[1]
   const apiRefId = getUrlSegments(event)[2]
 
-  // Hardcoded for now, but ideally shouldnt be
-  const apiName = {
-    films: 'tmdb',
-    books: 'google',
-    tv: 'tmdb',
-    games: 'igdb',
+  // Hardcoded for now, but ideally shouldnt be.
+  // The Google Books adapter caches books under `ISBN__`; `google__` is also
+  // accepted because some book documents are stored under that name.
+  const apiNames = {
+    films: ['tmdb'],
+    books: ['ISBN', 'google'],
+    tv: ['tmdb'],
+    games: ['igdb'],
   }[type]
 
-  if (!apiName) return Promise.resolve(responses.notFound())
-  const apiRef = `${apiName}__${apiRefId}`
+  if (!apiNames) return Promise.resolve(responses.notFound())
 
   return toPromise(
-    db.findOneByField_(typeToCollection(type), 'apiRefs', apiRef)
+    findCachedWork(typeToCollection(type), apiNames.map((name) => `${name}__${apiRefId}`))
       .andThen(({ data, ref }) => data
         ? okAsync(({
           ...data,
@@ -59,6 +60,20 @@ const typeToCollection = (type) => ({
   tv: 'tvShows',
   games: 'games',
 }[type])
+
+/**
+ * Tries each apiRef in turn and stops at the first cached work.
+ * @type {(collection: any, apiRefs: string[]) => ResultAsync<any, Error>}
+ */
+const findCachedWork = (collection, apiRefs) =>
+  apiRefs.reduce(
+    (found, apiRef) => found.andThen((result) =>
+      result?.data
+        ? okAsync(result)
+        : db.findOneByField_(collection, 'apiRefs', apiRef)
+    ),
+    okAsync({})
+  )
 
 
 /** @type {(action: keyof Adapter, event: Event) => Promise<Response>} */

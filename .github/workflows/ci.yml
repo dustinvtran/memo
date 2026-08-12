@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The unit-tested modules are deliberately dependency-free, so the
+      # suite runs without an install. Nothing here needs a database or an
+      # API key.
+      - name: Unit tests
+        run: npm test
+
+      # Cheap guard against a typo in the files the tests don't reach —
+      # the Netlify functions and the frontend globals.
+      - name: Syntax check every JS file
+        run: git ls-files '*.js' | xargs -n1 node --check

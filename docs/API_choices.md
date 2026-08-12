@@ -36,261 +36,128 @@ Let's reduce the risk of hitting rate limits and avoid as much as possible block
 
 ## Game API
 
-### howlongtobeat
+Split into two questions, because one source no longer answers both:
+**metadata** (title, year, cover, genres, platforms, studio, publisher) and
+**playtime**.
 
-https://www.npmjs.com/package/howlongtobeat
-
-<details>
-<summary>Research</summary>
-  
-- Scraper
-- Testing indicates no rate limits
-- Might have the most accurate game playtime data
-- Preferably should not rely on it for anything else
-- Can consider writing own scraper
-
-```js
-HowLongToBeatEntry {
-  id: '43344',
-  name: 'Yu-Gi-Oh! Duel Links',
-  description: ' Step into a world that crosses dimensions and connects all Duelists. Here, any location transforms into a Duel Field where heated Duels unfold!\n' +
-    '\t\t\t',
-  platforms: [ 'Mobile', 'PC' ],
-  imageUrl: '/games/43344_Yu-Gi-Oh_Duel_Links.jpg',
-  timeLabels: [
-    [ 'gameplayMain', 'Single-Player' ],
-    [ 'gameplayMainExtra', 'Co-Op' ],
-    [ 'gameplayComplete', 'Vs.' ]
-  ],
-  gameplayMain: 559,
-  gameplayMainExtra: 0,
-  gameplayCompletionist: 170,
-  similarity: 1,
-  searchTerm: 'Yu-Gi-Oh! Duel Links',
-  playableOn: [ 'Mobile', 'PC' ]
-}
-```
-
-Missing (\* = can be implemented):
-
-- Original title
-- Release year\*
-- Genres\*
-- Platforms\*
-- Studio\*
-- Developer\*
-</details>
-
-Relying solely on HLTB would get us all the data except original title. However
-it would mean being at the mercy of HTML changes. My hacky sh scraper from 1 year ago has already stopped working.
-
-We should only use HLTB to get playtime data, and gracefully fail or fallback.
-
-### IGDB
+### Metadata: IGDB
 
 https://www.npmjs.com/package/igdb-api-node
-https://api-docs.igdb.com#franchise
-[Setting up an authorization credentials (pita)](https://api-docs.igdb.com#account-creation)
+https://api-docs.igdb.com
+
+- 4 requests per second, free, authenticated with Twitch client credentials
+- The [Expander](https://api-docs.igdb.com/?shell#expander) feature gets
+  expanded data in one request, one level deep — company names still need a
+  second request
+- Everything we need except original title and playtime
+
+Still the right choice. Note that `external_games.category` has been replaced
+by `external_games.external_game_source` (`1` = Steam); a query filtering on
+the old field silently returns nothing rather than erroring.
+
+### Playtime: the situation as of 2026-08-11
+
+| source | reachable | coverage of our library | metric | verdict |
+| --- | --- | --- | --- | --- |
+| `howlongtobeat` npm 1.8.0 | no — 404 on every search | — | time to beat | dead |
+| `howlongtobeat-core` npm 1.1.1 | no — "Failed to fetch auth token: 404" | — | time to beat | dead |
+| howlongtobeat.com directly | no — 401 | — | time to beat | behind auth |
+| **IGDB `/game_time_to_beats`** | **yes, with credentials we already hold** | **63%** | **time to beat** | **best available** |
+| SteamSpy | yes, but playtime fields are `0` | 56% have a Steam appid | total time played | unusable |
+| RAWG | needs an account we don't have | unmeasured | average total playtime | wrong metric |
 
 <details>
-<summary>Research</summary>
+<summary>Evidence</summary>
 
-- 4 requests per second
-- [Link to list of returned fields](https://api-docs.igdb.com#game)
-- Must programmatically regenerate auth token every so often... should be no problem to refresh it for every request for simplicity (due to being serverless)
-- **At first it looked like it would take many requests to get one game's data (see code below), but after digging a little I happily found the [Expander](https://api-docs.igdb.com/?shell#expander) feature which lets us get expanded data in one request.**
-  - This only works one level deep, so additional requests are still necessary
-    - **1 request** for company names
+**`howlongtobeat` npm.** 1.8.0 is the latest release, published 2023.
+`hltb.search()` throws `Request failed with status code 404` for every title
+tested. The games adapter wraps it in `.catch(() => undefined)`, so the
+failure is silent: games simply get no duration and no HowLongToBeat link.
 
-```js
-  // Without expander settings
-  {
-    id: 27093,
-    alternative_names: [ 13594 ],
-    artworks: [ 33661 ],
-    cover: 86245,
-    genres: [ 15, 16, 26, 35 ],
-    involved_companies: [ 62226, 62227 ],
-    name: 'Yu-Gi-Oh! Duel Links',
-    platforms: [ 6, 34, 39 ],
-    release_dates: [ 65212, 146989, 146990, 150165, 158774, 254407 ]
-  }
+**`howlongtobeat-core` npm.** 1.1.1, the actively maintained alternative.
+`new HowLongToBeat().search("Hollow Knight")` logs
+`Failed to fetch auth token: 404` and returns 0 results.
 
-  // With expander
-  [
-    {
-      "id": 27093,
-      "alternative_names": [
-        {
-          "id": 13594,
-          "comment": "Other",
-          "game": 27093,
-          "name": "Yu-Gi-Oh! Dungeondice Monsters",
-          "checksum": "eee0a878-6b28-0ab5-7808-7799bd13c86f"
-        }
-      ],
-      "cover": {
-        "id": 86245,
-        "url": "//images.igdb.com/igdb/image/upload/t_thumb/co1ujp.jpg"
-      },
-      "genres": [
-        {
-          "id": 15,
-          "name": "Strategy"
-        },
-        {
-          "id": 16,
-          "name": "Turn-based strategy (TBS)"
-        },
-        {
-          "id": 26,
-          "name": "Quiz/Trivia"
-        },
-        {
-          "id": 35,
-          "name": "Card & Board Game"
-        }
-      ],
-      "involved_companies": [
-        {
-          "id": 62226,
-          "company": 129,
-          "created_at": 1518480000,
-          "developer": true,
-          "game": 27093,
-          "porting": false,
-          "publisher": false,
-          "supporting": false,
-          "updated_at": 1518480000,
-          "checksum": "dbb971a3-0fa6-a22c-b98b-39b20bcfd465"
-        },
-        {
-          "id": 62227,
-          "company": 161,
-          "created_at": 1518480000,
-          "developer": false,
-          "game": 27093,
-          "porting": false,
-          "publisher": true,
-          "supporting": false,
-          "updated_at": 1518480000,
-          "checksum": "32eaf131-aa94-06fb-f648-6ba8108bdd7d"
-        }
-      ],
-      "name": "Yu-Gi-Oh! Duel Links",
-      "platforms": [
-        {
-          "id": 6,
-          "abbreviation": "PC"
-        },
-        {
-          "id": 34,
-          "abbreviation": "Android"
-        },
-        {
-          "id": 39,
-          "abbreviation": "iOS"
-        }
-      ],
-      "release_dates": [
-        {
-          "id": 65212,
-          "category": 0,
-          "created_at": 1486662608,
-          "date": 1484870400,
-          "game": 27093,
-          "human": "Jan 20, 2017",
-          "m": 1,
-          "platform": 34,
-          "region": 8,
-          "updated_at": 1486662608,
-          "y": 2017,
-          "checksum": "0a7d44a5-76fe-6e70-e440-0927059f2854"
-        },
-        {
-          "id": 146989,
-          "category": 0,
-          "created_at": 1518484178,
-          "date": 1479340800,
-          "game": 27093,
-          "human": "Nov 17, 2016",
-          "m": 11,
-          "platform": 34,
-          "region": 5,
-          "updated_at": 1518497293,
-          "y": 2016,
-          "checksum": "256f8f50-d924-3cbb-6f9e-31f35b89184b"
-        },
-        {
-          "id": 146990,
-          "category": 0,
-          "created_at": 1518484178,
-          "date": 1479340800,
-          "game": 27093,
-          "human": "Nov 17, 2016",
-          "m": 11,
-          "platform": 39,
-          "region": 5,
-          "updated_at": 1518497293,
-          "y": 2016,
-          "checksum": "ee913588-f9e5-7615-be51-3484ec601dc3"
-        },
-        {
-          "id": 150165,
-          "category": 0,
-          "created_at": 1522159932,
-          "date": 1484092800,
-          "game": 27093,
-          "human": "Jan 11, 2017",
-          "m": 1,
-          "platform": 39,
-          "region": 8,
-          "updated_at": 1522160325,
-          "y": 2017,
-          "checksum": "11364ef8-3771-888d-6ea5-5bcba7de6bbd"
-        },
-        {
-          "id": 158774,
-          "category": 0,
-          "created_at": 1537038892,
-          "date": 1510790400,
-          "game": 27093,
-          "human": "Nov 16, 2017",
-          "m": 11,
-          "platform": 6,
-          "region": 8,
-          "updated_at": 1537095764,
-          "y": 2017,
-          "checksum": "6fde44cd-8428-174d-3428-bcef8f8b77ee"
-        },
-        {
-          "id": 254407,
-          "category": 0,
-          "created_at": 1623552795,
-          "date": 1510790400,
-          "game": 27093,
-          "human": "Nov 16, 2017",
-          "m": 11,
-          "platform": 6,
-          "region": 2,
-          "updated_at": 1623759663,
-          "y": 2017,
-          "checksum": "40a7d49d-4186-fe24-d3bf-aa6f40333d5d"
-        }
-      ]
-    }
-  ]
+**howlongtobeat.com directly.** The homepage still serves 200 and a Next.js
+bundle, but no longer ships the `_next/static/chunks/pages/_app-*.js` file
+that the community libraries extract a key from. The API is now versioned and
+authenticated:
+
+```
+POST /api/v1/games     401
+POST /api/v0/games     401
+POST /api/search       404
+POST /api/stats/games  503
 ```
 
-Missing:
+401 rather than 404 means the endpoints exist and require credentials. No
+token is discoverable in the client bundles by the pattern those libraries
+use. Getting past that would mean defeating an access control on someone
+else's service, which we are not going to do, and their terms prohibit
+scraping in any case. **Treat HowLongToBeat as unavailable, not as broken.**
 
-- Playtime
-- Original title
+**IGDB `/game_time_to_beats`.** Note the plural — `game_time_to_beat` and
+`time_to_beat` both 404, which makes this easy to conclude doesn't exist.
+
+```
+POST https://api.igdb.com/v4/game_time_to_beats
+fields game_id,hastily,normally,completely,count; where game_id = (3042);
+
+{ "game_id": 3042, "hastily": 45000, "normally": 102780,
+  "completely": 165270, "count": 13 }
+```
+
+Values are seconds. `hastily` / `normally` / `completely` line up with
+HowLongToBeat's Main / Main+Extra / Completionist.
+
+Measured against our 1,145 games:
+
+- 1,105 have an `igdb__` ref; IGDB has a time for 698 of them (63%)
+- of the 167 games with no duration at all, IGDB can supply 69
+- of the 215 games holding a duration with no HowLongToBeat link, IGDB has a
+  time for 104
+
+Quality is the caveat. Comparing 620 games that have both a stored
+(HowLongToBeat-derived) duration and IGDB times, agreement within ±20% is
+`hastily` 31%, `normally` 30%, `completely` 6% — no field is a drop-in
+substitute, and adopting one visibly changes playtimes. The sample sizes
+behind IGDB's numbers are small: **median 3 submissions per game**, and
+393 of 620 games have fewer than 5.
+
+**SteamSpy.** Free, no key, `?request=appdetails&appid=N`. But
+`average_forever` and `median_forever` return `0` for every game sampled — the
+free endpoint no longer populates them. Even working, it measures total hours
+played, which for anything with multiplayer or NG+ is not time to beat. 614
+of our 1,105 games have a Steam appid, so it is PC-only anyway.
+
+**RAWG.** https://rawg.io/apidocs — 350k+ games, free tier 20,000
+requests/month, requires an API key from a signed-up account. Its `playtime`
+field is average total playtime in hours, sourced from Steam, so it has
+SteamSpy's semantic problem: not a time to beat. Unmeasured, because getting
+a key means creating an account.
 
 </details>
 
-Great high quality API containing everything we need except original title and
-playtime, will use in conjunction with HLTB.
+### Recommendation
+
+1. **Adopt IGDB `/game_time_to_beats` as the playtime source.** It needs no
+   new credentials, no new account, no scraping, and it is the only reachable
+   source that measures the right thing. Map `normally` to `duration`.
+2. **Record where a duration came from.** Store the source alongside it, so a
+   later switch can tell an IGDB figure from a HowLongToBeat one and from a
+   user override, instead of guessing as we now have to.
+3. **Don't overwrite existing HowLongToBeat-derived durations.** They come
+   from far larger samples than IGDB's median of 3 submissions. Fill gaps
+   only, or the numbers people already see will shift for no visible reason.
+4. **Keep the stored `hltb__` refs and HowLongToBeat links.** 775 games have
+   them, the pages still exist and are worth linking to; only the API is gone.
+5. **Revisit if HowLongToBeat opens up.** The 401 suggests a credentialed API
+   rather than a permanent closure. If they publish terms we can meet, it
+   remains the best data.
+
+The original criteria still apply: real APIs over scrapers, lenient rate
+limits, a JS wrapper if possible. IGDB satisfies all three; every remaining
+HowLongToBeat route satisfies none.
 
 ## Film / TV API
 
