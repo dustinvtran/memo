@@ -200,7 +200,9 @@ in a module that can be tested without a database or an API key.
 ## History
 
 We migrated from FaunaDB to MongoDB Atlas on 2022-10-10. The scripts that
-use `faunadb` / `./utils.js` predate that migration and no longer run.
+drove the FaunaDB era spoke FQL through a `db` export that no longer exists,
+so they threw the moment they were loaded. They have been deleted; `git log`
+still has them if you need to know what one of them did.
 
 `backfill_work_metadata.js` repairs books whose `publishers` is an empty
 object rather than a list of strings, left by an un-awaited Promise in
