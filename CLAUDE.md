@@ -40,18 +40,21 @@ An install takes 10+ minutes and then doesn't work.
 
 Copy the repo to local disk (excluding `node_modules`, `.git`, `backups`
 and `.env`), `npm ci` there — about 9 seconds — and invoke scripts by their
-local path **with the working directory still in the Drive copy**, so
-`dotenv` reads the real `.env` and credentials never leave Drive:
+local path, pointing them back at the Drive copy's `.env` and `backups` so
+the credentials and the snapshots never leave Drive:
 
 ```
-cd /path/on/drive/src/db_maintenance
-node C:/local/copy/src/db_maintenance/scripts/some_script.js
+MEMO_ENV_FILE=/path/on/drive/src/db_maintenance/.env \
+  node C:/local/copy/src/db_maintenance/scripts/some_script.js \
+  --backup-dir=/path/on/drive/src/db_maintenance/backups
 ```
 
-Note that a script run from the local copy reads the local copy's `.env` and
-writes to the local copy's `backups`, because both are resolved from the
-script's own location. Copy the `.env` across, or pass `--out` / `--dir` /
-`--backup-dir` explicitly, if you want either to come from Drive.
+The working directory no longer matters — a script resolves its `.env` from
+`src/db_maintenance/env.js` and its backups from its own location, so a local
+copy would otherwise quietly use the local copy's of each. `MEMO_ENV_FILE`
+exists for exactly this; **don't** copy the `.env` to local disk instead.
+`--out` / `--dir` do for the backup path what `--backup-dir` does above,
+depending on the script.
 
 Same trick for regenerating `package-lock.json`: run
 `npm install --package-lock-only` on the local copy and copy the lockfile
@@ -60,11 +63,15 @@ back.
 ## Credentials
 
 `src/db_maintenance/.env` holds `MONGODB_URL`, `TWITCH_CLIENT_ID`,
-`TWITCH_CLIENT_SECRET`, `TMDB_API_KEY`, `GOOGLE_API_KEY`. The scripts live a
-directory below it, in `src/db_maintenance/scripts/`, and each points
-`dotenv` at `../.env` relative to itself, so the working directory you run
-from doesn't matter. Never print the values, and never copy the file
-anywhere.
+`TWITCH_CLIENT_SECRET`, `TMDB_API_KEY`, `GOOGLE_API_KEY`. Never print the
+values, and never copy the file anywhere — if something can't see it from
+where it is, point it at the file with `MEMO_ENV_FILE` rather than moving
+the file to it.
+
+Loading it is `src/db_maintenance/env.js`'s job, and every script's first
+line is `require("../env")`. Don't call `dotenv` directly in a new script:
+a bare `config()` resolves against the working directory, which is how the
+scripts came to only work when run from one particular folder.
 
 ## Writing to the database
 

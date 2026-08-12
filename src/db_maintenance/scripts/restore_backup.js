@@ -27,9 +27,7 @@
  *   --no-safety-backup  don't snapshot the current database first
  *   --skip-verify       restore even if the snapshot fails its checksums
  */
-require("dotenv").config({
-  path: require("path").join(__dirname, "..", ".env"),
-});
+require("../env");
 const fs = require("fs");
 const path = require("path");
 const { parseArgs } = require("../work_collections");

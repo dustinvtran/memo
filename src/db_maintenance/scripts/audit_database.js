@@ -11,9 +11,7 @@
  *   node scripts/audit_database.js --only=games,books
  *   node scripts/audit_database.js --json=./audit.json
  */
-require("dotenv").config({
-  path: require("path").join(__dirname, "..", ".env"),
-});
+require("../env");
 const fs = require("fs");
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const {

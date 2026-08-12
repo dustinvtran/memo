@@ -36,9 +36,7 @@
  *   --json=path         write a machine-readable report
  *   --backup-dir=path   where to put backups (default ../backups)
  */
-require("dotenv").config({
-  path: require("path").join(__dirname, "..", ".env"),
-});
+require("../env");
 const fs = require("fs");
 const path = require("path");
 const { MongoClient, ServerApiVersion } = require("mongodb");

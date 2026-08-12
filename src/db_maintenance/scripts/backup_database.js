@@ -28,9 +28,7 @@
  *   --prune-only        apply the retention policy without taking a snapshot
  *   --list              list the snapshots already taken and exit
  */
-require("dotenv").config({
-  path: require("path").join(__dirname, "..", ".env"),
-});
+require("../env");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");

@@ -7,10 +7,10 @@ library: the pure modules that decide what a script should write, and their
 tests.
 
 The commands below are written from this folder, as
-`node scripts/audit_database.js`, but nothing depends on that. Each script
-resolves the `.env` and the backups directory from its own location, so it
-behaves the same run from `scripts/`, from here, or by absolute path from
-anywhere else.
+`node scripts/audit_database.js`, but nothing depends on that. The `.env` and
+the backups directory are both resolved from a fixed point in the tree rather
+than from wherever you happen to be standing, so a script behaves the same run
+from `scripts/`, from here, or by absolute path from anywhere else.
 
 ## You need an .env file
 
@@ -23,6 +23,32 @@ the same keys the deployed API uses:
 `TMDB_API_KEY` (films and TV), `TWITCH_CLIENT_ID` +
 `TWITCH_CLIENT_SECRET` (games, via IGDB) and, optionally but
 recommended, `GOOGLE_API_KEY` (books).
+
+### How a script finds it
+
+`env.js` owns this, and every script's first line is `require("../env")`,
+before anything that reads `process.env`. Don't call `dotenv` directly in a
+script: a bare `require("dotenv").config()` resolves against the **working
+directory**, so it finds the file only when you happen to be standing in this
+folder, and when it misses you get `MONGODB_URL not set` from a script that
+is sitting next to the .env that has it.
+
+`env.js` lives beside the `.env` and resolves it from its own location, so
+the answer depends on neither the working directory nor how deep in the tree
+the script sits. A script nested further down still writes `require`
+followed by the path to `env.js`, and nothing about where the `.env` lives
+changes.
+
+Two ways to override it, in the order they win:
+
+- **A variable already in the environment.** dotenv never overwrites one, so
+  `MONGODB_URL=... node scripts/audit_database.js` works with no `.env` at
+  all — which is what a scheduled backup on another machine wants.
+- **`MEMO_ENV_FILE=/path/to/.env`**, to read a different file entirely. This
+  is the one the Google Drive workaround in the root `CLAUDE.md` needs: the
+  code runs from a copy on local disk while the credentials stay in the Drive
+  copy, so neither has to be moved to meet the other. Never copy the `.env`
+  to solve this — point at it instead.
 
 ## Auditing and backfilling metadata
 
