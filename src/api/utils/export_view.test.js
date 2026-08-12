@@ -104,6 +104,22 @@ test('an empty note is left out rather than exported as an empty string', () => 
   assert.ok(!('notes' in entry))
 })
 
+test('an entry whose work is missing exports what the entry itself knows', () => {
+  // The stand-in `toEntryWithMetadata` supplies when an entry's `workRef`
+  // names a work that isn't there. Which list this is comes from the url, so
+  // `entryType` is not a field to export.
+  const entry = toExportEntry('films', { ...film, work: { entryType: 'Film' } })
+
+  assert.deepEqual(entry, {
+    id: 'e1',
+    status: 'Completed',
+    score: 6,
+    completedDate: '2026-08-09',
+    updatedDate: '2026-08-10',
+    notes: 'A bit too zany.',
+  })
+})
+
 test('each type names its numbers and its people after what they are', () => {
   const game = toExportEntry('games', {
     entry: { _id: 'g1', status: 'Completed' },
