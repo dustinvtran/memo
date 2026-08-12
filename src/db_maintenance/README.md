@@ -215,15 +215,24 @@ database or an API key.
 
 ## History
 
+Nothing here is a migration that has already run. Those get deleted once
+they have done their job, because a one-shot that can't be run again is a
+liability sitting next to scripts that can: it still looks runnable, it has
+no dry run, and the only thing it can do now is damage. `git log` remembers
+what each one did, which is the only thing anyone ever needs from it.
+
 We migrated from FaunaDB to MongoDB Atlas on 2022-10-10. The scripts that
 drove that era spoke FQL through a `db` export `src/api/utils/db/db.js`
 stopped providing, so they threw on their first query — which, each being a
-top-level IIFE, was as soon as they ran. They have been deleted; `git log`
-still has them if you need to know what one of them did.
+top-level IIFE, was as soon as they ran. `populate_mongodb.js` was the
+migration itself, reading a `backup-2022-10-10/` that is long gone.
+`mongo_update_tam_entries_with_new_userid.js` moved one user's entries to a
+new id, both ids hardcoded.
 
 `scripts/backfill_work_metadata.js` repairs books whose `publishers` is an
 empty object rather than a list of strings, left by an un-awaited Promise in
-`mongodb_add_missing_book_publishers.js`.
+`mongodb_add_missing_book_publishers.js` — which did that repair first,
+badly, and is gone too.
 
 Games added between the `howlongtobeat` package's silent death and 2026-08-11
 have no playtime at all; `scripts/backfill_game_playtimes.js` fills those.
