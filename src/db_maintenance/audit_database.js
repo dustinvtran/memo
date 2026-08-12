@@ -24,7 +24,7 @@ const {
 const {
   expectedFields,
   corruptFieldsOf,
-  isMissingHltbLink,
+  isMissingPlaytimeLink,
 } = require("./work_metadata_merge");
 const { groupWorksByApiRef } = require("./work_dedupe_plan");
 
@@ -76,7 +76,7 @@ const auditCollection = async (db, collection) => {
   const legacyObjectApiRefs = [];
   const missingFields = [];
   const corruptFields = [];
-  const gamesMissingHltbLink = [];
+  const gamesMissingPlaytimeLink = [];
   const orphanWorks = [];
 
   for (const work of works) {
@@ -101,8 +101,8 @@ const auditCollection = async (db, collection) => {
       corruptFields.push({ ...describe(work), fields: corrupt });
     }
 
-    if (isMissingHltbLink(collection, work)) {
-      gamesMissingHltbLink.push(describe(work));
+    if (isMissingPlaytimeLink(collection, work)) {
+      gamesMissingPlaytimeLink.push(describe(work));
     }
 
     if (!referencedWorkIds.has(work._id)) orphanWorks.push(describe(work));
@@ -131,7 +131,7 @@ const auditCollection = async (db, collection) => {
     legacyObjectApiRefs,
     missingFields,
     corruptFields,
-    gamesMissingHltbLink,
+    gamesMissingPlaytimeLink,
     duplicateWorks,
     orphanWorks,
     entriesWithoutWorkRef,
@@ -163,7 +163,7 @@ const printSummary = (collection, r) => {
     ["missing metadata fields", r.missingFields],
     ["corrupt field values", r.corruptFields],
     ...(collection.type === "games"
-      ? [["duration but no HowLongToBeat link", r.gamesMissingHltbLink]]
+      ? [["playtime with nothing to link it to", r.gamesMissingPlaytimeLink]]
       : []),
     ["duplicate works sharing an apiRef", r.duplicateWorks],
     ["works no entry points at", r.orphanWorks],

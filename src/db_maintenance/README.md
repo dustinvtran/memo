@@ -18,9 +18,9 @@ Run the scripts from this folder, so that `dotenv` picks up the `.env`.
 
 `audit_database.js` is read-only, needs no API keys, and reports every
 inconsistency it can find: works that can't be refreshed because they
-have no usable apiRef, missing or corrupt metadata fields, games that
-have a duration but no HowLongToBeat link, duplicate works sharing an
-apiRef, orphaned works, and entries with a missing or dangling `workRef`.
+have no usable apiRef, missing or corrupt metadata fields, games whose
+playtime has nothing to link it to, duplicate works sharing an apiRef,
+orphaned works, and entries with a missing or dangling `workRef`.
 
 ```
 node audit_database.js
@@ -52,7 +52,42 @@ Notes on its behaviour:
   survives even if the API stops reporting it.
 - Each refreshed work gets a `metadataUpdatedDate`, so an interrupted run
   can be resumed cheaply and periodic refreshes skip recent work.
+- A stored `duration` is only refreshed by the source that wrote it, which
+  `durationSource` records. IGDB may update a playtime it supplied, but it
+  never writes over a HowLongToBeat one. See "Playtimes" below.
 - Duplicate works are reported, never merged — that's `dedupe_works.js`.
+
+## Playtimes
+
+`backfill_game_playtimes.js` fills in the games that have no playtime, from
+IGDB's `/game_time_to_beats` endpoint. It is a **dry run unless you pass
+`--apply`**, and it backs the `games` collection up before writing.
+
+```
+node backfill_game_playtimes.js
+node backfill_game_playtimes.js --apply
+```
+
+Flags: `--limit=N`, `--json=path`, `--backup-dir=path`.
+
+It looks every game up in batches of 500 ids, so the whole library costs
+three requests rather than one per game, and it reports how many games have
+a playtime before and after.
+
+- **It never overwrites a playtime that is already there.** IGDB's times rest
+  on a median of three submissions; the ones already stored came from far
+  larger HowLongToBeat samples, and they measure a different thing — IGDB's
+  `normally` runs about 1.36x HowLongToBeat's Main Story.
+- Everything it writes is tagged `durationSource: "igdb"`. No
+  `durationSource` means the playtime predates the field and came from
+  HowLongToBeat. The two fields are written together or not at all, so the
+  playtime column can tell them apart and link each to where it came from.
+- A stored `duration` of `0` counts as no playtime: the column renders it as
+  `-` either way, so filling it takes nothing away from anyone.
+- It only writes to `games`, so entry overrides cannot be touched, and it
+  re-reads what it wrote to check the counts before it exits.
+
+Why IGDB and not HowLongToBeat: [../../docs/API_choices.md](../../docs/API_choices.md).
 
 ## Collapsing duplicate works
 
@@ -150,10 +185,10 @@ Useful flags: `--dir=path`, `--from=name|path`, `--only=a,b`, `--prune`,
 
 ## Tests
 
-The parts that decide what to write (`work_metadata_merge.js`), what to
-delete (`work_dedupe_plan.js`) and which snapshots a retention policy keeps
-(`backup_plan.js`) are pure and dependency-free, and are covered by
-`node --test`:
+The parts that decide what to write (`work_metadata_merge.js`,
+`game_playtime_plan.js`), what to delete (`work_dedupe_plan.js`) and which
+snapshots a retention policy keeps (`backup_plan.js`) are pure and
+dependency-free, and are covered by `node --test`:
 
 ```
 npm test
@@ -167,11 +202,18 @@ in a module that can be tested without a database or an API key.
 We migrated from FaunaDB to MongoDB Atlas on 2022-10-10. The scripts that
 use `faunadb` / `./utils.js` predate that migration and no longer run.
 
-Two conditions in the data that `backfill_work_metadata.js` repairs:
+`backfill_work_metadata.js` repairs books whose `publishers` is an empty
+object rather than a list of strings, left by an un-awaited Promise in
+`mongodb_add_missing_book_publishers.js`.
 
-- Games carrying a `duration` with no `hltb__` apiRef and no HowLongToBeat
-  `externalUrls` entry, so the playtime has nothing to link to.
-- Books whose `publishers` is an empty object rather than a list of strings.
+Games added between the `howlongtobeat` package's silent death and
+2026-08-11 have no playtime at all; `backfill_game_playtimes.js` fills those.
+`mongodb_add_missing_durations.js` did the same job through that package and
+went with it.
+
+Games carrying a `duration` with no HowLongToBeat link are reported by the
+audit and left alone: no API can add one now, and their playtimes are worth
+more than IGDB's replacements would be.
 
 ## Taking a dump with the Mongo tools
 

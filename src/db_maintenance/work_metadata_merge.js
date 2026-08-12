@@ -46,16 +46,25 @@ const corruptFieldsOf = (collection, work) => {
 };
 
 /**
- * A game that has a duration but no HowLongToBeat ref or link: the playtime
- * column has a number to show and nothing to link it to.
+ * A game whose playtime column has a number to show and nothing to link it
+ * to. This mirrors `toPlaytimeUrl` in
+ * ../frontend/_includes/js/utils/columns.js: an IGDB-sourced duration links
+ * to the IGDB page it came from, anything else links to HowLongToBeat.
+ *
+ * Reported by the audit, but deliberately *not* part of `hasGaps` — no API
+ * can fix it any more. HowLongToBeat's is gone, so a game whose duration
+ * predates IGDB will never gain a link, and re-running the adapter at it
+ * forever would only waste the call.
  */
-const isMissingHltbLink = (collection, work) => {
+const isMissingPlaytimeLink = (collection, work) => {
   if (collection.type !== "games" || isEmptyValue(work.duration)) return false;
-  const hasRef = Boolean(findApiRef(work.apiRefs, "hltb"));
+  const source = work.durationSource === "igdb" ? "igdb" : "hltb";
   const hasUrl = (Array.isArray(work.externalUrls) ? work.externalUrls : []).some(
-    (url) => url?.name === "hltb"
+    (url) => url?.name === source
   );
-  return !hasRef || !hasUrl;
+  return source === "igdb"
+    ? !hasUrl
+    : !hasUrl && !findApiRef(work.apiRefs, "hltb");
 };
 
 /** True when a work is worth spending an API call on. */
@@ -63,8 +72,7 @@ const hasGaps = (collection, work) =>
   expectedFields(collection).some((field) => isEmptyValue(work[field])) ||
   corruptFieldsOf(collection, work).length > 0 ||
   (Array.isArray(work.apiRefs) &&
-    work.apiRefs.some((ref) => parseApiRef(ref)?.flat === false)) ||
-  isMissingHltbLink(collection, work);
+    work.apiRefs.some((ref) => parseApiRef(ref)?.flat === false));
 
 /**
  * Builds the `$set` payload for one work. Rules:
@@ -72,6 +80,8 @@ const hasGaps = (collection, work) =>
  *   - apiRefs and externalUrls are unioned, so a ref we already know about
  *     survives even when the API stops returning it
  *   - with `missingOnly`, usable existing values are left alone
+ *   - a stored duration is only ever refreshed by the source that wrote it
+ *   - `durationSource` only travels with a `duration`
  *
  * @type {(collection: any, work: any, fresh: any, options?: { missingOnly?: boolean }) => { updates: any, notes: string[] }}
  */
@@ -81,6 +91,9 @@ const mergeWork = (collection, work, fresh, { missingOnly = false } = {}) => {
 
   for (const [field, freshValue] of Object.entries(fresh)) {
     if (field === "entryType") continue;
+    // Handled after the loop, where it can be tied to the duration it
+    // describes without depending on which key the adapter listed first.
+    if (field === "durationSource") continue;
     if (isEmptyValue(freshValue)) continue;
 
     const currentValue = work[field];
@@ -97,6 +110,28 @@ const mergeWork = (collection, work, fresh, { missingOnly = false } = {}) => {
       continue;
     }
 
+    // A playtime already on the site is left where it is unless the source
+    // offering a new one is the source that put it there. IGDB's times come
+    // from a median of three submissions and HowLongToBeat's from far more,
+    // so replacing one with the other would move numbers people already read,
+    // for the worse. Types whose duration never carried a source (a film's
+    // runtime, a book's page count) compare undefined to undefined and
+    // refresh as they always did.
+    if (
+      field === "duration" &&
+      !isEmptyValue(currentValue) &&
+      work.durationSource !== fresh.durationSource
+    ) {
+      if (!missingOnly) {
+        notes.push(
+          `kept the stored duration ${currentValue} (${
+            work.durationSource ?? "source unrecorded"
+          }); ${fresh.durationSource ?? "the API"} offered ${freshValue}`
+        );
+      }
+      continue;
+    }
+
     const usable =
       !isEmptyValue(currentValue) &&
       !isCorruptField(collection, field, currentValue);
@@ -110,6 +145,14 @@ const mergeWork = (collection, work, fresh, { missingOnly = false } = {}) => {
     }
 
     updates[field] = freshValue;
+  }
+
+  // Provenance describes the duration stored beside it, so it is written with
+  // one and never on its own. Alone it would claim a playtime that came from
+  // HowLongToBeat years ago was measured by whoever the adapter asks today —
+  // exactly the confusion recording provenance is meant to end.
+  if ("duration" in updates && !isEmptyValue(fresh.durationSource)) {
+    updates.durationSource = fresh.durationSource;
   }
 
   if (work.entryType !== collection.entryType) {
@@ -164,7 +207,7 @@ module.exports = {
   expectedFields,
   isCorruptField,
   corruptFieldsOf,
-  isMissingHltbLink,
+  isMissingPlaytimeLink,
   hasGaps,
   mergeWork,
   mergeApiRefs,

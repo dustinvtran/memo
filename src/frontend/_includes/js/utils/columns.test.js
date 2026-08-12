@@ -67,6 +67,48 @@ test("a user's duration override still wins over the cached metadata", () => {
   );
 });
 
+test("an IGDB-sourced playtime links to the IGDB page it came from", () => {
+  assert.equal(
+    playtime({
+      duration: 600,
+      durationSource: "igdb",
+      apiRefs: ["igdb__14593"],
+      externalUrls: [{ name: "igdb", url: "https://www.igdb.com/games/hk" }],
+    }),
+    '<a href="https://www.igdb.com/games/hk">10h</a>'
+  );
+});
+
+test("an IGDB-sourced playtime does not borrow a HowLongToBeat link", () => {
+  // The hltb page is still worth linking to from the title, but it is not
+  // where this number came from, and the two disagree by ~10%.
+  assert.equal(
+    playtime({
+      duration: 600,
+      durationSource: "igdb",
+      apiRefs: ["igdb__14593", "hltb__26286"],
+      externalUrls: [{ name: "hltb", url: "https://howlongtobeat.com/game?id=26286" }],
+    }),
+    "10h"
+  );
+});
+
+test("a playtime with no recorded source still links to HowLongToBeat", () => {
+  // 775 games were cached before provenance was recorded; theirs came from
+  // HowLongToBeat, and their links are unaffected by any of this.
+  assert.equal(
+    playtime({ duration: 600, apiRefs: ["igdb__1", "hltb__555"] }),
+    '<a href="https://howlongtobeat.com/game?id=555">10h</a>'
+  );
+});
+
+test("an IGDB-sourced playtime with no IGDB url is plain text", () => {
+  assert.equal(
+    playtime({ duration: 600, durationSource: "igdb", apiRefs: ["igdb__14593"] }),
+    "10h"
+  );
+});
+
 test("a placeholder hltb ref renders no link at all", () => {
   // 27 games in the database carry `hltb__N/A`; linking to
   // howlongtobeat.com/game?id=N/A would be a dead link on every one of them.
