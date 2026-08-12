@@ -13,6 +13,7 @@ const { ResultAsync } = require('neverthrow')
 const errors = require('../../errors')
 const { match } = require('ts-pattern')
 const { throwIt } = require('../../general')
+const { retrying, describeFailure, statusOf } = require('../retry')
 
 const { TMDB_API_KEY } = process.env
 
@@ -20,7 +21,7 @@ const tmdbClient = new tmdb(TMDB_API_KEY ?? throwIt('TMDB_API_KEY is not set.'))
 
 /** @type SearchFunction */
 const search = (titleSearch) => ResultAsync.fromPromise(
-   tmdbClient.search.TVShows({ query: { query: titleSearch } })
+  retrying(() => tmdbClient.search.TVShows({ query: { query: titleSearch } }))
     .then(({ data }) =>
       data.results.map((result) => ({
         title: result.name,
@@ -36,10 +37,10 @@ const search = (titleSearch) => ResultAsync.fromPromise(
 
 /** @type TVShowRetrieveFunction */
 const retrieve = (ref) => ResultAsync.fromPromise(
-  Promise.all([
+  retrying(() => Promise.all([
     tmdbClient.tv.getDetails({ pathParameters: { tv_id: ref } }),
     tmdbClient.tv.getCredits({ pathParameters: { tv_id: ref } })
-  ])
+  ]))
     .then(([{ data }, { data: credits }]) => ({
       entryType: 'TVShow',
       originalTitle: data.original_name,
@@ -73,12 +74,17 @@ module.exports = {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-/** @type {(err: any) => Error} */
-const toError = (err) => match(err.errorCode)
+/**
+ * `statusOf` rather than `err.errorCode`, because node-themoviedb only wraps
+ * the statuses it has a class for and throws `got`'s own error through for
+ * the rest — including the 5xx that `retrying` has just given up on.
+ * @type {(err: any) => Error}
+ */
+const toError = (err) => match(statusOf(err))
   .with(404, () => errors.notFound('tmdb'))
   .with(401, () => errors.unauthorized('tmdb'))
   .with(408, () => errors.internal('tmdb timed out'))
   .otherwise(() => {
-    console.log(err)
-    return errors.internal(`unknown tmdb error: ${JSON.stringify(err)}`)
+    console.error(`tmdb failed: ${describeFailure(err)}`)
+    return errors.internal(`tmdb failed (${describeFailure(err)})`)
   })
