@@ -7,7 +7,7 @@
  * dry run unless you pass --apply, it backs up both the work and the entry
  * collection first, and it only ever groups works that share an API
  * identifier AND agree about the title. Which document survives and what gets
- * merged into it is decided by ./work_dedupe_plan.js, which is unit tested.
+ * merged into it is decided by ../work_dedupe_plan.js, which is unit tested.
  *
  * The title check matters: sharing an apiRef does not mean being the same
  * work. "Fargo - Season 1" and "Fargo - Season 2" sit under one show id, five
@@ -20,12 +20,12 @@
  * then delete the duplicates. If the run dies half way, re-running converges
  * on the same survivor.
  *
- * Environment (.env in this folder): MONGODB_URL. No API keys needed.
+ * Environment (../.env): MONGODB_URL. No API keys needed.
  *
  * Usage:
- *   node dedupe_works.js
- *   node dedupe_works.js --only=books
- *   node dedupe_works.js --only=books --apply
+ *   node scripts/dedupe_works.js
+ *   node scripts/dedupe_works.js --only=books
+ *   node scripts/dedupe_works.js --only=books --apply
  *
  * Flags:
  *   --apply             actually write (default: dry run)
@@ -34,9 +34,11 @@
  *   --merge-title-mismatches
  *                       also merge groups whose titles disagree (dangerous)
  *   --json=path         write a machine-readable report
- *   --backup-dir=path   where to put backups (default ./backups)
+ *   --backup-dir=path   where to put backups (default ../backups)
  */
-require("dotenv").config();
+require("dotenv").config({
+  path: require("path").join(__dirname, "..", ".env"),
+});
 const fs = require("fs");
 const path = require("path");
 const { MongoClient, ServerApiVersion } = require("mongodb");
@@ -44,8 +46,8 @@ const {
   COLLECTIONS,
   selectCollections,
   parseArgs,
-} = require("./work_collections");
-const { planDedupe } = require("./work_dedupe_plan");
+} = require("../work_collections");
+const { planDedupe } = require("../work_dedupe_plan");
 
 const args = parseArgs(process.argv);
 
@@ -53,7 +55,7 @@ const options = {
   apply: args.apply === true,
   keepDuplicates: args["keep-duplicates"] === true,
   mergeTitleMismatches: args["merge-title-mismatches"] === true,
-  backupDir: String(args["backup-dir"] ?? path.join(__dirname, "backups")),
+  backupDir: String(args["backup-dir"] ?? path.join(__dirname, "..", "backups")),
 };
 
 let client;

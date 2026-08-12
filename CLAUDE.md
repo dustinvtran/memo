@@ -45,8 +45,13 @@ local path **with the working directory still in the Drive copy**, so
 
 ```
 cd /path/on/drive/src/db_maintenance
-node C:/local/copy/src/db_maintenance/some_script.js
+node C:/local/copy/src/db_maintenance/scripts/some_script.js
 ```
+
+Note that a script run from the local copy reads the local copy's `.env` and
+writes to the local copy's `backups`, because both are resolved from the
+script's own location. Copy the `.env` across, or pass `--out` / `--dir` /
+`--backup-dir` explicitly, if you want either to come from Drive.
 
 Same trick for regenerating `package-lock.json`: run
 `npm install --package-lock-only` on the local copy and copy the lockfile
@@ -55,19 +60,22 @@ back.
 ## Credentials
 
 `src/db_maintenance/.env` holds `MONGODB_URL`, `TWITCH_CLIENT_ID`,
-`TWITCH_CLIENT_SECRET`, `TMDB_API_KEY`, `GOOGLE_API_KEY`. `dotenv` reads from
-the working directory, so run maintenance scripts from that folder. Never
-print the values, and never copy the file anywhere.
+`TWITCH_CLIENT_SECRET`, `TMDB_API_KEY`, `GOOGLE_API_KEY`. The scripts live a
+directory below it, in `src/db_maintenance/scripts/`, and each points
+`dotenv` at `../.env` relative to itself, so the working directory you run
+from doesn't matter. Never print the values, and never copy the file
+anywhere.
 
 ## Writing to the database
 
-`src/db_maintenance/` operates on production data with real users' entries.
-In order:
+`src/db_maintenance/scripts/` operates on production data with real users'
+entries. In order:
 
-1. **Snapshot first** with `backup_database.js`, and verify it — manifest
-   counts, file counts and live `countDocuments()` should agree across every
-   collection. `restore_backup.js --from=<snapshot> --only=<collection>`
-   matches on `_id` only.
+1. **Snapshot first** with `scripts/backup_database.js`, and verify it —
+   manifest counts, file counts and live `countDocuments()` should agree
+   across every collection.
+   `scripts/restore_backup.js --from=<snapshot> --only=<collection>` matches
+   on `_id` only.
 2. **Dry run, and read the output.** Every script here is a dry run unless
    given `--apply`. Keep it that way in new ones.
 3. **Ask a human before the first `--apply`**, showing them the dry run.
@@ -84,7 +92,9 @@ cannot clobber one.
 
 The suite runs with **no install, no database and no API keys**, and that is
 worth protecting: put the logic that decides what gets written in a pure,
-dependency-free module and the I/O in the script that calls it. See
+dependency-free module and the I/O in the script that calls it. In
+`src/db_maintenance` that split is the folder layout — the modules and their
+tests sit at the top, the scripts in `scripts/`. See
 `work_metadata_merge.js`, `game_playtime_plan.js`, `work_dedupe_plan.js`,
 `backup_plan.js` — and their tests.
 

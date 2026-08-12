@@ -1,9 +1,21 @@
 # Maintaining the database
 
+## What is where
+
+`scripts/` holds the things you run. Everything beside this README is a
+library: the pure modules that decide what a script should write, and their
+tests.
+
+The commands below are written from this folder, as
+`node scripts/audit_database.js`, but nothing depends on that. Each script
+resolves the `.env` and the backups directory from its own location, so it
+behaves the same run from `scripts/`, from here, or by absolute path from
+anywhere else.
+
 ## You need an .env file
 
 In order to use the scripts in this folder, you need
-to create a `.env` file in this folder containing
+to create a `.env` file in this folder — not in `scripts/` — containing
 `MONGODB_URL=...`
 
 Scripts that talk to the external metadata APIs also need
@@ -12,29 +24,27 @@ the same keys the deployed API uses:
 `TWITCH_CLIENT_SECRET` (games, via IGDB) and, optionally but
 recommended, `GOOGLE_API_KEY` (books).
 
-Run the scripts from this folder, so that `dotenv` picks up the `.env`.
-
 ## Auditing and backfilling metadata
 
-`audit_database.js` is read-only, needs no API keys, and reports every
+`scripts/audit_database.js` is read-only, needs no API keys, and reports every
 inconsistency it can find: works that can't be refreshed because they
 have no usable apiRef, missing or corrupt metadata fields, games whose
 playtime has nothing to link it to, duplicate works sharing an apiRef,
 orphaned works, and entries with a missing or dangling `workRef`.
 
 ```
-node audit_database.js
-node audit_database.js --only=games,books --json=./audit.json
+node scripts/audit_database.js
+node scripts/audit_database.js --only=games,books --json=./audit.json
 ```
 
-`backfill_work_metadata.js` re-runs the API adapters for cached works and
-fills in what's missing / refreshes what's stale. It is a **dry run unless
-you pass `--apply`**, and it takes a JSON backup of each collection before
-writing to it.
+`scripts/backfill_work_metadata.js` re-runs the API adapters for cached works
+and fills in what's missing / refreshes what's stale. It is a **dry run
+unless you pass `--apply`**, and it takes a JSON backup of each collection
+before writing to it.
 
 ```
-node backfill_work_metadata.js --only=games --missing-only
-node backfill_work_metadata.js --only=games --missing-only --apply
+node scripts/backfill_work_metadata.js --only=games --missing-only
+node scripts/backfill_work_metadata.js --only=games --missing-only --apply
 ```
 
 Useful flags: `--only=films,tv,games,books`, `--missing-only` (only touch
@@ -55,17 +65,19 @@ Notes on its behaviour:
 - A stored `duration` is only refreshed by the source that wrote it, which
   `durationSource` records. IGDB may update a playtime it supplied, but it
   never writes over a HowLongToBeat one. See "Playtimes" below.
-- Duplicate works are reported, never merged — that's `dedupe_works.js`.
+- Duplicate works are reported, never merged — that's
+  `scripts/dedupe_works.js`.
 
 ## Playtimes
 
-`backfill_game_playtimes.js` fills in the games that have no playtime, from
-IGDB's `/game_time_to_beats` endpoint. It is a **dry run unless you pass
-`--apply`**, and it backs the `games` collection up before writing.
+`scripts/backfill_game_playtimes.js` fills in the games that have no
+playtime, from IGDB's `/game_time_to_beats` endpoint. It is a **dry run
+unless you pass `--apply`**, and it backs the `games` collection up before
+writing.
 
 ```
-node backfill_game_playtimes.js
-node backfill_game_playtimes.js --apply
+node scripts/backfill_game_playtimes.js
+node scripts/backfill_game_playtimes.js --apply
 ```
 
 Flags: `--limit=N`, `--json=path`, `--backup-dir=path`.
@@ -94,9 +106,9 @@ Why IGDB and not HowLongToBeat: [../../docs/API_choices.md](../../docs/API_choic
 The work collections hold multiple documents describing the same work — in
 some cases one per entry that referenced it.
 
-`dedupe_works.js` merges each group of duplicates into the most complete
-document, repoints the entries' `workRef` at it, and deletes the leftovers.
-It is a **dry run unless you pass `--apply`**.
+`scripts/dedupe_works.js` merges each group of duplicates into the most
+complete document, repoints the entries' `workRef` at it, and deletes the
+leftovers. It is a **dry run unless you pass `--apply`**.
 
 A group is only merged when its documents share an API identifier **and**
 agree about the title. Sharing an apiRef does not mean being the same work:
@@ -107,36 +119,39 @@ Code’s. Groups that disagree are printed and skipped —
 of them first.
 
 ```
-node dedupe_works.js --only=books
-node dedupe_works.js --only=books --apply
+node scripts/dedupe_works.js --only=books
+node scripts/dedupe_works.js --only=books --apply
 ```
 
 Useful flags: `--only=...`, `--keep-duplicates` (merge and repoint but delete
 nothing), `--merge-title-mismatches`, `--json=path`, `--backup-dir=path`. Both
 the work and the entry collection are backed up before anything is written.
 
-Run it before a full `backfill_work_metadata.js`, so you aren't paying for an
-API call per duplicate.
+Run it before a full `scripts/backfill_work_metadata.js`, so you aren't
+paying for an API call per duplicate.
 
 ## Backing up the database, with history
 
-`backup_database.js` writes a **snapshot**: a timestamped directory holding
-one JSON file per collection plus a `manifest.json` with the document counts
-and a SHA-256 of each file. Nothing is ever overwritten, so running it
+`scripts/backup_database.js` writes a **snapshot**: a timestamped directory
+holding one JSON file per collection plus a `manifest.json` with the document
+counts and a SHA-256 of each file. Nothing is ever overwritten, so running it
 regularly builds up a history you can go back through — which is the point,
 since an accidental rewrite is only noticed some time after it happened.
 
 ```
-node backup_database.js            # take a snapshot, then prune old ones
-node backup_database.js --list     # what snapshots do we have?
-node backup_database.js --prune-only
+node scripts/backup_database.js         # take a snapshot, then prune old ones
+node scripts/backup_database.js --list  # what snapshots do we have?
+node scripts/backup_database.js --prune-only
 ```
 
 Every collection in the database is dumped, discovered at runtime, so a
 collection added later is included without anyone remembering to add it to a
 list.
 
-Snapshots live in `./backups` (git-ignored) unless you pass `--out=path`.
+Snapshots live in `src/db_maintenance/backups` (git-ignored) unless you pass
+`--out=path`. That default is resolved from the script's own location, not
+from the working directory, so a snapshot taken before this folder was
+reorganised is still the one a restore finds.
 
 **Retention.** After each snapshot, the older ones are pruned to: every
 snapshot from the last 14 days, then the newest of each of the 8 most recent
@@ -158,15 +173,15 @@ repo can be downloaded by anyone.
 
 ## Restoring from a snapshot
 
-`restore_backup.js` restores documents by `_id` from a snapshot. It is a **dry
-run unless you pass `--apply`**, it refuses to restore a snapshot whose files
-don't match its manifest, and it takes a fresh snapshot of the current data
-before writing anything.
+`scripts/restore_backup.js` restores documents by `_id` from a snapshot. It
+is a **dry run unless you pass `--apply`**, it refuses to restore a snapshot
+whose files don't match its manifest, and it takes a fresh snapshot of the
+current data before writing anything.
 
 ```
-node restore_backup.js                                   # dry run, newest snapshot
-node restore_backup.js --only=bookEntries,bookReviews
-node restore_backup.js --from=snapshot-2024-06-30T04-17-00-000Z --apply
+node scripts/restore_backup.js                           # dry run, newest snapshot
+node scripts/restore_backup.js --only=bookEntries,bookReviews
+node scripts/restore_backup.js --from=snapshot-2024-06-30T04-17-00-000Z --apply
 ```
 
 A document in the snapshot is written over whatever the database holds under
@@ -194,22 +209,24 @@ dependency-free, and are covered by `node --test`:
 npm test
 ```
 
-Keep it that way: the scripts should hold the I/O, and the rules should stay
-in a module that can be tested without a database or an API key.
+Keep it that way, and the folder split holds it in place: `scripts/` holds
+the I/O, and the rules stay in a module up here that can be tested without a
+database or an API key.
 
 ## History
 
 We migrated from FaunaDB to MongoDB Atlas on 2022-10-10. The scripts that
-drove the FaunaDB era spoke FQL through a `db` export that no longer exists,
-so they threw the moment they were loaded. They have been deleted; `git log`
+drove that era spoke FQL through a `db` export `src/api/utils/db/db.js`
+stopped providing, so they threw on their first query — which, each being a
+top-level IIFE, was as soon as they ran. They have been deleted; `git log`
 still has them if you need to know what one of them did.
 
-`backfill_work_metadata.js` repairs books whose `publishers` is an empty
-object rather than a list of strings, left by an un-awaited Promise in
+`scripts/backfill_work_metadata.js` repairs books whose `publishers` is an
+empty object rather than a list of strings, left by an un-awaited Promise in
 `mongodb_add_missing_book_publishers.js`.
 
-Games added between the `howlongtobeat` package's silent death and
-2026-08-11 have no playtime at all; `backfill_game_playtimes.js` fills those.
+Games added between the `howlongtobeat` package's silent death and 2026-08-11
+have no playtime at all; `scripts/backfill_game_playtimes.js` fills those.
 `mongodb_add_missing_durations.js` did the same job through that package and
 went with it.
 
@@ -219,8 +236,9 @@ more than IGDB's replacements would be.
 
 ## Taking a dump with the Mongo tools
 
-`backup_database.js` is enough for our purposes and needs nothing installed,
-but `mongodump` produces a BSON dump that `mongorestore` understands:
+`scripts/backup_database.js` is enough for our purposes and needs nothing
+installed, but `mongodump` produces a BSON dump that `mongorestore`
+understands:
 
 ```
 mongodump --uri="MONGODB_URL_GOES_HERE" --out=./mongobackup

@@ -7,11 +7,13 @@
  * it needs no external API keys — only MONGODB_URL.
  *
  * Usage:
- *   node audit_database.js
- *   node audit_database.js --only=games,books
- *   node audit_database.js --json=./audit.json
+ *   node scripts/audit_database.js
+ *   node scripts/audit_database.js --only=games,books
+ *   node scripts/audit_database.js --json=./audit.json
  */
-require("dotenv").config();
+require("dotenv").config({
+  path: require("path").join(__dirname, "..", ".env"),
+});
 const fs = require("fs");
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const {
@@ -20,13 +22,13 @@ const {
   isEmptyValue,
   selectCollections,
   parseArgs,
-} = require("./work_collections");
+} = require("../work_collections");
 const {
   expectedFields,
   corruptFieldsOf,
   isMissingPlaytimeLink,
-} = require("./work_metadata_merge");
-const { groupWorksByApiRef } = require("./work_dedupe_plan");
+} = require("../work_metadata_merge");
+const { groupWorksByApiRef } = require("../work_dedupe_plan");
 
 const args = parseArgs(process.argv);
 

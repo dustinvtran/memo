@@ -3,7 +3,7 @@
  * retention policy keeps. Pure and dependency-free, so it can be unit tested
  * without a database or a filesystem — see backup_plan.test.js.
  *
- * The I/O lives in backup_database.js and restore_backup.js.
+ * The I/O lives in scripts/backup_database.js and scripts/restore_backup.js.
  */
 
 /** Snapshot directories are named so that a lexical sort is a chronological
