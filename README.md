@@ -63,6 +63,38 @@ there is a history of backups rather than one overwritten dump;
 `restore_backup.js` puts a snapshot (or one collection of it) back. See
 [src/db_maintenance/README.md](src/db_maintenance/README.md).
 
+**Reading a list without a browser.** The lists are drawn client-side, so
+fetching `https://nil.moe/films/nil` and reading the HTML gets you an empty
+`<div id="site">` — no titles, no scores, no notes. That is a problem for
+anything that isn't a browser, a language model above all. The export
+endpoint is the same lists as data:
+
+```
+GET /api/export/:type/:username      # one list: films, tv, games or books
+GET /api/export/:username            # all four at once
+?format=md                           # Markdown instead of JSON
+?limit=200                           # the N most recently updated, per list
+```
+
+Every entry comes with the work's metadata (with the user's overrides
+applied, as the page shows it), the score, the dates and the long note.
+`workRef`, `userId`, `apiRefs` and the raw override object stay out of it;
+durations are in minutes and dates are `YYYY-MM-DD`, so nothing has to be
+decoded. It is public, exposing exactly what the rendered page already does —
+drafts and edit history stay owner-only.
+
+**A Netlify function may return 6 MB.** All four of `nil`'s lists are already
+over 4 MB and the notes are what grow, so the all-in-one url is the one that
+will hit the ceiling first. Over 5 MB it answers `413` naming the per-type
+urls and `?limit=`, rather than letting Netlify return a 502 with nothing in
+it. One list at a time is the shape that keeps working.
+
+The `<noscript>` block in `layouts/base.njk` is the only part of a page that
+is in its source, and it points at these urls, so a reader that fetches
+`/films/nil` and finds nothing is told where to look. `_redirects` maps
+`/api/*` onto `/.netlify/functions/*`, which is what makes every url in this
+README real rather than aspirational.
+
 **Entry history and drafts.** Saving an entry stores the version it replaced
 in the `entryRevisions` collection, and the edit form autosaves what is in it
 to the same collection while it is open. The edit modal grows a *History*

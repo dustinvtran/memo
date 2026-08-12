@@ -1,2 +1,9 @@
 /img/*	/img/:splat	200!
+
+# The functions answer at `/.netlify/functions/*`, which is not a url anyone
+# would type or hand to a language model. `/api/*` is the one the README and
+# the export endpoint advertise. `getUrlSegments` strips either prefix, so it
+# doesn't matter which of the two Netlify reports as the request path.
+/api/*	/.netlify/functions/:splat	200
+
 /*	/index.html	200!

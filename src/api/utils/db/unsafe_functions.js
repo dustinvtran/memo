@@ -27,6 +27,17 @@ const _findAllInCollection = (collection) =>
 const _findAllByField = (collection, field, value) =>
   findAll(collection, { [field]: value })
 
+/**
+ * One query for many values of the same field, rather than one query per
+ * value. A whole list's reviews are 400-odd `entryRef`s, and 400 round trips
+ * is the difference between a response and a function timeout.
+ * @type {(collection: ValidCollection, field: string, values: any[]) => Promise<object>}
+ */
+const _findAllByFieldIn = (collection, field, values) =>
+  values.length === 0
+    ? Promise.resolve([])
+    : findAll(collection, { [field]: { $in: values } })
+
 /** @type {(collection: ValidCollection, ref: string, update: any) => Promise<object>} */
 const _updateOneByRef = (collection, ref, update) =>
   mongo((db) => db
@@ -110,6 +121,7 @@ module.exports = {
   _findOneByRef,
   _findAllInCollection,
   _findAllByField,
+  _findAllByFieldIn,
   _findAllUserEntriesWithMetadata,
   _updateOneByRef,
   _create,

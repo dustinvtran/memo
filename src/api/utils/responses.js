@@ -33,6 +33,7 @@ module.exports = {
   badRequest: response(400),
   unauthorized: response(401),
   notFound: response(404),
+  payloadTooLarge: response(413),
   internalError: response(500),
   fromError,
 }
