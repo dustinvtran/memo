@@ -2,6 +2,7 @@ const { html, css } = Utils
 const { initComponent, WithRemoteData } = Components
 const { statuses, filmStatuses } = Tables
 const { statusToTitle } = Conversions
+const { initialReviewText } = ReviewTemplate
 
 const PersonalFields = (data, type) => {
   const isEdit = data?.status ?? false
@@ -105,9 +106,9 @@ const PersonalFields = (data, type) => {
           isEdit
             ? WithRemoteData({
                 remoteData: Netlify.getReview(type, data.dbRef),
-                component: CommentsField,
+                component: (review) => CommentsField(type, review),
               })
-            : CommentsField()
+            : CommentsField(type)
           )}
       </div>
     `,
@@ -158,11 +159,11 @@ Components.List.PersonalFields = PersonalFields
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const CommentsField = (review) => initComponent({
+const CommentsField = (type, review) => initComponent({
   content: () => html`
     <div style="margin: 15px 0">
       <label for="review">Comments</label><br>
-      <textarea id="review" name="review" rows="19" cols="50">${review?.data?.text ?? ''}</textarea>
+      <textarea id="review" name="review" rows="19" cols="50">${initialReviewText(type, review?.data?.text)}</textarea>
     </div>
   `
 })
