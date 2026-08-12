@@ -92,9 +92,14 @@ const edit = () =>
     formatter: (_, row, i) => {
       // We use `onclick` and a global (window.xx) function instead of binding
       // an event, because bootstrap-table destroys the node and rebuilds it
-      // when changing displayed columns
+      // when changing displayed columns.
+      //
+      // The attribute names the row rather than holding it: an owner's list
+      // used to write a JSON copy of every entry — metadata, overrides and
+      // all — into the markup, which on a long list was more bytes of DOM
+      // than the visible table. `Rows.byRef` is filled in by `initFullTable`.
       return html`
-        <i id="edit-${row.status}-${i}" class="fas fa-edit edit-button" onclick='window.editEntry(${JSON.stringify(row).replace(/'/g, `&#39;`)})'></i>
+        <i id="edit-${row.status}-${i}" class="fas fa-edit edit-button" onclick="window.editEntry('${row.dbRef}')"></i>
       `
     },
     cellStyle: () => ({ css: { 'width': '20px' } }),
@@ -166,6 +171,11 @@ const publishers = () =>
 const authors = () =>
   col('Authors', 'commonMetadata.authors', sortableAndLinked('authors'))
 
+/** The rows on the page, by `dbRef`, for the handlers that only get an id. */
+Rows = {
+  byRef: {},
+}
+
 Columns = {
   title,
   status,
@@ -215,7 +225,12 @@ const titleFormatter = (_, row) => {
   const url = externalUrls?.[0]?.url || toWikipediaUrl(englishTranslatedTitle)
   const cover = imageUrl || '/img/mawaru.png'
   const anchorId = `entry-${row.dbRef}`
-  return `<span id="${anchorId}" class="title-with-cover"><img class="mini-thumb" src="${cover}"><a href="${url}">${label}</span>`
+  // Lazily: a list is one row per work and every row carries a cover, so a
+  // long one asked for a thousand full-size posters at once in order to draw
+  // them sixteen pixels wide. The browser now fetches the handful that are
+  // actually on screen. `.mini-thumb` fixes the size, so nothing shifts as
+  // the rest arrive.
+  return `<span id="${anchorId}" class="title-with-cover"><img class="mini-thumb" src="${cover}" loading="lazy" decoding="async" alt=""><a href="${url}">${label}</span>`
 }
 
 const englishTitleAndLastUpdatedFormatter = (_, row) => {

@@ -17,19 +17,29 @@
         {% include "css/main.css" %}
     </style>
 
+    {# The page cannot draw until every script below has been fetched and run,
+       so anything not needed to draw it carries `defer` and gets out of the
+       way. What is left is what the block of app code at the end of this head
+       reaches for while it is being parsed: jQuery, Ramda, and the libraries
+       the first render calls into. #}
     <!-- JavaScript -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/2.3.5/purify.min.js" integrity="sha512-GaomFB92Lot7wDqZgVgLMJwQhuVUEcPHP99xmWSVE4Kq54t1jDyH7mdKDsmN8jOMSjiQq8pf7Et+OM4ml/PVMA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
-    <script type="text/javascript" src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+    {# Only the profile page's charts and the entry form's date fields, both
+       of which are drawn long after the page is. #}
+    <script defer src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/ramda/0.25.0/ramda.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.24.0/axios.min.js"></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js" integrity="sha512-hzyXu3u+VDu/7vpPjRKFp9w33Idx7pWWNazPm+aCMRu26yZXFCby1gn1JxevVv3LDwnSbyKrvLo3JNdi4Qx1ww==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script type="text/javascript"
-       src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+    {# Straight to what `cdn.mathjax.org/mathjax/latest` has been a shim for
+       since 2017, so this is one request rather than two. It typesets
+       whatever is on the page when it loads, and at this point that is
+       nothing — `#site` is still empty — so nothing waits on it. #}
+    <script defer type="text/javascript"
+       src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
     </script>
 
     {# macro to include JS with its own const variable scope
