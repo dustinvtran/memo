@@ -214,17 +214,28 @@ const toDay = (timestamp) => {
  * Absent fields are left out rather than exported as nulls: a reader can tell
  * "this list has no genres" from "this entry has no genre" more easily when
  * the key simply isn't there.
+ *
+ * Empty strings inside the name lists count as absent too. A blank director
+ * is invisible on the page — it renders as an empty link — but `[""]` in the
+ * data reads as a director whose name is nothing, and `directors` on 538 TV
+ * shows is exactly that.
  * @type {(obj: object) => object}
  */
 const compact = (obj) =>
   Object.fromEntries(
-    Object.entries(obj).filter(
-      ([_field, value]) =>
-        value != null &&
-        value !== '' &&
-        !(Array.isArray(value) && value.length === 0)
-    )
+    Object.entries(obj)
+      .map(([field, value]) => [field, Array.isArray(value) ? withoutBlanks(value) : value])
+      .filter(
+        ([_field, value]) =>
+          value != null &&
+          value !== '' &&
+          !(Array.isArray(value) && value.length === 0)
+      )
   )
+
+/** @type {(values: any[]) => any[]} */
+const withoutBlanks = (values) =>
+  values.filter((value) => !(typeof value === 'string' && value.trim() === ''))
 
 /** @type {(entryType: string) => (a: object, b: object) => number} */
 const byStatusThenScoreThenTitle = (entryType) => (a, b) =>

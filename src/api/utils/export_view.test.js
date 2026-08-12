@@ -86,6 +86,18 @@ test('a duration of 0 is not a duration', () => {
   assert.ok(!('runtimeMinutes' in entry))
 })
 
+test('a blank name is not a name, and a list of nothing but blanks is no list', () => {
+  const entry = toExportEntry('tv', {
+    entry: { _id: 't1', status: 'InProgress' },
+    // What 538 of the real TV shows carry: a director field that is there but
+    // says nothing.
+    work: { directors: [''], actors: ['Javier Bardem', '  '] },
+  })
+
+  assert.ok(!('directors' in entry))
+  assert.deepEqual(entry.actors, ['Javier Bardem'])
+})
+
 test('an empty note is left out rather than exported as an empty string', () => {
   const entry = toExportEntry('films', { ...film, review: '' })
 
