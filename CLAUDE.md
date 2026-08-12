@@ -40,13 +40,21 @@ An install takes 10+ minutes and then doesn't work.
 
 Copy the repo to local disk (excluding `node_modules`, `.git`, `backups`
 and `.env`), `npm ci` there — about 9 seconds — and invoke scripts by their
-local path **with the working directory still in the Drive copy**, so
-`dotenv` reads the real `.env` and credentials never leave Drive:
+local path, pointing them back at the Drive copy's `.env` and `backups` so
+the credentials and the snapshots never leave Drive:
 
 ```
-cd /path/on/drive/src/db_maintenance
-node C:/local/copy/src/db_maintenance/some_script.js
+MEMO_ENV_FILE=/path/on/drive/src/db_maintenance/.env \
+  node C:/local/copy/src/db_maintenance/scripts/some_script.js \
+  --backup-dir=/path/on/drive/src/db_maintenance/backups
 ```
+
+The working directory no longer matters — a script resolves its `.env` from
+`src/db_maintenance/env.js` and its backups from its own location, so a local
+copy would otherwise quietly use the local copy's of each. `MEMO_ENV_FILE`
+exists for exactly this; **don't** copy the `.env` to local disk instead.
+`--out` / `--dir` do for the backup path what `--backup-dir` does above,
+depending on the script.
 
 Same trick for regenerating `package-lock.json`: run
 `npm install --package-lock-only` on the local copy and copy the lockfile
@@ -55,19 +63,26 @@ back.
 ## Credentials
 
 `src/db_maintenance/.env` holds `MONGODB_URL`, `TWITCH_CLIENT_ID`,
-`TWITCH_CLIENT_SECRET`, `TMDB_API_KEY`, `GOOGLE_API_KEY`. `dotenv` reads from
-the working directory, so run maintenance scripts from that folder. Never
-print the values, and never copy the file anywhere.
+`TWITCH_CLIENT_SECRET`, `TMDB_API_KEY`, `GOOGLE_API_KEY`. Never print the
+values, and never copy the file anywhere — if something can't see it from
+where it is, point it at the file with `MEMO_ENV_FILE` rather than moving
+the file to it.
+
+Loading it is `src/db_maintenance/env.js`'s job, and every script's first
+line is `require("../env")`. Don't call `dotenv` directly in a new script:
+a bare `config()` resolves against the working directory, which is how the
+scripts came to only work when run from one particular folder.
 
 ## Writing to the database
 
-`src/db_maintenance/` operates on production data with real users' entries.
-In order:
+`src/db_maintenance/scripts/` operates on production data with real users'
+entries. In order:
 
-1. **Snapshot first** with `backup_database.js`, and verify it — manifest
-   counts, file counts and live `countDocuments()` should agree across every
-   collection. `restore_backup.js --from=<snapshot> --only=<collection>`
-   matches on `_id` only.
+1. **Snapshot first** with `scripts/backup_database.js`, and verify it —
+   manifest counts, file counts and live `countDocuments()` should agree
+   across every collection.
+   `scripts/restore_backup.js --from=<snapshot> --only=<collection>` matches
+   on `_id` only.
 2. **Dry run, and read the output.** Every script here is a dry run unless
    given `--apply`. Keep it that way in new ones.
 3. **Ask a human before the first `--apply`**, showing them the dry run.
@@ -84,7 +99,9 @@ cannot clobber one.
 
 The suite runs with **no install, no database and no API keys**, and that is
 worth protecting: put the logic that decides what gets written in a pure,
-dependency-free module and the I/O in the script that calls it. See
+dependency-free module and the I/O in the script that calls it. In
+`src/db_maintenance` that split is the folder layout — the modules and their
+tests sit at the top, the scripts in `scripts/`. See
 `work_metadata_merge.js`, `game_playtime_plan.js`, `work_dedupe_plan.js`,
 `backup_plan.js` — and their tests.
 

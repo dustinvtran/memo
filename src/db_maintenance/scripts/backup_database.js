@@ -13,13 +13,13 @@
  * to a list here.
  *
  * Usage:
- *   node backup_database.js
- *   node backup_database.js --out=./backups --keep-days=30
- *   node backup_database.js --list
- *   node backup_database.js --prune-only
+ *   node scripts/backup_database.js
+ *   node scripts/backup_database.js --out=./backups --keep-days=30
+ *   node scripts/backup_database.js --list
+ *   node scripts/backup_database.js --prune-only
  *
  * Flags:
- *   --out=path          where snapshots live (default ./backups)
+ *   --out=path          where snapshots live (default ../backups)
  *   --only=a,b          only these collections (default: all of them)
  *   --keep-days=N       keep every snapshot from the last N days (default 14)
  *   --keep-weeks=N      then the newest of each of the last N weeks (default 8)
@@ -28,23 +28,23 @@
  *   --prune-only        apply the retention policy without taking a snapshot
  *   --list              list the snapshots already taken and exit
  */
-require("dotenv").config();
+require("../env");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { MongoClient, ServerApiVersion } = require("mongodb");
-const { parseArgs } = require("./work_collections");
+const { parseArgs } = require("../work_collections");
 const {
   DEFAULT_POLICY,
   snapshotDirName,
   parseSnapshotDate,
   planPruning,
-} = require("./backup_plan");
+} = require("../backup_plan");
 
 const MANIFEST_FILE = "manifest.json";
 
 const optionsFrom = (args) => ({
-  outDir: String(args.out ?? path.join(__dirname, "backups")),
+  outDir: String(args.out ?? path.join(__dirname, "..", "backups")),
   only:
     args.only === undefined || args.only === true
       ? undefined

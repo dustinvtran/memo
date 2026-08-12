@@ -14,12 +14,12 @@
  * overwritten or deleted, not rewinding the whole database.
  *
  * Usage:
- *   node restore_backup.js                                  # dry run, latest snapshot
- *   node restore_backup.js --only=bookEntries,bookReviews
- *   node restore_backup.js --from=snapshot-2024-06-30T04-17-00-000Z --apply
+ *   node scripts/restore_backup.js                          # dry run, latest snapshot
+ *   node scripts/restore_backup.js --only=bookEntries,bookReviews
+ *   node scripts/restore_backup.js --from=snapshot-2024-06-30T04-17-00-000Z --apply
  *
  * Flags:
- *   --dir=path          where snapshots live (default ./backups)
+ *   --dir=path          where snapshots live (default ../backups)
  *   --from=name|path    which snapshot to restore (default: the newest one)
  *   --only=a,b          only restore these collections
  *   --prune             also delete documents the snapshot doesn't have
@@ -27,10 +27,10 @@
  *   --no-safety-backup  don't snapshot the current database first
  *   --skip-verify       restore even if the snapshot fails its checksums
  */
-require("dotenv").config();
+require("../env");
 const fs = require("fs");
 const path = require("path");
-const { parseArgs } = require("./work_collections");
+const { parseArgs } = require("../work_collections");
 const {
   connect,
   writeSnapshot,
@@ -44,7 +44,7 @@ const BATCH_SIZE = 500;
 const main = async () => {
   const args = parseArgs(process.argv);
   const options = {
-    dir: String(args.dir ?? path.join(__dirname, "backups")),
+    dir: String(args.dir ?? path.join(__dirname, "..", "backups")),
     from: args.from === undefined || args.from === true ? undefined : String(args.from),
     only:
       args.only === undefined || args.only === true
@@ -171,7 +171,7 @@ const resolveSnapshot = ({ dir, from }) => {
   const names = listSnapshotDirs(dir);
   if (names.length === 0) {
     console.error(
-      `No snapshots in ${dir}. Take one with: node backup_database.js`
+      `No snapshots in ${dir}. Take one with: node scripts/backup_database.js`
     );
     process.exitCode = 1;
     return undefined;

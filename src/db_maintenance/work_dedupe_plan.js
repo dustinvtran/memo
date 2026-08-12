@@ -4,8 +4,8 @@
  * The work collections hold multiple documents describing the same work —
  * in some cases one per entry that referenced it.
  *
- * Pure and dependency-free: dedupe_works.js deletes documents based on what
- * this returns, so the decisions are unit tested
+ * Pure and dependency-free: scripts/dedupe_works.js deletes documents based
+ * on what this returns, so the decisions are unit tested
  * (./work_dedupe_plan.test.js) rather than discovered in production.
  */
 const { parseApiRef, isEmptyValue } = require("./work_collections");

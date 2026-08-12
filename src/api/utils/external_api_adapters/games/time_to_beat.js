@@ -2,9 +2,9 @@
  * @file Turning IGDB's `/game_time_to_beats` rows into a stored playtime.
  *
  * Pure and dependency-free on purpose: both the adapter (one game at a time)
- * and src/db_maintenance/backfill_game_playtimes.js (every game at once) map
- * playtimes through here, and the mapping is unit tested (./time_to_beat.test.js)
- * without needing credentials or a network.
+ * and src/db_maintenance/scripts/backfill_game_playtimes.js (every game at
+ * once) map playtimes through here, and the mapping is unit tested
+ * (./time_to_beat.test.js) without needing credentials or a network.
  *
  * The endpoint is plural. `/game_time_to_beat` and `/time_to_beat` both 404,
  * which makes it easy to conclude it doesn't exist.

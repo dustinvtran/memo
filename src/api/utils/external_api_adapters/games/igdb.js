@@ -6,7 +6,7 @@
  * `howlongtobeat` npm package; HowLongToBeat's API is now behind
  * authentication and every route into it is gone. See docs/API_choices.md.
  * Games added while that package was quietly failing have no playtime, which
- * src/db_maintenance/backfill_game_playtimes.js exists to fill in.
+ * src/db_maintenance/scripts/backfill_game_playtimes.js exists to fill in.
  */
 /** @typedef {import('../types').Adapter} Adapter */
 /** @typedef {import('../types').SearchFunction} SearchFunction */

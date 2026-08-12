@@ -12,7 +12,7 @@
  * **It never overwrites a playtime that is already there.** IGDB's times come
  * from a median of three submissions and the stored ones from far larger
  * HowLongToBeat samples; replacing them would visibly move numbers people
- * already read. The rule lives in ./game_playtime_plan.js and is unit tested.
+ * already read. The rule lives in ../game_playtime_plan.js and is unit tested.
  *
  * User overrides are never touched: they live on the *entry* documents
  * (`entry.overrides`), and this only ever writes to the `games` collection.
@@ -23,44 +23,44 @@
  * Every id is looked up in batches of 500, so the whole library costs three
  * requests rather than one per game.
  *
- * Environment (.env in this folder): MONGODB_URL, TWITCH_CLIENT_ID,
+ * Environment (../.env): MONGODB_URL, TWITCH_CLIENT_ID,
  * TWITCH_CLIENT_SECRET.
  *
  * Usage:
- *   node backfill_game_playtimes.js
- *   node backfill_game_playtimes.js --apply
- *   node backfill_game_playtimes.js --json=./playtimes.json --limit=20
+ *   node scripts/backfill_game_playtimes.js
+ *   node scripts/backfill_game_playtimes.js --apply
+ *   node scripts/backfill_game_playtimes.js --json=./playtimes.json --limit=20
  *
  * Flags:
  *   --apply             actually write (default: dry run)
  *   --limit=N           stop after N games would be filled
  *   --json=path         write a machine-readable report
- *   --backup-dir=path   where to put the backup (default ./backups)
+ *   --backup-dir=path   where to put the backup (default ../backups)
  */
-require("dotenv").config();
+require("../env");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios").default;
 const { MongoClient, ServerApiVersion } = require("mongodb");
-const { parseArgs, sleep } = require("./work_collections");
+const { parseArgs, sleep } = require("../work_collections");
 const {
   TIME_TO_BEATS_URL,
   timeToBeatQuery,
   batchGameIds,
   indexTimesByGameId,
-} = require("../api/utils/external_api_adapters/games/time_to_beat");
+} = require("../../api/utils/external_api_adapters/games/time_to_beat");
 const {
   gameIdsToLookUp,
   planPlaytimeBackfill,
   summarize,
-} = require("./game_playtime_plan");
+} = require("../game_playtime_plan");
 
 const args = parseArgs(process.argv);
 
 const options = {
   apply: args.apply === true,
   limit: parseInt(args.limit) || Infinity,
-  backupDir: String(args["backup-dir"] ?? path.join(__dirname, "backups")),
+  backupDir: String(args["backup-dir"] ?? path.join(__dirname, "..", "backups")),
 };
 
 const main = async () => {

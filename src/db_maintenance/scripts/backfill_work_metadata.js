@@ -12,17 +12,17 @@
  * It is a dry run unless you pass --apply, and it takes a JSON backup of every
  * collection it is about to write to.
  *
- * The decisions it makes live in ./work_metadata_merge.js and are unit tested.
+ * The decisions it makes live in ../work_metadata_merge.js and are unit tested.
  *
- * Environment (.env in this folder): MONGODB_URL, plus the keys the adapters
+ * Environment (../.env): MONGODB_URL, plus the keys the adapters
  * need for the types you are refreshing — TMDB_API_KEY (films, tv),
  * TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET (games), GOOGLE_API_KEY (books,
  * optional but strongly recommended for rate limits).
  *
  * Usage:
- *   node backfill_work_metadata.js --only=games --missing-only
- *   node backfill_work_metadata.js --only=games --missing-only --apply
- *   node backfill_work_metadata.js --max-age-days=365 --limit=50
+ *   node scripts/backfill_work_metadata.js --only=games --missing-only
+ *   node scripts/backfill_work_metadata.js --only=games --missing-only --apply
+ *   node scripts/backfill_work_metadata.js --max-age-days=365 --limit=50
  *
  * Flags:
  *   --apply             actually write (default: dry run)
@@ -34,9 +34,9 @@
  *   --limit=N           stop after N works per collection
  *   --delay-ms=N        override the per-type pause between API calls
  *   --json=path         write a machine-readable report
- *   --backup-dir=path   where to put backups (default ./backups)
+ *   --backup-dir=path   where to put backups (default ../backups)
  */
-require("dotenv").config();
+require("../env");
 const fs = require("fs");
 const path = require("path");
 const { MongoClient, ServerApiVersion } = require("mongodb");
@@ -47,8 +47,8 @@ const {
   sleep,
   parseArgs,
   selectCollections,
-} = require("./work_collections");
-const { hasGaps, mergeWork } = require("./work_metadata_merge");
+} = require("../work_collections");
+const { hasGaps, mergeWork } = require("../work_metadata_merge");
 
 const args = parseArgs(process.argv);
 
@@ -60,7 +60,7 @@ const options = {
   limit: parseInt(args.limit) || Infinity,
   delayMs:
     args["delay-ms"] === undefined ? undefined : parseInt(args["delay-ms"]),
-  backupDir: String(args["backup-dir"] ?? path.join(__dirname, "backups")),
+  backupDir: String(args["backup-dir"] ?? path.join(__dirname, "..", "backups")),
 };
 
 /** Built inside main() so the module can be required without MONGODB_URL. */
