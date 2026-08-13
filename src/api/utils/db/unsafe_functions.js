@@ -17,7 +17,7 @@ const { v4: uuidv4 } = require('uuid')
 const { throwIt } = require('../general')
 const parsers = require('../parsers/')
 const { toSameFormatAsFaunaDb, toEntryWithMetadata } = require('./shapes')
-const { toUserEntriesPipeline, toFindOptions } = require('./queries')
+const { toUserEntriesPipeline, toScoreTallyPipeline, toFindOptions } = require('./queries')
 const workTypes = require('../work_types')
 
 /** @typedef {import('./queries').QueryOptions} QueryOptions */
@@ -109,9 +109,27 @@ const _findAllUserEntriesWithMetadata = async (collection, userId, limit) => {
   return { data: results }
 }
 
+/**
+ * How many of a user's entries carry each score, counted by the database.
+ *
+ * The one function here that does not hand back documents: these rows are
+ * `{ _id, count }` counts, so `toSameFormatAsFaunaDb` has nothing to wrap and
+ * a caller has no `ref` to act on. `toScoreTally` in ../score_tallies.js turns
+ * them into the shape that gets stored.
+ *
+ * @type {(collection: ValidCollection, userId: string) => Promise<{ _id: any, count: number }[]>}
+ */
+const _countScoresByValue = (collection, userId) =>
+  mongo((db) => db
+    .collection(collection)
+    .aggregate(toScoreTallyPipeline({ userId }))
+    .toArray()
+  )
+
 module.exports = {
   _findOne,
   _findMany,
+  _countScoresByValue,
   _findOneByField,
   _findOneByRef,
   _findAllInCollection,

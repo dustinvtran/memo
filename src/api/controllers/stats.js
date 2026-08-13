@@ -8,6 +8,7 @@ const { combine, okAsync, ResultAsync } = require('neverthrow')
 const { getSegment } = require('./utils')
 const { toPromise } = require('../utils/general')
 const db = require('../utils/db/')
+const { toScoreTally } = require('../utils/score_tallies')
 
 /** @type {(event: Event) => Promise<Response>} */
 const getUserStats = (event) => toPromise(
@@ -34,72 +35,39 @@ module.exports = {
 const entryCollections = ['gameEntries', 'tvShowEntries', 'filmEntries', 'bookEntries']
 
 /**
- * Which entries count is the filter's business, so a score is the whole of
- * what a tally reads off one. Everything else on the document — the dates,
- * the overrides, the workRef — was four lists fetched in full to arrive at
- * forty numbers.
+ * Recomputes the histograms and stores them before answering.
+ *
+ * This writes on a `GET`, which is deliberate: the stats are a cache, and the
+ * request that finds them stale is the one that refills it. Two people opening
+ * a cold profile at the same moment therefore both count and both write, and
+ * that is fine — they compute the same forty-four numbers from the same
+ * entries, so whichever `updateByRef_` lands second writes what the first one
+ * wrote. It is worth knowing before anyone treats the double write as a bug.
+ *
+ * The counting itself is four `$group`s — see `toScoreTallyPipeline` in
+ * ../utils/db/queries.js. This used to download every non-Planned entry the
+ * user had, four lists of them, to read one field off each.
+ *
+ * @type {(userDocument: any) => ResultAsync<Response, Error>}
  */
-const TALLY_FIELDS = { score: 1 }
-
-/** @type {(userDocument: any) => ResultAsync<Response, Error>} */
-const refreshStats = (userDocument) => {
-  /** @type {ResultAsync<[ValidCollection, any][], Error>} */
-  const entries = combine(
-    entryCollections
-      .flatMap((col) =>
-        db.findMany_(
-          col,
-          // Planned entries are the ones with nothing to score yet, and
-          // `$ne` matches an entry with no status at all, as the filter it
-          // replaces did.
-          { userId: userDocument.data.userId, status: { $ne: 'Planned' } },
-          { projection: TALLY_FIELDS }
-        )
-          .map((data) => data.map((doc) => [col, doc]))
-      )
-  )
-
-  const allTallies =
-    combine(
-      entryCollections.map((collection) =>
-        entries
-          .map((allEntries) =>
-            allEntries
-              .flat()
-              .filter(([col]) => col === collection)
-              .map(([_, data]) => data)
-          )
-          .map(toTallies)
-      )
+const refreshStats = (userDocument) =>
+  combine(
+    entryCollections.map((collection) =>
+      db
+        .countScoresByValue_(collection, userDocument.data.userId)
+        // A `$group` returns a row only for a score somebody used, and the
+        // stored shape needs all eleven buckets or `users` fails validation.
+        .map(toScoreTally)
     )
-      .map(([games, tv, films, books]) => ({ games, tv, films, books }))
-
-  return allTallies.andThen((scores) =>
-    db.updateByRef_('users', userDocument.ref.id, { stats: {
-      scores,
-      updatedDate: Date.now(),
-    }})
-      .map(() => responses.ok({ scores }))
   )
-}
-
-const toTallies = (/** @type {any[]} */ entries) => ({
-  [1]: getTallyOfScore(1, entries),
-  [2]: getTallyOfScore(2, entries),
-  [3]: getTallyOfScore(3, entries),
-  [4]: getTallyOfScore(4, entries),
-  [5]: getTallyOfScore(5, entries),
-  [6]: getTallyOfScore(6, entries),
-  [7]: getTallyOfScore(7, entries),
-  [8]: getTallyOfScore(8, entries),
-  [9]: getTallyOfScore(9, entries),
-  [10]: getTallyOfScore(10, entries),
-  unrated: getTallyOfScore(undefined, entries),
-})
-
-/** @type {(score: number | undefined, entries: any[]) => number} */
-const getTallyOfScore = (score, entries) =>
-  entries.filter((e) => e.data.score == score).length
+    .map(([games, tv, films, books]) => ({ games, tv, films, books }))
+    .andThen((scores) =>
+      db.updateByRef_('users', userDocument.ref.id, { stats: {
+        scores,
+        updatedDate: Date.now(),
+      }})
+        .map(() => responses.ok({ scores }))
+    )
 
 const MS_IN_DAY = 86400000
 

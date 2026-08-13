@@ -1,7 +1,11 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 
-const { toUserEntriesPipeline, toFindOptions } = require('./queries')
+const {
+  toUserEntriesPipeline,
+  toScoreTallyPipeline,
+  toFindOptions,
+} = require('./queries')
 
 const stageNames = (pipeline) => pipeline.map((stage) => Object.keys(stage)[0])
 
@@ -74,6 +78,31 @@ test('the pipeline is built fresh, so a caller cannot mutate the next one', () =
   first[0].$match.userId = 'someone else'
 
   assert.deepEqual(stage(filmsOf('u2', 5), '$match'), { userId: 'u2' })
+})
+
+test('a score histogram is counted by the database, not fetched to be counted', () => {
+  // The point of the whole thing: eleven rows of counts come back rather than
+  // every entry the user has.
+  assert.deepEqual(toScoreTallyPipeline({ userId: 'u1' }), [
+    { $match: { userId: 'u1', status: { $ne: 'Planned' } } },
+    { $group: { _id: '$score', count: { $sum: 1 } } },
+  ])
+})
+
+test('a histogram counts everything except Planned', () => {
+  // `$ne` and not `{ $nin: [...] }`: it has to match an entry with no status
+  // field at all, which is what `doc.data.status !== 'Planned'` counted.
+  assert.deepEqual(stage(toScoreTallyPipeline({ userId: 'u1' }), '$match'), {
+    userId: 'u1',
+    status: { $ne: 'Planned' },
+  })
+})
+
+test('the histogram pipeline is built fresh too', () => {
+  const first = toScoreTallyPipeline({ userId: 'u1' })
+  first[0].$match.userId = 'someone else'
+
+  assert.equal(stage(toScoreTallyPipeline({ userId: 'u2' }), '$match').userId, 'u2')
 })
 
 test('options nobody asked for are left out rather than sent as undefined', () => {
