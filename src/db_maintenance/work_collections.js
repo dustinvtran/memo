@@ -18,24 +18,43 @@ const { WORK_TYPES } = require("../api/utils/work_types");
  * — always one of the shared row's `identityPrefixes`.
  * `stringArrayFields` / `numberFields` are the metadata fields we expect the
  * adapter to fill, and that the audit checks for corruption.
+ *
+ * `adapterModule` is resolved here, with `require.resolve`, rather than stored
+ * as a relative specifier: the descriptors are read from `scripts/` as well as
+ * from this directory, and a relative specifier resolves against whichever
+ * module calls `require`, not against this file. `scripts/` is one level down,
+ * so every path missed by exactly one `..` and the backfill silently skipped
+ * every collection. Resolving means the path is fixed at the only place it can
+ * be read correctly, and a typo throws here, at load, instead of arriving in
+ * the consumer's catch looking like a missing API key.
+ *
+ * `require.resolve` finds the file without executing it, so the adapters stay
+ * unloaded — see `loadAdapter` in scripts/backfill_work_metadata.js for why
+ * that matters.
  */
 const SCRIPT_FIELDS = {
   films: {
-    adapterModule: "../api/utils/external_api_adapters/films/tmdb",
+    adapterModule: require.resolve(
+      "../api/utils/external_api_adapters/films/tmdb"
+    ),
     retrievePrefix: "tmdb",
     stringArrayFields: ["genres", "directors", "actors"],
     numberFields: ["releaseYear", "duration"],
     defaultDelayMs: 300,
   },
   tv: {
-    adapterModule: "../api/utils/external_api_adapters/tv_shows/tmdb",
+    adapterModule: require.resolve(
+      "../api/utils/external_api_adapters/tv_shows/tmdb"
+    ),
     retrievePrefix: "tmdb",
     stringArrayFields: ["genres", "directors", "actors"],
     numberFields: ["releaseYear", "duration", "episodes"],
     defaultDelayMs: 300,
   },
   games: {
-    adapterModule: "../api/utils/external_api_adapters/games/igdb",
+    adapterModule: require.resolve(
+      "../api/utils/external_api_adapters/games/igdb"
+    ),
     retrievePrefix: "igdb",
     stringArrayFields: ["genres", "platforms", "studios", "publishers"],
     numberFields: ["releaseYear", "duration"],
@@ -43,7 +62,9 @@ const SCRIPT_FIELDS = {
     defaultDelayMs: 1000,
   },
   books: {
-    adapterModule: "../api/utils/external_api_adapters/books/google",
+    adapterModule: require.resolve(
+      "../api/utils/external_api_adapters/books/google"
+    ),
     retrievePrefix: "ISBN",
     stringArrayFields: ["genres", "authors", "publishers"],
     numberFields: ["releaseYear", "duration"],
