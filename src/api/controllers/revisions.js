@@ -207,20 +207,39 @@ const withOwnedEntry = (event, respond) => toPromise(
     .mapErr(responses.fromError)
 )
 
-/** @type {(entryRef: string) => Promise<any[]>} */
-const findRevisions = async (entryRef) =>
-  (await db.findAllByField_(COLLECTION, 'entryRef', entryRef).unwrapOr([]))
-    .map(({ data }) => data)
-    .filter(({ kind }) => kind === 'revision')
+/**
+ * What the version list renders. `snapshot` is the bulk of a revision and the
+ * whole point of one; the rest of the document — the entry it belongs to, its
+ * type, its owner, its `kind` — the caller already knows.
+ */
+const VERSION_FIELDS = { createdDate: 1, supersededDate: 1, snapshot: 1 }
+
+/** Pruning decides on dates alone, so it has no reason to read 50 notes. */
+const PRUNE_FIELDS = { createdDate: 1 }
+
+/** @type {(entryRef: string, projection?: object) => Promise<any[]>} */
+const findRevisions = async (entryRef, projection = VERSION_FIELDS) =>
+  (
+    await db
+      .findMany_(COLLECTION, { entryRef, kind: 'revision' }, { projection })
+      .unwrapOr([])
+  ).map(({ data }) => data)
 
 /**
- * There is one draft per entry per user. `_findAllByField` only filters on a
- * single field, so the user is filtered out here.
+ * There is one draft per entry per user, which is two fields to ask on. Asking
+ * on `entryRef` alone meant reading every revision of the entry — up to 50
+ * snapshots, each carrying a full copy of the note — to keep one document.
  * @type {(entryRef: string, userId: string) => Promise<any | undefined>}
  */
-const findDraft = async (entryRef, userId) =>
-  (await db.findAllByField_(COLLECTION, 'entryRef', entryRef).unwrapOr([]))
-    .find(({ data }) => data.kind === 'draft' && data.userId === userId)
+const findDraft = async (entryRef, userId) => {
+  const found = await db
+    .findOne_(COLLECTION, { entryRef, userId, kind: 'draft' })
+    .unwrapOr({})
+
+  // A miss is `{}` from the db module, and every caller here tests the draft
+  // for truthiness before reaching into it.
+  return found?.ref?.id ? found : undefined
+}
 
 /** @type {(collection: ValidCollection, entryRef: string) => Promise<any | undefined>} */
 const findReview = async (collection, entryRef) =>
@@ -231,7 +250,7 @@ const findReview = async (collection, entryRef) =>
   )?.data
 
 const pruneRevisions = async (entryRef) => {
-  const revisions = await findRevisions(entryRef)
+  const revisions = await findRevisions(entryRef, PRUNE_FIELDS)
   for (const id of revisionsToPrune(revisions)) {
     await db.deleteByRef_(COLLECTION, id).unwrapOr(undefined)
   }

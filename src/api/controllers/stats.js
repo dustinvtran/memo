@@ -35,17 +35,29 @@ module.exports = {
 /** @type {ValidCollection[]} */
 const entryCollections = ['gameEntries', 'tvShowEntries', 'filmEntries', 'bookEntries']
 
+/**
+ * Which entries count is the filter's business, so a score is the whole of
+ * what a tally reads off one. Everything else on the document — the dates,
+ * the overrides, the workRef — was four lists fetched in full to arrive at
+ * forty numbers.
+ */
+const TALLY_FIELDS = { score: 1 }
+
 /** @type {(userDocument: any) => ResultAsync<Response, Error>} */
 const refreshStats = (userDocument) => {
   /** @type {ResultAsync<[ValidCollection, any][], Error>} */
   const entries = combine(
     entryCollections
       .flatMap((col) =>
-        db.findAllByField_(col, 'userId', userDocument.data.userId)
-          .map((data) => data
-            .filter((doc) => doc.data.status !== 'Planned' )
-            .map((doc) => [col, doc])
-          )
+        db.findMany_(
+          col,
+          // Planned entries are the ones with nothing to score yet, and
+          // `$ne` matches an entry with no status at all, as the filter it
+          // replaces did.
+          { userId: userDocument.data.userId, status: { $ne: 'Planned' } },
+          { projection: TALLY_FIELDS }
+        )
+          .map((data) => data.map((doc) => [col, doc]))
       )
   )
 

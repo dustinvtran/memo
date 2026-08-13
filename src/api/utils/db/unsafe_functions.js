@@ -11,6 +11,24 @@ const { v4: uuidv4 } = require('uuid')
 const { throwIt } = require('../general')
 const parsers = require('../parsers/')
 const { toSameFormatAsFaunaDb, toEntryWithMetadata } = require('./shapes')
+const { toUserEntriesPipeline, toFindOptions } = require('./queries')
+
+/** @typedef {import('./queries').QueryOptions} QueryOptions */
+
+/**
+ * A whole filter document, so a query can name more than one field, and the
+ * options to go with it. `findDraft` is the reason: one draft per entry per
+ * user is two fields, and asking on one of them meant reading every revision
+ * of the entry — up to 50 snapshots, each carrying a full copy of the note —
+ * to keep the one document that matched both.
+ * @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => Promise<object>}
+ */
+const _findOne = (collection, filter, options) =>
+  findFirst(collection, filter, options)
+
+/** @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => Promise<object>} */
+const _findMany = (collection, filter, options) =>
+  find(collection, filter, options)
 
 /** @type {(collection: ValidCollection, field: string, value: any) => Promise<object>} */
 const _findOneByField = (collection, field, value) =>
@@ -22,22 +40,18 @@ const _findOneByRef = (collection, ref) =>
 
 /** @type {(collection: ValidCollection) => Promise<object>} */
 const _findAllInCollection = (collection) =>
-  findAll(collection, {})
-
-/** @type {(collection: ValidCollection, field: string, value: any) => Promise<object>} */
-const _findAllByField = (collection, field, value) =>
-  findAll(collection, { [field]: value })
+  find(collection, {})
 
 /**
  * One query for many values of the same field, rather than one query per
  * value. A whole list's reviews are 400-odd `entryRef`s, and 400 round trips
  * is the difference between a response and a function timeout.
- * @type {(collection: ValidCollection, field: string, values: any[]) => Promise<object>}
+ * @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => Promise<object>}
  */
-const _findAllByFieldIn = (collection, field, values) =>
+const _findAllByFieldIn = (collection, field, values, options) =>
   values.length === 0
     ? Promise.resolve([])
-    : findAll(collection, { [field]: { $in: values } })
+    : find(collection, { [field]: { $in: values } }, options)
 
 /** @type {(collection: ValidCollection, ref: string, update: any) => Promise<object>} */
 const _updateOneByRef = (collection, ref, update) =>
@@ -90,30 +104,7 @@ const _findAllUserEntriesWithMetadata = async (collection, userId, limit) => {
 
   const results = await mongo((db) => db
     .collection(collection)
-    .aggregate([
-      { $match: { userId } },
-      // The order the caller used to sort into after the fact. A missing
-      // `updatedDate` sorts last here too. `_id` only breaks ties, of which
-      // there are a great many — a bulk import stamps a whole list with one
-      // millisecond — and it breaks them the same way every time, which the
-      // sort it replaces did not: that one left entries stamped the same
-      // millisecond in whatever order the database happened to return them.
-      { $sort: { updatedDate: -1, _id: 1 } },
-      ...(limit ? [{ $limit: limit }] : []),
-      {
-        $lookup: {
-          from: workCollection,
-          localField: 'workRef',
-          foreignField: '_id',
-          as: 'work',
-        },
-      },
-      // Nobody reads either of these from a list, and they are not small:
-      // `review` is the whole note, which the reviews endpoint serves when a
-      // row is actually opened, and `userId` is an auth0 id repeated once per
-      // entry for anyone who asks for the list.
-      { $project: { review: 0, userId: 0 } },
-    ])
+    .aggregate(toUserEntriesPipeline({ userId, workCollection, limit }))
     .toArray()
     .then((arr) => arr.map((row) => toEntryWithMetadata(row, entryType)))
   )
@@ -122,10 +113,11 @@ const _findAllUserEntriesWithMetadata = async (collection, userId, limit) => {
 }
 
 module.exports = {
+  _findOne,
+  _findMany,
   _findOneByField,
   _findOneByRef,
   _findAllInCollection,
-  _findAllByField,
   _findAllByFieldIn,
   _findAllUserEntriesWithMetadata,
   _updateOneByRef,
@@ -136,19 +128,30 @@ module.exports = {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-/** @type {(collection: ValidCollection, filter: {}) => Promise<object>} */
-const findFirst = (collection, filter) =>
-  find(collection, filter).then((results) => results[0] ?? {})
-
-/** @type {(collection: ValidCollection, filter: {}) => Promise<object>} */
-const findAll = (collection, filter) =>
-  find(collection, filter)
-
-/** @type {(collection: ValidCollection, filter: {}) => Promise<object>} */
-const find = (collection, filter) =>
+/**
+ * One document, asked for as one document rather than read out of the whole
+ * matching set — which for the `users`-by-`username` lookup that runs on
+ * almost every request meant the user collection, to keep `[0]`.
+ * @type {(collection: ValidCollection, filter: {}, options?: QueryOptions) => Promise<object>}
+ */
+const findFirst = (collection, filter, options) =>
   mongo((db) => db
     .collection(collection)
-    .aggregate([{ $match: filter }])
+    .findOne(filter, toFindOptions(options))
+    // Absent stays `{}` rather than becoming `null`: callers test `?.data` or
+    // `?.ref` on what comes back, and some of them spread it.
+    .then((dcmt) => (dcmt ? toSameFormatAsFaunaDb(dcmt) : {}))
+  )
+
+/**
+ * `aggregate([{ $match: filter }])` returns the same documents, but a pipeline
+ * is the wrong thing to hand a limit or a projection to.
+ * @type {(collection: ValidCollection, filter: {}, options?: QueryOptions) => Promise<object>}
+ */
+const find = (collection, filter, options) =>
+  mongo((db) => db
+    .collection(collection)
+    .find(filter, toFindOptions(options))
     .toArray()
     .then((arr) => arr.map(toSameFormatAsFaunaDb))
   )

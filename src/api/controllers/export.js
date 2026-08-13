@@ -114,7 +114,9 @@ const findListEntries = async (collection, userId, limit) => {
  */
 const findReviews = async (collection, entryRefs) => {
   const found = await db
-    .findAllByFieldIn_(collection, 'entryRef', entryRefs)
+    .findAllByFieldIn_(collection, 'entryRef', entryRefs, {
+      projection: { entryRef: 1, text: 1 },
+    })
     .unwrapOr([])
 
   return new Map(

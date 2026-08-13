@@ -17,9 +17,11 @@
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../errors').Error} Error */
 const { ResultAsync } = require('neverthrow')
-const { _findOneByField, _findOneByRef, _findAllByField, _findAllByFieldIn, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
+const { _findOne, _findMany, _findOneByField, _findOneByRef, _findAllByFieldIn, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
 const { compose } = require('ramda')
 const { toResponse, toResult } = require('./into_safe_values')
+
+/** @typedef {import('./queries').QueryOptions} QueryOptions */
 
 /** @type {(collection: ValidCollection, ref: string) => Promise<Response>} */
 const findOneByRef = compose(toResponse, _findOneByRef)
@@ -33,13 +35,18 @@ const findOneByField = compose(toResponse, _findOneByField)
 /** @type {(collection: ValidCollection, field: string, value: any) => ResultAsync<any, Error>} */
 const findOneByField_ = compose(toResult, _findOneByField)
 
-/** @type {(collection: ValidCollection, field: string, value: any, limit?: number) => Promise<Response>} */
-const findAllByField = compose(toResponse, _findAllByField)
+/**
+ * The general form of the two above: a filter of as many fields as the caller
+ * needs, and `{ projection, sort, limit }` for the parts of the work the
+ * database can do and the caller shouldn't.
+ * @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => ResultAsync<any, Error>}
+ */
+const findOne_ = compose(toResult, _findOne)
 
-/** @type {(collection: ValidCollection, field: string, value: any, limit?: number) => ResultAsync<any, Error>} */
-const findAllByField_ = compose(toResult, _findAllByField)
+/** @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => ResultAsync<any, Error>} */
+const findMany_ = compose(toResult, _findMany)
 
-/** @type {(collection: ValidCollection, field: string, values: any[]) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => ResultAsync<any, Error>} */
 const findAllByFieldIn_ = compose(toResult, _findAllByFieldIn)
 
 /** @type {(collection: ValidCollection, userId: string, limit?: number) => ResultAsync<any, Error>} */
@@ -73,8 +80,8 @@ module.exports = {
   findOneByRef,
   findOneByRef_,
   findAll,
-  findAllByField,
-  findAllByField_,
+  findOne_,
+  findMany_,
   findAllByFieldIn_,
   findOneByField,
   findOneByField_,
