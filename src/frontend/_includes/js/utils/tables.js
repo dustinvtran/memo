@@ -6,7 +6,7 @@ const initTable = (selector, data, settings) =>
 const profileColumns = (status) => [
   Columns.englishTitleAndLastUpdated(),
   Columns.profileScores(status),
-  Columns.date('Year', 'commonMetadata.releaseYear')
+  Columns.year()
 ]
 
 const entryTypeToFullColumns = (entryType, status) => ({
