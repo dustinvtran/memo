@@ -19,6 +19,10 @@ span:lang(cn) {
 
 /* Styling for headers which collapse the subsequent element. It acts like a
  * link and uses Font-Awesome unicode to indicate whether it's collapsed.
+ * The family named here is Font Awesome 6's own. `FontAwesome` was 4.7.0's,
+ * and 4.7.0 is no longer loaded — 6 does declare that name too, as a v4
+ * shim, but there is no reason to reach an icon through a compatibility
+ * alias. Weight 900 picks the solid face, which is where these glyphs are.
 */
 .collapsible {
   color: #0e9ce0;
@@ -26,7 +30,8 @@ span:lang(cn) {
 }
 .collapsible:before {
   content: "\f106"; /* angle-up */
-  font-family: FontAwesome;
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
   margin-right: 10px;
   top: 2px;
   position: relative;
@@ -38,7 +43,8 @@ span:lang(cn) {
 .is-collapsed:before {
   color: #ccc;
   content: "\f107"; /* angle-down */
-  font-family: FontAwesome;
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
   padding-right: 5px;
 }
 .collapsible:hover {

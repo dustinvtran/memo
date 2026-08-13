@@ -5,12 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
 
+    {# Everything below comes from a CDN, so every url is pinned to an exact
+       version and carries the `integrity` hash of that version's bytes. A
+       host that starts serving something else then serves it into a page
+       holding the user's `nf_jwt`, and the browser refuses it instead. The
+       hashes are of the pinned files themselves — recompute one with
+       `curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A`
+       if you change a version, and check the page still draws: a wrong hash
+       blocks the file silently, and the whole page is drawn by these. #}
     <!-- CSS -->
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.1/css/bootstrap.min.css" integrity="sha384-8+rznmq/k0KZkJlZhnuPEVkbRD7tA0wcFEjY48dajGWn3Xc1MasJwS8/tJ7OEsKW" crossorigin="anonymous" referrerpolicy="no-referrer">
+    {# Font Awesome 6 only. It defines the `fa`, `fas` and `far` prefixes the
+       markup uses, so the 4.7.0 stylesheet that used to sit alongside it was
+       being overridden for every icon on the page. The one thing that did
+       still come from 4.7.0 is the `FontAwesome` font family `main.css` names
+       for the collapsible arrows; that now names this file's family. #}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="sha384-nRgPTkuX86pH8yjPJUAFuASXQSSl2/bBUiNV47vSYpKFxHJhbcrGnmlYpYJMeD7a" crossorigin="anonymous" referrerpolicy="no-referrer">
 
-    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.10.1/bootstrap-table.min.css">
+    {# 1.12.1, matching the bootstrap-table script below. #}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.css" integrity="sha384-HyusOcKCYSnjwC8jY4YvjZAwLgeqDPWFDu2/AFf5OrZd7ykufk0gwxexoqmg5W8N" crossorigin="anonymous" referrerpolicy="no-referrer">
     <link rel="icon" href="/img/favicon.ico" type="image/x-icon"/>
     <link rel="stylesheet" href="/css/main.css">
     <style>
@@ -23,24 +36,19 @@
        reaches for while it is being parsed: jQuery, Ramda, and the libraries
        the first render calls into. #}
     <!-- JavaScript -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/2.3.5/purify.min.js" integrity="sha512-GaomFB92Lot7wDqZgVgLMJwQhuVUEcPHP99xmWSVE4Kq54t1jDyH7mdKDsmN8jOMSjiQq8pf7Et+OM4ml/PVMA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/2.3.5/purify.min.js" integrity="sha384-WZ/cvv60fkg/bYYTqKUM6ajmPsWZkH9EdbcGFlhlMrppxqeav5I5zj5VBzTkIavz" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     {# Only the profile page's charts and the entry form's date fields, both
-       of which are drawn long after the page is. #}
-    <script defer src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/ramda/0.25.0/ramda.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.24.0/axios.min.js"></script>
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js" integrity="sha512-hzyXu3u+VDu/7vpPjRKFp9w33Idx7pWWNazPm+aCMRu26yZXFCby1gn1JxevVv3LDwnSbyKrvLo3JNdi4Qx1ww==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    {# Straight to what `cdn.mathjax.org/mathjax/latest` has been a shim for
-       since 2017, so this is one request rather than two. It typesets
-       whatever is on the page when it loads, and at this point that is
-       nothing — `#site` is still empty — so nothing waits on it. #}
-    <script defer type="text/javascript"
-       src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
-    </script>
+       of which are drawn long after the page is. Both urls used to name no
+       version at all, so the code the site ran changed whenever either
+       package published. These are the versions that resolved to. #}
+    <script defer src="https://cdn.jsdelivr.net/npm/apexcharts@6.8.0" integrity="sha384-nLD6rKRJ1yssfWSVXJJaNpF3g7f2F5/5qnJ6rRBt/KjLrJ5H/ch4uI80FwqxknkC" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/litepicker@2.0.12/dist/litepicker.js" integrity="sha384-TwHJTusQtbcoEHJcrF5aeo0MHBgj8lt8onFRrG7wKk8Q/LG9EphkEsqNRiVWzIP9" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ramda/0.25.0/ramda.min.js" integrity="sha384-RNR54SeCxp1FhiUnPGrGYpNaZn5q8/Fn7tZe7I17lN8cZ1HK/3AzE4KSoFXu6bl2" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.24.0/axios.min.js" integrity="sha384-I2unte9Y12QMna3v071F1Nka0u7+32War1ddTq53DRJ7CSNfyRctw9b7oHce7hey" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.1/jquery.min.js" integrity="sha384-UM1JrZIpBwVf5jj9dTKVvGiiZPZTLVoq4sfdvIe9SBumsvCuv6AHDNtEiIb5h1kU" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.1/js/bootstrap.min.js" integrity="sha384-Nud2SriDt2fZ+u85IBC48Yn9p+l4AGlapnX1EGA2KrnZjYJx8sxKnw/CIxc1wU1B" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.js" integrity="sha384-ClQpQScPqQSyD6GCOejtBWJ/GwscJaHjNtqDcG3/JmeQ1VBuzQCeZy0zNBQtuhiH" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js" integrity="sha384-pF+2qz7eFoUyrCTPr8gVboYJ7fNpmJKJzl0vPX6w3XDML+Of8bMSyd6fZIRJdwo7" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     {# macro to include JS with its own const variable scope
        to not have `const` assignments pollute projectwide scope #}
