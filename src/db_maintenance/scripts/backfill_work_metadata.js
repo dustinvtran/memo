@@ -188,15 +188,25 @@ const backfillCollection = async (db, collection) => {
  * Lazily required: each adapter reads (and the games one throws on) its own
  * env vars at load time, so requiring all four would make a films-only run
  * depend on Twitch credentials.
+ *
+ * Which is why the catch has to be narrow. Skipping a collection is the right
+ * answer to "this run has no Twitch credentials" and the wrong answer to "the
+ * path in the descriptor is wrong" — the second silently turns every run into
+ * a no-op that reports nothing amiss, which is what it did until
+ * work_collections.js started resolving these paths itself. That resolution
+ * means the adapter's own module can no longer be the thing that isn't found,
+ * so if it is, something is wrong with the wiring: say so and stop.
  */
 const loadAdapter = (collection) => {
   try {
     return require(collection.adapterModule);
   } catch (e) {
+    if (e?.code === "MODULE_NOT_FOUND" && e.requireStack?.[0] === __filename) {
+      throw e;
+    }
     console.log(
-      `  skipping ${collection.works}: could not load adapter (${
-        e?.message ?? e
-      })`
+      `  skipping ${collection.works}: ${collection.adapterModule} failed to ` +
+        `load (${e?.message ?? e})`
     );
     return undefined;
   }
