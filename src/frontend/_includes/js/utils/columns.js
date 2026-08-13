@@ -8,14 +8,6 @@ const title = () =>
     sortable: true,
   })
 
-// Currently unused
-const status = () =>
-  col('Status', 'status', {
-    cellStyle: () => ({ css: { 'width': '15px' } }),
-    formatter: (status, row) =>
-      statusToTitle(apiTypeToType[row.commonMetadata.entryType], status) ?? status
-  })
-
 const index = () =>
   col('#', '#', {
     formatter: indexFormatter,
@@ -183,7 +175,6 @@ Rows = {
 
 Columns = {
   title,
-  status,
   index,
   englishTitleAndLastUpdated,
   score,
@@ -371,14 +362,6 @@ const relativeTime = (ts) => {
 }
 
 const indexFormatter = (_, __, index) => index + 1
-
-const makeSafeForCSS = (name) =>
-  name.replace(/[^a-z0-9]/g, (s) => {
-    const c = s.charCodeAt(0)
-    return c == 32            ? '-' :
-           c >= 65 && c <= 90 ? '_' + s.toLowerCase() :
-           '__' + ('000' + c.toString(16)).slice(-4)
-  })
 
 const getOverrideOrMetadata = (prop) => (_, row) =>
   row.overrides?.[prop] ?? row.commonMetadata?.[prop]

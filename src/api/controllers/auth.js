@@ -117,7 +117,6 @@ const generateAuth0LogoutUrl = () => {
 }
 
 const handleLogin = async (event) => {
-  console.log('handling login')
   if (!event || !event.headers) {
     throw new Error("Malformed event")
   }
