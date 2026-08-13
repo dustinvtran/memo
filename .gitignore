@@ -3,7 +3,6 @@
 
 # build artefacts
 /dist
-/src/site/_includes/css
 
 # db_maintenance backups and reports
 /src/db_maintenance/backups
