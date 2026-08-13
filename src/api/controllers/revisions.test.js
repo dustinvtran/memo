@@ -35,8 +35,41 @@ process.env.MONGODB_URL = process.env.MONGODB_URL ?? 'mongodb://in-memory'
 
 const store = {}
 
+/** Only the operators the queries in this module actually use. */
+const matchesValue = (value, wanted) =>
+  wanted && typeof wanted === 'object' && !Array.isArray(wanted)
+    ? '$ne' in wanted
+      ? value !== wanted.$ne
+      : wanted.$in.includes(value)
+    : value === wanted
+
 const matches = (doc, filter = {}) =>
-  Object.entries(filter).every(([field, value]) => doc[field] === value)
+  Object.entries(filter).every(([field, wanted]) =>
+    matchesValue(doc[field], wanted)
+  )
+
+/**
+ * `_id` comes back unless the projection excludes it, and an inclusion
+ * projection drops everything it doesn't name. A double that returned whole
+ * documents regardless would let a query that forgot a field still pass.
+ */
+const project = (doc, projection) => {
+  if (!projection) return doc
+
+  const isInclusion = Object.entries(projection).some(
+    ([field, on]) => field !== '_id' && on
+  )
+
+  return Object.fromEntries(
+    Object.entries(doc).filter(([field]) =>
+      field === '_id'
+        ? projection._id !== 0
+        : isInclusion
+          ? Boolean(projection[field])
+          : projection[field] !== 0
+    )
+  )
+}
 
 const collectionOf = (name) => (store[name] = store[name] ?? [])
 
@@ -45,7 +78,18 @@ const collection = (name) => ({
     toArray: async () =>
       collectionOf(name).filter((doc) => matches(doc, pipeline[0].$match)),
   }),
-  find: () => ({ toArray: async () => [...collectionOf(name)] }),
+  find: (filter, { projection, limit } = {}) => ({
+    toArray: async () => {
+      const found = collectionOf(name).filter((doc) => matches(doc, filter))
+      return (limit ? found.slice(0, limit) : found).map((doc) =>
+        project(doc, projection)
+      )
+    },
+  }),
+  findOne: async (filter, { projection } = {}) => {
+    const doc = collectionOf(name).find((doc) => matches(doc, filter))
+    return doc ? project(doc, projection) : null
+  },
   insertOne: async (doc) => (collectionOf(name).push(doc), { insertedId: doc._id }),
   updateOne: async (filter, { $set }) => {
     const doc = collectionOf(name).find((d) => matches(d, filter))
