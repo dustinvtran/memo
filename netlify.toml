@@ -1,21 +1,25 @@
 [build]
   command = "npm run build"
   publish = "dist"
-  NODE_ENV = "18.15.0"
+
+[build.environment]
+  # Applies to every deploy context at once — production, deploy preview and
+  # branch deploy alike. The per-context blocks this replaces covered the first
+  # two and left a branch deploy on whatever default Netlify happened to ship.
+  #
+  # This also picks the functions runtime, which Netlify derives from the
+  # build's Node version. AWS_LAMBDA_JS_RUNTIME overrides that, but only when
+  # set from the Netlify UI, CLI or API: Netlify does not read it from this
+  # file, so the nodejs18.x lines that used to sit here never applied.
+  # https://docs.netlify.com/build/functions/optional-configuration/
+  # https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
+  NODE_VERSION = "22"
 
 [functions]
   directory = "src/api/routes"
 
 [dev]
   command = "npm run start"
+  # Netlify Dev waits for this port specifically, so the `dev` script passes a
+  # matching `--port` rather than leaving Eleventy on its default of 8080.
   targetPort = 8093
-
-[context.production.environment]
-# https://docs.netlify.com/functions/build-with-javascript/#runtime-settings
-# https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
-NODE_VERSION = "18"
-AWS_LAMBDA_JS_RUNTIME = "nodejs18.x"
-
-[context.deploy-preview.environment]
-NODE_VERSION = "18"
-AWS_LAMBDA_JS_RUNTIME = "nodejs18.x"

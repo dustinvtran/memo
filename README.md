@@ -25,6 +25,11 @@ If you use `npx netlify dev` your serverless functions will also be available at
 GET http://localhost:8888/.netlify/functions/<function_file_name_without_extension>
 ```
 
+Netlify Dev serves the site on 8888 and proxies to Eleventy on 8093, the
+`targetPort` in `netlify.toml`. The `dev` script passes a matching `--port`;
+without it Eleventy takes its default of 8080 and `npx netlify dev` waits on
+8093 forever.
+
 **2. Deploying.** `main` is the only long-lived branch. Netlify publishes nil.moe from `main`
 automatically on every push, so there is no separate staging or production branch and no manual
 promotion step.
@@ -35,6 +40,11 @@ We use:
 
 - [Netlify](https://www.netlify.com) for web hosting and deployment
 - [Node and NPM](https://nodejs.org) for runtime environment and package management
+  — `NODE_VERSION` in `netlify.toml` pins the build to Node 22 across every
+  deploy context, and CI runs the same version. Netlify derives the functions
+  runtime from the build's Node version, so the two move together.
+  `AWS_LAMBDA_JS_RUNTIME` overrides the functions runtime, but only when set
+  from the Netlify UI — it is ignored in `netlify.toml`.
 - [Eleventy](https://11ty.io) for static site generation
 - A tiny inline JS pipeline with a [component-based architecture](https://medium.com/@dan.shapiro1210/understanding-component-based-architecture-3ff48ec0c238)
 - Serverless (FaaS) development pipeline with [Netlify Dev](https://www.netlify.com/products/dev) and [Netlify Functions](https://www.netlify.com/products/functions)
