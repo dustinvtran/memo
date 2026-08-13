@@ -5,25 +5,44 @@ module.exports = (config) => {
   const env = process.env.ELEVENTY_ENV
 
   // minify the html output
-  config.addTransform('htmlmin', (content) =>
-    HtmlMinifier.minify(content, {
+  config.addTransform('htmlmin', (content, outputPath) => {
+    // A transform runs over every output file, and `/js/bundle.js` is one of
+    // them now. `collapseWhitespace` over JavaScript eats the newline that
+    // ends a `//` comment, and the rest of the file goes with it.
+    if (!outputPath || !outputPath.endsWith('.html')) return content
+
+    return HtmlMinifier.minify(content, {
       useShortDoctype: true,
       removeComments: true,
       collapseWhitespace: true,
-    }),
-  )
+    })
+  })
 
   // compress and combine js files
   config.addFilter('jsmin', (code) => {
-    const minified = UglifyJS.minify(code)
+    // `{% set %}` hands a filter a Nunjucks SafeString, and UglifyJS reads
+    // anything that is not a string as a map of filenames to sources.
+    const minified = UglifyJS.minify(String(code))
+
+    // Handing back the unminified input on failure is how a bundle that does
+    // not parse gets shipped anyway. Every page on this site is drawn by that
+    // one file, so a syntax error in it is a blank page on every url, with
+    // nothing in the build log above it. Fail the build instead.
     if (minified.error) {
-      console.log('UglifyJS error: ', minified.error)
+      throw new Error(`jsmin: UglifyJS could not parse the bundle: ${minified.error}`)
     }
-    return minified.error ? code : minified.code
+
+    return minified.code
   })
 
   // pass some assets right through
   config.addPassthroughCopy('./src/frontend/img')
+  // The stylesheet is served from `/css/main.css` rather than inlined into
+  // every page, for the same reason the scripts are. It lives under
+  // `_includes` because it used to be `{% include %}`d.
+  config.addPassthroughCopy({
+    './src/frontend/_includes/css/main.css': 'css/main.css',
+  })
   config.addPassthroughCopy('./_redirects')
 
   return {
