@@ -7,8 +7,6 @@ const { match } = require('ts-pattern')
 
 /** @type Handler */
 exports.handler = async (event, context) => {
-  console.log('we are here')
-  console.log(getUrlSegments(event)[0])
   return matchVerbAndNumberOfUrlSegments(event)
 
     // GET /api/auth/{logout | login | renew}
