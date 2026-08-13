@@ -66,9 +66,7 @@ const main = async () => {
 const auditCollection = async (db, collection) => {
   const works = await db.collection(collection.works).find().toArray();
   const entries = await db.collection(collection.entries).find().toArray();
-  const reviews = await db.collection(toReviewCollection(collection))
-    .find()
-    .toArray();
+  const reviews = await db.collection(collection.reviews).find().toArray();
 
   const workIds = new Set(works.map((w) => w._id));
   const entryIds = new Set(entries.map((e) => e._id));
@@ -158,11 +156,6 @@ const auditCollection = async (db, collection) => {
   printSummary(collection, result);
   return result;
 };
-
-/** An entry's review lives in the collection of the same name, with
- * `Entries` swapped for `Reviews` — the API's rule, in `controllers/utils.js`. */
-const toReviewCollection = (collection) =>
-  collection.entries.replace("Entries", "Reviews");
 
 const hasRetrieveRef = (collection, work) =>
   Array.isArray(work.apiRefs) &&

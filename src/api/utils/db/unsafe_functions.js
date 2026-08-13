@@ -18,6 +18,7 @@ const { throwIt } = require('../general')
 const parsers = require('../parsers/')
 const { toSameFormatAsFaunaDb, toEntryWithMetadata } = require('./shapes')
 const { toUserEntriesPipeline, toFindOptions } = require('./queries')
+const workTypes = require('../work_types')
 
 /** @typedef {import('./queries').QueryOptions} QueryOptions */
 
@@ -95,18 +96,8 @@ const _create = (collection, data, session) =>
  * @type {(collection: 'filmEntries' | 'gameEntries' | 'tvShowEntries' | 'bookEntries', userId: string, limit?: number) => Promise<object>}
  */
 const _findAllUserEntriesWithMetadata = async (collection, userId, limit) => {
-  const workCollection = {
-    filmEntries: 'films',
-    gameEntries: 'games',
-    tvShowEntries: 'tvShows',
-    bookEntries: 'books',
-  }[collection]
-  const entryType = {
-    filmEntries: 'Film',
-    gameEntries: 'Game',
-    tvShowEntries: 'TVShow',
-    bookEntries: 'Book',
-  }[collection]
+  const { works: workCollection, entryType } =
+    workTypes.byEntryCollection(collection) ?? {}
 
   const results = await mongo((db) => db
     .collection(collection)

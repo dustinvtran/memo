@@ -11,10 +11,13 @@
  *
  * Deliberately pure and dependency-free (no zod, no ramda, no database), so
  * it is covered by `node --test` without an install — see export_view.test.js.
+ * `work_types` is pure for the same reason, so importing it costs nothing.
  */
 
+const { TYPES } = require('./work_types')
+
 /** The `:type` segment of a list url, in the order the lists are exported. */
-const ENTRY_TYPES = ['films', 'tv', 'games', 'books']
+const ENTRY_TYPES = TYPES
 
 const TYPE_TITLES = {
   films: 'Films',
