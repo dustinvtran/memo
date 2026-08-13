@@ -120,32 +120,29 @@ const GlobalStats = (stats) => initComponent({
   `
 })
 
-// This is convoluted as heck.
-// Is there a better way? lol.
+// The buckets `getTallyOfScore` counts, in the order the chart draws them —
+// top bar first. The bars and their labels are both derived from this one
+// list, because a hand-written pair of arrays drifted apart once already:
+// score 1 was missing from the data, so ApexCharts drew the unrated tally
+// against the label `1`.
+const BUCKETS = ['10', '9', '8', '7', '6', '5', '4', '3', '2', '1', 'unrated']
+
+// A tally the user has none of can be a missing key rather than a zero, so
+// every read of a bucket defaults.
 const aggregateStats = (stats) =>
-  Object.values(stats.scores)
-    .reduce((scores, current) =>
-      Object.fromEntries(
-        Object.entries(scores)
-          .map(([rating, tally]) => [rating, tally + current[rating]])
-      ))
+  Object.fromEntries(
+    BUCKETS.map((bucket) => [
+      bucket,
+      Object.values(stats.scores)
+        .reduce((tally, scoresOfType) => tally + (scoresOfType[bucket] ?? 0), 0)
+    ])
+  )
 
 
 const toChartOptions = (relevantStats) => ({
   series: [{
     name: `Scores`,
-    data: [
-      relevantStats['10'],
-      relevantStats['9'],
-      relevantStats['8'],
-      relevantStats['7'],
-      relevantStats['6'],
-      relevantStats['5'],
-      relevantStats['4'],
-      relevantStats['3'],
-      relevantStats['2'],
-      relevantStats['unrated'],
-    ]
+    data: BUCKETS.map((bucket) => relevantStats[bucket] ?? 0)
   }],
   chart: {
     type: 'bar',
@@ -161,7 +158,7 @@ const toChartOptions = (relevantStats) => ({
     enabled: false
   },
   xaxis: {
-    categories: ['10', '9', '8', '7', '6', '5', '4', '3', '2', '1', 'Unrated' ],
+    categories: BUCKETS.map((bucket) => bucket === 'unrated' ? 'Unrated' : bucket),
   }
 })
 
