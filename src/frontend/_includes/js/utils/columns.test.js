@@ -10,18 +10,41 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "columns.js"), "utf8");
+const generalSource = fs.readFileSync(path.join(__dirname, "general.js"), "utf8");
 
-const playtimeFormatter = vm.runInContext(
-  `${source}\n;playtimeFormatter`,
-  vm.createContext({
-    Utils: { html: (strings) => strings.raw.join("") },
-    Conversions: { apiTypeToType: {}, statusToTitle: () => "" },
-    console,
-  })
-);
+// The real `Utils`, not a stub: `escapeHtml` and `toSafeUrl` are most of what
+// the formatters below are being asked about, so a stand-in for them would be
+// testing the stand-in. `URL` is a host global rather than a JS builtin, so a
+// fresh vm context has to be handed one.
+//
+// base.njk wraps each included file in its own IIFE, which is what keeps two
+// files' `const`s from colliding and what makes an assignment with no keyword
+// (`Utils = …`) the only thing that crosses between them. Loading them the
+// same way here keeps that difference visible.
+const context = vm.createContext({
+  URL,
+  console,
+  Conversions: { apiTypeToType: {}, statusToTitle: () => "" },
+});
+const load = (js, exports) =>
+  vm.runInContext(`(() => {\n${js}\n;return ${exports}\n})()`, context);
+
+load(generalSource, "undefined");
+
+const { playtimeFormatter, titleFormatter, listOfLinksFormatter, Columns } =
+  load(
+    source,
+    "({ playtimeFormatter, titleFormatter, listOfLinksFormatter, Columns })"
+  );
 
 const playtime = (commonMetadata, overrides) =>
   playtimeFormatter(null, { commonMetadata, overrides });
+
+const title = (commonMetadata, overrides) =>
+  titleFormatter(null, { dbRef: "abc", commonMetadata, overrides });
+
+const genres = (values) =>
+  listOfLinksFormatter("genres")(null, { commonMetadata: { genres: values } });
 
 test("a flat hltb apiRef links the playtime to HowLongToBeat", () => {
   assert.equal(
@@ -118,4 +141,105 @@ test("a placeholder hltb ref renders no link at all", () => {
     playtime({ duration: 600, apiRefs: [{ name: "hltb", ref: "N/A" }] }),
     "10h"
   );
+});
+
+///////////////////////////////////////////////////////////////////////////////
+// Escaping. Everything below is metadata: whatever an external API holds, or
+// whatever the owner typed into an override. A list is public, so an override
+// that reached the markup intact would run in every reader's browser.
+
+test("an ordinary title renders a closed link and the placeholder cover", () => {
+  assert.equal(
+    title({ englishTranslatedTitle: "Hollow Knight" }),
+    '<span id="entry-abc" class="title-with-cover">' +
+      '<img class="mini-thumb" src="/img/mawaru.png" loading="lazy" decoding="async" alt="">' +
+      '<a href="http://en.wikipedia.org/wiki/Special:Search?search=Hollow%20Knight&amp;go=Go">' +
+      "Hollow Knight</a></span>"
+  );
+});
+
+test("a title cannot inject markup into a list", () => {
+  const rendered = title({
+    englishTranslatedTitle: '<img src=x onerror="alert(1)">',
+  });
+  assert.ok(!rendered.includes("<img src=x"));
+  assert.ok(rendered.includes("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;"));
+});
+
+test("an imageUrl override cannot break out of the src attribute", () => {
+  const rendered = title(
+    { englishTranslatedTitle: "Hollow Knight" },
+    { imageUrl: '/x.png" onerror="alert(1)' }
+  );
+  assert.ok(!rendered.includes('onerror="alert(1)'));
+  assert.ok(rendered.includes('src="/x.png&quot; onerror=&quot;alert(1)"'));
+});
+
+test("a javascript: url never reaches an href or a src", () => {
+  // Escaping alone would leave this one intact — nothing in it needs escaping.
+  const rendered = title(
+    { englishTranslatedTitle: "Hollow Knight" },
+    {
+      imageUrl: "javascript:alert(1)",
+      externalUrls: [{ url: "javascript:alert(1)" }],
+    }
+  );
+  assert.ok(!rendered.includes("javascript:"));
+  assert.ok(rendered.includes('src="/img/mawaru.png"'));
+  assert.ok(rendered.includes("en.wikipedia.org"));
+});
+
+test("an http externalUrl is still used as the title's link", () => {
+  const rendered = title({
+    englishTranslatedTitle: "Hollow Knight",
+    externalUrls: [{ url: "https://www.igdb.com/games/hollow-knight" }],
+  });
+  assert.ok(rendered.includes('href="https://www.igdb.com/games/hollow-knight"'));
+});
+
+test("a javascript: playtime link is dropped, leaving plain text", () => {
+  assert.equal(
+    playtime({
+      duration: 600,
+      externalUrls: [{ name: "hltb", url: "javascript:alert(1)" }],
+    }),
+    "10h"
+  );
+});
+
+test("a genre cannot break out of its wikipedia link", () => {
+  const rendered = genres(['"><script>alert(1)</script>']);
+  assert.ok(!rendered.includes("<script>"));
+  assert.ok(rendered.includes("&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"));
+});
+
+test("an ampersand in a name is searched for, not read as a parameter", () => {
+  assert.equal(
+    genres(["Rock & Roll"]),
+    '<a href="http://en.wikipedia.org/wiki/Special:Search?search=Rock%20%26%20Roll&amp;go=Go">' +
+      "Rock &amp; Roll</a>"
+  );
+});
+
+test("the edit button carries the row's id and nothing else", () => {
+  const rendered = Columns.edit()
+    .formatter(null, {
+      status: "Completed",
+      dbRef: "abc",
+      commonMetadata: { englishTranslatedTitle: "Hollow Knight" },
+    }, 0)
+    .trim();
+  assert.ok(!rendered.includes("Hollow Knight"));
+  assert.equal(
+    rendered,
+    '<i id="edit-Completed-0" class="fas fa-edit edit-button" ' +
+      'onclick="window.editEntry(&quot;abc&quot;)"></i>'
+  );
+});
+
+test("a quote in a dbRef stays inside the string the attribute holds", () => {
+  const rendered = Columns.edit()
+    .formatter(null, { status: "Completed", dbRef: `a"b'c` }, 0)
+    .trim();
+  assert.ok(rendered.includes(`onclick="window.editEntry(&quot;a\\&quot;b'c&quot;)"`));
 });

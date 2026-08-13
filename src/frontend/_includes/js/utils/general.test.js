@@ -11,7 +11,7 @@ const vm = require('node:vm')
 
 const source = fs.readFileSync(path.join(__dirname, 'general.js'), 'utf8')
 
-const { timeAgo, escapeHtml } = vm.runInThisContext(`${source}\n;Utils`)
+const { timeAgo, escapeHtml, toSafeUrl } = vm.runInThisContext(`${source}\n;Utils`)
 
 const NOW = Date.parse('2024-06-30T12:00:00.000Z')
 const ago = (milliseconds) => timeAgo(NOW - milliseconds, NOW)
@@ -55,4 +55,41 @@ test("a note's own text cannot inject markup into the history", () => {
     escapeHtml('<img src=x onerror="alert(1)"> & "quoted"'),
     '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &quot;quoted&quot;'
   )
+})
+
+test('a url we would render comes back exactly as it was written', () => {
+  // Unchanged, not normalised: a relative cover has to stay relative.
+  assert.equal(
+    toSafeUrl('https://image.tmdb.org/t/p/w500/x.jpg'),
+    'https://image.tmdb.org/t/p/w500/x.jpg'
+  )
+  assert.equal(
+    toSafeUrl('http://en.wikipedia.org/wiki/Special:Search?search=X&go=Go'),
+    'http://en.wikipedia.org/wiki/Special:Search?search=X&go=Go'
+  )
+  assert.equal(toSafeUrl('/img/mawaru.png'), '/img/mawaru.png')
+})
+
+test('a scheme we would not render is dropped rather than escaped', () => {
+  // There is nothing in `javascript:alert(1)` for `escapeHtml` to escape, so
+  // it survives that untouched and still runs. Only the scheme check stops it.
+  assert.equal(toSafeUrl('javascript:alert(1)'), undefined)
+  assert.equal(toSafeUrl('JavaScript:alert(1)'), undefined)
+  assert.equal(toSafeUrl('data:text/html,<script>alert(1)</script>'), undefined)
+  assert.equal(toSafeUrl('vbscript:msgbox(1)'), undefined)
+})
+
+test('whitespace smuggled into a scheme does not get it past the check', () => {
+  // The url parser strips tabs and newlines before it reads the scheme, so a
+  // check of our own that did not would disagree with the browser about what
+  // this is.
+  assert.equal(toSafeUrl('java\tscript:alert(1)'), undefined)
+  assert.equal(toSafeUrl('java\nscript:alert(1)'), undefined)
+  assert.equal(toSafeUrl('  javascript:alert(1)'), undefined)
+})
+
+test('a missing url is missing, not a link to nowhere', () => {
+  assert.equal(toSafeUrl(undefined), undefined)
+  assert.equal(toSafeUrl(null), undefined)
+  assert.equal(toSafeUrl(''), undefined)
 })
