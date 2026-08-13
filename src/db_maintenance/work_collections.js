@@ -1,80 +1,66 @@
 /**
  * @file Shared description of the work/entry collections, used by the
- * audit and backfill scripts. Keep this in sync with
- * ../api/utils/parsers/ and ../api/utils/external_api_adapters/.
+ * audit and backfill scripts.
+ *
+ * The collection names, the entry types and the apiRef prefixes come from
+ * ../api/utils/work_types.js, which the API itself reads — so there is now
+ * something to import rather than something to keep in sync. What is added
+ * here is what only these scripts need. Keep the adapter modules in step with
+ * ../api/utils/external_api_adapters/.
  */
 
+const { WORK_TYPES } = require("../api/utils/work_types");
+
 /**
- * `apiRefPrefixes` lists every prefix a cached work may legitimately carry.
- * `retrievePrefix` is the one the adapter's `retrieve(ref)` expects.
+ * The script-only half of a descriptor, by type.
+ *
+ * `retrievePrefix` is the apiRef prefix the adapter's `retrieve(ref)` expects
+ * — always one of the shared row's `identityPrefixes`.
  * `stringArrayFields` / `numberFields` are the metadata fields we expect the
  * adapter to fill, and that the audit checks for corruption.
  */
-const COLLECTIONS = [
-  {
-    type: "films",
-    works: "films",
-    entries: "filmEntries",
-    entryType: "Film",
+const SCRIPT_FIELDS = {
+  films: {
     adapterModule: "../api/utils/external_api_adapters/films/tmdb",
-    apiRefPrefixes: ["tmdb"],
-    identityPrefixes: ["tmdb"],
     retrievePrefix: "tmdb",
     stringArrayFields: ["genres", "directors", "actors"],
     numberFields: ["releaseYear", "duration"],
     defaultDelayMs: 300,
   },
-  {
-    type: "tv",
-    works: "tvShows",
-    entries: "tvShowEntries",
-    entryType: "TVShow",
+  tv: {
     adapterModule: "../api/utils/external_api_adapters/tv_shows/tmdb",
-    apiRefPrefixes: ["tmdb"],
-    identityPrefixes: ["tmdb"],
     retrievePrefix: "tmdb",
     stringArrayFields: ["genres", "directors", "actors"],
     numberFields: ["releaseYear", "duration", "episodes"],
     defaultDelayMs: 300,
   },
-  {
-    type: "games",
-    works: "games",
-    entries: "gameEntries",
-    entryType: "Game",
+  games: {
     adapterModule: "../api/utils/external_api_adapters/games/igdb",
-    // `hltb` is a legacy secondary ref: the adapter used to add it alongside
-    // `igdb`, and 775 games still carry one. HowLongToBeat's API is gone so
-    // no new ones are written, but the pages are still worth linking to.
-    // Only `igdb` can be used to re-retrieve the work.
-    apiRefPrefixes: ["igdb", "hltb"],
-    // An hltb id identifies a HowLongToBeat page, not the game, and plenty of
-    // games share the placeholder `hltb__N/A`. Only igdb establishes identity.
-    identityPrefixes: ["igdb"],
     retrievePrefix: "igdb",
     stringArrayFields: ["genres", "platforms", "studios", "publishers"],
     numberFields: ["releaseYear", "duration"],
     // IGDB caps at 4 requests a second, and a retrieve costs three of them.
     defaultDelayMs: 1000,
   },
-  {
-    type: "books",
-    works: "books",
-    entries: "bookEntries",
-    entryType: "Book",
+  books: {
     adapterModule: "../api/utils/external_api_adapters/books/google",
-    // The adapter caches books under `ISBN__`; some documents carry
-    // `google__` instead, naming the same ISBN.
-    apiRefPrefixes: ["ISBN", "google"],
-    // Both name the same ISBN, so either establishes identity.
-    identityPrefixes: ["ISBN", "google"],
     retrievePrefix: "ISBN",
     stringArrayFields: ["genres", "authors", "publishers"],
     numberFields: ["releaseYear", "duration"],
     // The unauthenticated Google Books API rate limits aggressively.
     defaultDelayMs: 1000,
   },
-];
+};
+
+/**
+ * The shared rows with the script-only fields over them, in the shared order.
+ * Carries `reviews` too, so nothing here has to derive a review collection
+ * from an entry one by hand.
+ */
+const COLLECTIONS = WORK_TYPES.map((workType) => ({
+  ...workType,
+  ...SCRIPT_FIELDS[workType.type],
+}));
 
 /** Fields every work is expected to carry, whatever its type. */
 const COMMON_FIELDS = [

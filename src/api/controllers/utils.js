@@ -3,9 +3,9 @@
 /** @typedef {import('../errors').Error} Error */
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
 const { Result, ResultAsync, err, ok } = require('neverthrow')
-const { match } = require('ts-pattern')
 const errors = require('../utils/errors')
 const db = require('../utils/db')
+const workTypes = require('../utils/work_types')
 const { validateExists } = require('../utils/general')
 const { JWT } = require("jose")
 
@@ -40,28 +40,23 @@ const findIdOfName = (name) =>
     .map(result => result?.data?.userId)
 
 /**
- * The `:type` URL segment every entry-scoped route starts with.
+ * The `:type` URL segment every entry-scoped route starts with. A segment
+ * naming no type is a 404 here rather than an `undefined` collection that
+ * fails somewhere in the driver.
  * @type {(segment: string) => Result<ValidCollection, Error>}
  */
-const toEntryCollection = (segment) =>
-  match(segment)
-    .with('films', () => ok('filmEntries'))
-    .with('books', () => ok('bookEntries'))
-    .with('tv', () => ok('tvShowEntries'))
-    .with('games', () => ok('gameEntries'))
-    .otherwise(() => err(errors.notFound()))
+const toEntryCollection = (segment) => {
+  const workType = workTypes.byType(segment)
+  return workType ? ok(workType.entries) : err(errors.notFound())
+}
 
 /**
  * The inverse of toEntryCollection, for the code that has a collection in
  * hand rather than a URL.
  * @type {(entryCollection: ValidCollection) => string | undefined}
  */
-const toEntryType = (entryCollection) => ({
-  filmEntries: 'films',
-  bookEntries: 'books',
-  tvShowEntries: 'tv',
-  gameEntries: 'games',
-}[entryCollection])
+const toEntryType = (entryCollection) =>
+  workTypes.byEntryCollection(entryCollection)?.type
 
 /**
  * An entry's review lives in the collection of the same name, with
@@ -69,7 +64,7 @@ const toEntryType = (entryCollection) => ({
  * @type {(entryCollection: ValidCollection) => ValidCollection}
  */
 const toReviewCollection = (entryCollection) =>
-  /** @type any */ (entryCollection.replace('Entries', 'Reviews'))
+  /** @type any */ (workTypes.byEntryCollection(entryCollection)?.reviews)
 
 module.exports = {
   getUserId,

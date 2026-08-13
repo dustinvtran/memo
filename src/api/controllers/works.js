@@ -5,11 +5,11 @@
 const { toPromise } = require('../utils/general')
 const { getUrlSegments } = require('./utils')
 const { Result, ok, err, ResultAsync, okAsync } = require('neverthrow')
-const { match } = require('ts-pattern')
 const errors = require('../utils/errors')
 const responses = require('../utils/responses')
 const adapters = require('../utils/external_api_adapters')
 const db = require('../utils/db')
+const workTypes = require('../utils/work_types')
 
 /** @type {(event: Event) => Promise<Response>} */
 const searchForWork = (event) =>
@@ -20,15 +20,11 @@ const retrieveWork = (event) => {
   const type = getUrlSegments(event)[1]
   const apiRefId = getUrlSegments(event)[2]
 
-  // Hardcoded for now, but ideally shouldnt be.
-  // The Google Books adapter caches books under `ISBN__`; `google__` is also
-  // accepted because some book documents are stored under that name.
-  const apiNames = {
-    films: ['tmdb'],
-    books: ['ISBN', 'google'],
-    tv: ['tmdb'],
-    games: ['igdb'],
-  }[type]
+  // Every prefix that names this work, tried in turn — not every prefix it
+  // may carry, since the id in the url belongs to one API. The Google Books
+  // adapter caches books under `ISBN__`; `google__` is also accepted because
+  // some book documents are stored under that name, and both mean the ISBN.
+  const apiNames = workTypes.byType(type)?.identityPrefixes
 
   if (!apiNames) return Promise.resolve(responses.notFound())
 
@@ -53,13 +49,8 @@ module.exports = {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// Does this exist somewhere else?? >_>
-const typeToCollection = (type) => ({
-  films: 'films',
-  books: 'books',
-  tv: 'tvShows',
-  games: 'games',
-}[type])
+/** @type {(type: string) => string | undefined} */
+const typeToCollection = (type) => workTypes.byType(type)?.works
 
 /**
  * Tries each apiRef in turn and stops at the first cached work.
@@ -100,7 +91,11 @@ const createWork = (event) =>
     }))
 
 
-/** @type {(event: Event) => Result<Adapter, Error>} */
-const getAdapter = (event) => match(getUrlSegments(event)[1])
-  .with('films', 'tv', 'games', 'books', (type) => ok(adapters[type]))
-  .otherwise(() => err(errors.notFound()))
+/**
+ * The adapters are keyed by `:type` segment, so a known type has one.
+ * @type {(event: Event) => Result<Adapter, Error>}
+ */
+const getAdapter = (event) => {
+  const type = getUrlSegments(event)[1]
+  return workTypes.byType(type) ? ok(adapters[type]) : err(errors.notFound())
+}

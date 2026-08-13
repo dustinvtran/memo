@@ -10,22 +10,17 @@
  * equality `$match` on one field. Each entry below names a field one of those
  * calls is given. Nothing here is a sort or a range, so every index is a
  * single ascending field, and `_id` is already indexed by MongoDB itself.
+ *
+ * The collection names come from ../api/utils/work_types.js, which is pure
+ * too, so this file stays testable without an install.
  */
 
+const { WORK_TYPES } = require("../api/utils/work_types");
+
 /** The four of each, in the order the rest of the folder lists them. */
-const ENTRY_COLLECTIONS = [
-  "filmEntries",
-  "tvShowEntries",
-  "gameEntries",
-  "bookEntries",
-];
-const REVIEW_COLLECTIONS = [
-  "filmReviews",
-  "tvShowReviews",
-  "gameReviews",
-  "bookReviews",
-];
-const WORK_COLLECTIONS = ["films", "tvShows", "games", "books"];
+const ENTRY_COLLECTIONS = WORK_TYPES.map((workType) => workType.entries);
+const REVIEW_COLLECTIONS = WORK_TYPES.map((workType) => workType.reviews);
+const WORK_COLLECTIONS = WORK_TYPES.map((workType) => workType.works);
 
 /**
  * @typedef {{
