@@ -66,8 +66,12 @@ const main = async () => {
 const auditCollection = async (db, collection) => {
   const works = await db.collection(collection.works).find().toArray();
   const entries = await db.collection(collection.entries).find().toArray();
+  const reviews = await db.collection(toReviewCollection(collection))
+    .find()
+    .toArray();
 
   const workIds = new Set(works.map((w) => w._id));
+  const entryIds = new Set(entries.map((e) => e._id));
   const referencedWorkIds = new Set(
     entries.map((e) => e.workRef).filter((ref) => ref)
   );
@@ -124,9 +128,21 @@ const auditCollection = async (db, collection) => {
     .filter((e) => e.workRef && !workIds.has(e.workRef))
     .map((e) => ({ id: e._id, userId: e.userId, workRef: e.workRef }));
 
+  // A review is only ever found by `entryRef`, so one whose entry is gone is
+  // unreachable rather than deleted. The text is a user's private note and
+  // stays out of the report; its length is enough to size what is left behind.
+  const orphanReviews = reviews
+    .filter((r) => !r.entryRef || !entryIds.has(r.entryRef))
+    .map((r) => ({
+      id: r._id,
+      entryRef: r.entryRef ?? null,
+      textLength: r.text?.length ?? 0,
+    }));
+
   const result = {
     works: works.length,
     entries: entries.length,
+    reviews: reviews.length,
     noApiRef,
     legacyObjectApiRefs,
     missingFields,
@@ -136,11 +152,17 @@ const auditCollection = async (db, collection) => {
     orphanWorks,
     entriesWithoutWorkRef,
     entriesWithDanglingWorkRef,
+    orphanReviews,
   };
 
   printSummary(collection, result);
   return result;
 };
+
+/** An entry's review lives in the collection of the same name, with
+ * `Entries` swapped for `Reviews` — the API's rule, in `controllers/utils.js`. */
+const toReviewCollection = (collection) =>
+  collection.entries.replace("Entries", "Reviews");
 
 const hasRetrieveRef = (collection, work) =>
   Array.isArray(work.apiRefs) &&
@@ -156,7 +178,9 @@ const describe = (work) => ({
 
 const printSummary = (collection, r) => {
   console.log(`\n=== ${collection.works} ===`);
-  console.log(`  works: ${r.works}, entries: ${r.entries}`);
+  console.log(
+    `  works: ${r.works}, entries: ${r.entries}, reviews: ${r.reviews}`
+  );
   const lines = [
     [`no ${collection.retrievePrefix}__ ref (cannot be refreshed)`, r.noApiRef],
     ["apiRefs still stored as objects", r.legacyObjectApiRefs],
@@ -169,6 +193,7 @@ const printSummary = (collection, r) => {
     ["works no entry points at", r.orphanWorks],
     ["entries with no workRef", r.entriesWithoutWorkRef],
     ["entries with a dangling workRef", r.entriesWithDanglingWorkRef],
+    ["reviews with no entry", r.orphanReviews],
   ];
   for (const [label, items] of lines) {
     console.log(`  ${String(items.length).padStart(5)}  ${label}`);
