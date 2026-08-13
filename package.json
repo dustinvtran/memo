@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "start": "npm run dev",
-    "dev": "cross-env ELEVENTY_ENV=dev eleventy --serve",
+    "dev": "cross-env ELEVENTY_ENV=dev eleventy --serve --port=8093",
     "build": "cross-env ELEVENTY_ENV=prod eleventy",
     "test": "node --test"
   },
