@@ -105,7 +105,9 @@ const createEntry = ([userId, body, collection]) => {
       text: review,
       entryRef: entry.ref.id,
     }))
-    .match(responses.ok, responses.internalError)
+    // `fromError`, not `internalError`: the latter would send the error object
+    // itself, detail and all, back as the body.
+    .match(responses.ok, responses.fromError)
 }
 
 /** @type {(col: ValidCollection, entry: any) => Promise<Response>} */

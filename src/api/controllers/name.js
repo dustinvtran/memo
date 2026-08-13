@@ -3,7 +3,7 @@
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/errors').Error} Error */
 const { combine, okAsync, ResultAsync } = require('neverthrow')
-const { findOneByField_, findOneByField, updateByRef_, create_ } = require('../utils/db')
+const { findOneByField_, updateByRef_, create_ } = require('../utils/db')
 const { pair, toPromise } = require('../utils/general')
 const responses = require('../utils/responses')
 const { getUserId, getReqBody, getSegment } = require('./utils')
@@ -20,9 +20,21 @@ const findOwnName = (event) => toPromise(
     .mapErr(() => responses.ok({}))
 )
 
-/** @type {(event: Event) => Promise<Response>} */
-const getUserIdFromName = (event) =>
-  findOneByField('users', 'username', getSegment(0, event))
+/**
+ * GET /api/name/:username
+ *
+ * Whether that name is taken, and nothing else. The list page asks this
+ * before it draws a list and only looks at whether an answer came back — the
+ * whole user document, `userId` included, used to come back with it. See
+ * #105, and user.js for the same projection on the profile route.
+ * @type {(event: Event) => Promise<Response>}
+ */
+const getUserIdFromName = (event) => toPromise(
+  findOneByField_('users', 'username', getSegment(0, event))
+    .map(({ data }) => data ? { data: { username: data.username } } : {})
+    .map(responses.ok)
+    .mapErr(responses.fromError)
+)
 
 /** @type {(event: Event) => Promise<Response>} */
 const setOwnName = (event) => toPromise(

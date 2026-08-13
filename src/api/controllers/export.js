@@ -152,16 +152,19 @@ const toLimit = (event) =>
   parseInt(event.queryStringParameters?.limit ?? '') || undefined
 
 /**
- * `responses.ok` stringifies but sends no content type, which leaves this
- * arriving as `text/plain`, and a reader deciding how to parse a body
- * deserves to be told. Not indented: it costs a quarter of the response and
- * every reader of this — browsers included — formats JSON itself.
+ * Stringified here rather than by `responses.ok` because the byte budget
+ * below has to weigh the body before it is sent, and a `Response` does not
+ * say how big it is. `responses.ok` would set the same content type — it is
+ * the same constant — but not the CORS header this route also needs.
+ *
+ * Not indented: it costs a quarter of the response and every reader of this,
+ * browsers included, formats JSON itself.
  * @type {(body: object, username: string) => Response}
  */
 const asJson = (body, username) =>
   safeJSONStringify(body).match(
-    (text) => withinBudget('application/json; charset=utf-8', text, username),
-    (error) => (warn(error), responses.internalError(errors.internal(error)))
+    (text) => withinBudget(responses.JSON_CONTENT_TYPE, text, username),
+    (error) => responses.fromError(errors.internal(error))
   )
 
 /**

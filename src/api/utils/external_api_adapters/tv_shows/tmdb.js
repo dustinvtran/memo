@@ -13,7 +13,7 @@ const { ResultAsync } = require('neverthrow')
 const errors = require('../../errors')
 const { match } = require('ts-pattern')
 const { throwIt } = require('../../general')
-const { retrying, describeFailure, statusOf } = require('../retry')
+const { retrying, describeFailure, publicFailure, statusOf } = require('../retry')
 
 const { TMDB_API_KEY } = process.env
 
@@ -81,10 +81,12 @@ module.exports = {
  * @type {(err: any) => Error}
  */
 const toError = (err) => match(statusOf(err))
-  .with(404, () => errors.notFound('tmdb'))
-  .with(401, () => errors.unauthorized('tmdb'))
-  .with(408, () => errors.internal('tmdb timed out'))
-  .otherwise(() => {
-    console.error(`tmdb failed: ${describeFailure(err)}`)
-    return errors.internal(`tmdb failed (${describeFailure(err)})`)
-  })
+  .with(404, () => errors.notFound(undefined, 'no such tv show'))
+  .with(401, () => errors.unauthorized(describeFailure(err), publicFailure('tmdb', err)))
+  .with(408, () => errors.internal(undefined, 'tmdb timed out'))
+  // Everything tmdb said goes to the log; the caller gets the class of the
+  // failure, which is the part that is theirs to act on. #105.
+  .otherwise(() => errors.internal(
+    `tmdb failed: ${describeFailure(err)}`,
+    publicFailure('tmdb', err),
+  ))

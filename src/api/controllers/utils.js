@@ -31,7 +31,7 @@ const getUrlSegments = (event) =>
 /** @type {(event: Event) => Result<any, Error>} */
 const getReqBody = Result.fromThrowable(
   (event) => JSON.parse(event.body),
-  (err) => errors.req(String(err)),
+  (err) => errors.req(err, 'the request body is not valid JSON'),
 )
 
 /** @type {(name: string) => ResultAsync<string, Error>} */

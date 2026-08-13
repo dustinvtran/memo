@@ -25,7 +25,7 @@ const {
 } = require('./time_to_beat')
 const { earliestReleaseDate } = require('./release_dates')
 const { throwIt } = require('../../general')
-const { retrying, describeFailure, statusOf } = require('../retry')
+const { retrying, describeFailure, publicFailure, statusOf } = require('../retry')
 
 const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET } = process.env
 if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) {
@@ -234,15 +234,22 @@ const throwNoSuchGame = (ref) => {
  * what it actually was. It used to arrive as the string "Something went
  * terribly wrong...", which told nobody anything.
  *
+ * Said twice, because the two readers want different things: the whole of it
+ * to the log, and to the caller the class of failure alone — enough to know
+ * whether trying again is worth it, and no account of our internals. #105.
+ *
  * A 404 is the exception: it is an answer rather than a failure — an id
  * IGDB doesn't hold — and telling the user their game doesn't exist beats
  * telling them igdb failed.
  * @type {(doing: string) => (err: any) => Error}
  */
-const toError = (doing) => (err) => {
-  console.error(`igdb failed while ${doing}: ${describeFailure(err)}`)
-
-  return statusOf(err) === 404
-    ? errors.notFound('igdb')
-    : errors.internal(`igdb failed while ${doing} (${describeFailure(err)})`)
-}
+const toError = (doing) => (err) =>
+  statusOf(err) === 404
+    ? errors.notFound(
+        `igdb has no such game (${doing}): ${describeFailure(err)}`,
+        'no such game',
+      )
+    : errors.internal(
+        `igdb failed while ${doing}: ${describeFailure(err)}`,
+        publicFailure('igdb', err),
+      )

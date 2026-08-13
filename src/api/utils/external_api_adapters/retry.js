@@ -83,6 +83,37 @@ const describeFailure = (err) => {
 }
 
 /**
+ * An errno-style code — `ETIMEDOUT`, `EAI_AGAIN` — as opposed to the numbers
+ * and the free-text labels other clients also put on `code`.
+ */
+const ERRNO_CODE = /^[A-Z][A-Z0-9_]*$/
+
+/**
+ * `describeFailure` written for a stranger: what to tell the person whose
+ * search just failed, in terms that say whether trying again is worth it and
+ * nothing beyond that.
+ *
+ * The class of the failure may go out — an HTTP status, an errno-style code —
+ * because "HTTP 503" tells the caller to try again in a minute and "HTTP 401"
+ * tells them not to bother. `err.message` may not: it is free text somebody
+ * else's client library wrote, and it is where the hostnames, the urls with
+ * keys in them and the driver's account of its own internals live. See #105.
+ *
+ * @type {(who: string, err: any) => string}
+ */
+const publicFailure = (who, err) => {
+  const status = statusOf(err)
+  const failure = [
+    status === undefined ? undefined : `HTTP ${status}`,
+    ERRNO_CODE.test(err?.code) ? err.code : undefined,
+  ]
+    .filter((part) => part)
+    .join(' ')
+
+  return failure ? `${who} failed (${failure})` : `${who} failed`
+}
+
+/**
  * Calls `attempt` until it succeeds, until a failure looks permanent, or
  * until the attempts run out — whichever comes first, rethrowing the last
  * failure. `attempt` is a thunk and not a promise so that each try is a fresh
@@ -118,6 +149,7 @@ module.exports = {
   backoffMs,
   describeFailure,
   isTransient,
+  publicFailure,
   retrying,
   statusOf,
 }

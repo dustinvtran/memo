@@ -7,6 +7,7 @@ const {
   backoffMs,
   describeFailure,
   isTransient,
+  publicFailure,
   retrying,
   statusOf,
 } = require('./retry')
@@ -143,4 +144,37 @@ test('failures describe themselves rather than stringifying to {}', () => {
   assert.equal(describeFailure(networkError('ECONNRESET')), 'ECONNRESET socket hang up')
   assert.equal(describeFailure('Something terrible happened'), 'Something terrible happened')
   assert.equal(describeFailure(undefined), 'undefined')
+})
+
+test('what a stranger is told is the class of the failure and no more', () => {
+  // The status is the useful half: it says whether trying again is worth it.
+  assert.equal(publicFailure('tmdb', axiosError(503)), 'tmdb failed (HTTP 503)')
+  assert.equal(publicFailure('igdb', gotError(502)), 'igdb failed (HTTP 502)')
+  assert.equal(publicFailure('tmdb', tmdbError(429)), 'tmdb failed (HTTP 429)')
+  assert.equal(publicFailure('igdb', networkError('ETIMEDOUT')), 'igdb failed (ETIMEDOUT)')
+  // A failure that named no class at all still gets a sentence.
+  assert.equal(publicFailure('igdb', new TypeError('items is undefined')), 'igdb failed')
+  assert.equal(publicFailure('tmdb', undefined), 'tmdb failed')
+})
+
+test('nothing a client library wrote in prose reaches the caller', () => {
+  // `describeFailure` carries `err.message` because a log wants it. That is
+  // also where a url with a key in it, or a hostname, ends up — so the public
+  // description is built from the status and the code alone. #105.
+  const chatty = Object.assign(
+    new Error('connect ECONNREFUSED api.igdb.com:443 (client_id=abc123)'),
+    { code: 'ECONNREFUSED', response: { status: 500 } },
+  )
+
+  const said = publicFailure('igdb', chatty)
+
+  assert.equal(said, 'igdb failed (HTTP 500 ECONNREFUSED)')
+  assert.equal(said.includes('api.igdb.com'), false)
+  assert.equal(said.includes('abc123'), false)
+})
+
+test('a code that is not an errno is not passed on either', () => {
+  // node-themoviedb puts a `0` on `code`, and other clients put labels there.
+  assert.equal(publicFailure('tmdb', { code: 0, errorCode: 404 }), 'tmdb failed (HTTP 404)')
+  assert.equal(publicFailure('tmdb', { code: 'auth failed for user nil' }), 'tmdb failed')
 })
