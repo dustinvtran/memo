@@ -31,7 +31,7 @@ const initComponent = ({ content, initializer, style }) => {
     styleTag.first().append(componentStyle)
   }
 
-  return private({
+  return hide({
     id,
     content: content({ id, include }),
     // We create a new initializer that also contains the child initializers
@@ -81,7 +81,7 @@ Components.List = {}
 
 /** Hide component internals to force consumers to use initComponent/include */
 const componentPropAccessor = Symbol()
-const private = (component) => ({ [componentPropAccessor]: component })
+const hide = (component) => ({ [componentPropAccessor]: component })
 const access = (component) => component[componentPropAccessor]
 
 const uniqueId = () => '_' + Math.random().toString(36).substring(2, 9)
