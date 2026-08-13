@@ -14,8 +14,6 @@ const html = noOpTagFunction
 
 const css = noOpTagFunction
 
-const log = (x) => (console.log(), x)
-
 const noOp = () => undefined
 
 const waitForEl = (selector) => new Promise((resolve) => {
@@ -115,7 +113,6 @@ Utils = {
   html,
   css,
   noOp,
-  log,
   waitForEl,
   timeAgo,
   dateTime,
