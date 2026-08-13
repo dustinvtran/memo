@@ -115,6 +115,12 @@ const deleteEntry_ = async (col, entry) => {
   // The history and the draft only describe an entry that no longer exists.
   await discardHistory(entry.ref.id)
 
+  // The review is only ever found by `entryRef`, so leaving it behind doesn't
+  // hide it — it stores a note the user asked to be rid of, unreachable by
+  // every code path. Its failure is swallowed for the same reason the
+  // history's is: a cleanup must not fail the delete the user asked for.
+  await db.deleteAllByField_(toReviewCollection(col), 'entryRef', entry.ref.id).unwrapOr(undefined)
+
   return response
 }
 
