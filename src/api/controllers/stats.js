@@ -9,16 +9,14 @@ const { getSegment } = require('./utils')
 const { toPromise } = require('../utils/general')
 const db = require('../utils/db/')
 
-const CACHE_STATS = true
-
 /** @type {(event: Event) => Promise<Response>} */
 const getUserStats = (event) => toPromise(
   db.findOneByField_('users', 'username', getSegment(0, event))
     .andThen(result => {
-      // We can cache stats if we want by uncommenting this
+      // The stored tallies stand for 48 hours; past that they are recomputed.
       const stats = result?.data?.stats
       const lastUpdated = stats?.updatedDate
-      if (!CACHE_STATS || !lastUpdated || isMoreThan48HoursAgo(lastUpdated)) {
+      if (!lastUpdated || isMoreThan48HoursAgo(lastUpdated)) {
         return refreshStats(result)
       } else {
         return okAsync(responses.ok(stats))
