@@ -3,9 +3,15 @@
  * private to this module. They must be converted to safe
  * promises or safe ResultAsyncs with toPromise or toResult
  * pefore being re-exported.
+ *
+ * Every write takes an optional `session` last, and every read takes one in
+ * its `QueryOptions`. It is the session `withTransaction` hands out, and it
+ * is what puts the query inside that transaction; without it a query runs on
+ * its own, which is what everything but the entry-saving path wants.
  */
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('mongodb').ObjectId} ObjectId */
+/** @typedef {import('mongodb').ClientSession} ClientSession */
 const { mongo } = require('./db')
 const { v4: uuidv4 } = require('uuid')
 const { throwIt } = require('../general')
@@ -53,31 +59,31 @@ const _findAllByFieldIn = (collection, field, values, options) =>
     ? Promise.resolve([])
     : find(collection, { [field]: { $in: values } }, options)
 
-/** @type {(collection: ValidCollection, ref: string, update: any) => Promise<object>} */
-const _updateOneByRef = (collection, ref, update) =>
+/** @type {(collection: ValidCollection, ref: string, update: any, session?: ClientSession) => Promise<object>} */
+const _updateOneByRef = (collection, ref, update, session) =>
   mongo((db) => db
     .collection(collection)
-    .updateOne({ _id: ref }, { $set: update })
+    .updateOne({ _id: ref }, { $set: update }, { session })
   )
 
-/** @type {(collection: ValidCollection, ref: string) => Promise<object>} */
-const _deleteOneByRef = (collection, ref) =>
+/** @type {(collection: ValidCollection, ref: string, session?: ClientSession) => Promise<object>} */
+const _deleteOneByRef = (collection, ref, session) =>
   mongo((db) => db
     .collection(collection)
-    .deleteOne({ _id: ref })
+    .deleteOne({ _id: ref }, { session })
   )
 
-/** @type {(collection: ValidCollection, field: string, value: any) => Promise<object>} */
-const _deleteAllByField = (collection, field, value) =>
+/** @type {(collection: ValidCollection, field: string, value: any, session?: ClientSession) => Promise<object>} */
+const _deleteAllByField = (collection, field, value, session) =>
   mongo((db) => db
     .collection(collection)
-    .deleteMany({ [field]: value })
+    .deleteMany({ [field]: value }, { session })
   )
 
-/** @type {(collection: ValidCollection, data: any) => Promise<object>} */
-const _create = (collection, data) =>
+/** @type {(collection: ValidCollection, data: any, session?: ClientSession) => Promise<object>} */
+const _create = (collection, data, session) =>
   parsers[collection](data).match(
-    (validDoc) => unsafeCreateDoc(collection, validDoc),
+    (validDoc) => unsafeCreateDoc(collection, validDoc, session),
     (err) => throwIt(err)
   )
 
@@ -156,15 +162,18 @@ const find = (collection, filter, options) =>
     .then((arr) => arr.map(toSameFormatAsFaunaDb))
   )
 
-/** @type {(collection: ValidCollection, data: any) => Promise<object>} */
-const unsafeCreateDoc = (collection, data) =>
+/** @type {(collection: ValidCollection, data: any, session?: ClientSession) => Promise<object>} */
+const unsafeCreateDoc = (collection, data, session) =>
   mongo((db) => db
     .collection(collection)
     .insertOne({
       _id: uuidv4(),
       ...data,
-    })
+    }, { session })
+    // Read back through the same session: an insert made inside a transaction
+    // is invisible to anything outside it until the transaction commits, so
+    // without this the document just created would come back as `{}`.
     .then(({ insertedId }) =>
-      findFirst(collection, { _id: insertedId })
+      findFirst(collection, { _id: insertedId }, { session })
     )
   )

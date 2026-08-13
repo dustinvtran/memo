@@ -97,6 +97,16 @@ test('an exclusion projection stays an exclusion projection', () => {
   })
 })
 
+test('a session is passed through, so a read can join a transaction', () => {
+  const session = { id: 'a session' }
+
+  assert.deepEqual(toFindOptions({ session }), { session })
+  assert.deepEqual(toFindOptions({ projection: { score: 1 }, session }), {
+    projection: { score: 1 },
+    session,
+  })
+})
+
 test('a projection cannot drop the _id that becomes ref.id', () => {
   // Without `_id` the wrapper hands back `ref: { id: undefined }`, and a row
   // nothing can update or delete looks exactly like one that can.

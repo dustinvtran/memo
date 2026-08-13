@@ -8,6 +8,11 @@
  * Functions PREFIXED with `_` are unsafe (may throw) and should
  * be considered private to this module.
  *
+ * `withTransaction` groups writes so that either all of them land or none
+ * do. A write takes the session it hands out as an optional last argument, a
+ * read takes it in its `QueryOptions`, and a query given neither runs on its
+ * own — outside any transaction in progress, and blind to it.
+ *
  * Basics to make MongoDB queries:
  * https://www.mongodb.com/docs/drivers/node/current/usage-examples/
  *
@@ -19,9 +24,11 @@
 const { ResultAsync } = require('neverthrow')
 const { _findOne, _findMany, _findOneByField, _findOneByRef, _findAllByFieldIn, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
 const { compose } = require('ramda')
+const { withTransaction } = require('./db')
 const { toResponse, toResult } = require('./into_safe_values')
 
 /** @typedef {import('./queries').QueryOptions} QueryOptions */
+/** @typedef {import('mongodb').ClientSession} ClientSession */
 
 /** @type {(collection: ValidCollection, ref: string) => Promise<Response>} */
 const findOneByRef = compose(toResponse, _findOneByRef)
@@ -55,28 +62,29 @@ const findAllUserEntriesWithMetadata_ = compose(toResult, _findAllUserEntriesWit
 /** @type {(collection: ValidCollection) => Promise<Response>} */
 const findAll = compose(toResponse, _findAllInCollection)
 
-/** @type {(collection: ValidCollection, ref: string, update: any) => Promise<Response>} */
+/** @type {(collection: ValidCollection, ref: string, update: any, session?: ClientSession) => Promise<Response>} */
 const updateByRef = compose(toResponse, _updateOneByRef)
 
-/** @type {(collection: ValidCollection, ref: string, update: any) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, ref: string, update: any, session?: ClientSession) => ResultAsync<any, Error>} */
 const updateByRef_ = compose(toResult, _updateOneByRef)
 
-/** @type {(collection: ValidCollection, ref: string) => Promise<Response>} */
+/** @type {(collection: ValidCollection, ref: string, session?: ClientSession) => Promise<Response>} */
 const deleteByRef = compose(toResponse, _deleteOneByRef)
 
-/** @type {(collection: ValidCollection, ref: string) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, ref: string, session?: ClientSession) => ResultAsync<any, Error>} */
 const deleteByRef_ = compose(toResult, _deleteOneByRef)
 
-/** @type {(collection: ValidCollection, field: string, value: any) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, field: string, value: any, session?: ClientSession) => ResultAsync<any, Error>} */
 const deleteAllByField_ = compose(toResult, _deleteAllByField)
 
-/** @type {(collection: ValidCollection, data: ExprArg) => Promise<Response>} */
+/** @type {(collection: ValidCollection, data: ExprArg, session?: ClientSession) => Promise<Response>} */
 const create = compose(toResponse, _create)
 
-/** @type {(collection: ValidCollection, data: ExprArg) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, data: ExprArg, session?: ClientSession) => ResultAsync<any, Error>} */
 const create_ = compose(toResult, _create)
 
 module.exports = {
+  withTransaction,
   findOneByRef,
   findOneByRef_,
   findAll,

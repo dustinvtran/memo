@@ -53,13 +53,18 @@ const toUserEntriesPipeline = ({ userId, workCollection, limit }) => [
  * The driver options of a `find` or a `findOne`, with the ones nobody asked
  * for left out rather than passed as `undefined`.
  *
- * @typedef {{ projection?: object, sort?: object, limit?: number }} QueryOptions
+ * `session` is how a read joins a transaction — `withTransaction` hands one
+ * out, and a read made without it cannot see what that transaction has
+ * written so far.
+ *
+ * @typedef {{ projection?: object, sort?: object, limit?: number, session?: import('mongodb').ClientSession }} QueryOptions
  * @type {(options?: QueryOptions) => QueryOptions}
  */
-const toFindOptions = ({ projection, sort, limit } = {}) => ({
+const toFindOptions = ({ projection, sort, limit, session } = {}) => ({
   ...(projection ? { projection: keepingId(projection) } : {}),
   ...(sort ? { sort } : {}),
   ...(limit ? { limit } : {}),
+  ...(session ? { session } : {}),
 })
 
 module.exports = {
