@@ -22,7 +22,7 @@
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../errors').Error} Error */
 const { ResultAsync } = require('neverthrow')
-const { _findOne, _findMany, _findOneByField, _findOneByRef, _findAllByFieldIn, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
+const { _findOne, _findMany, _countScoresByValue, _findOneByField, _findOneByRef, _findAllByFieldIn, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
 const { compose } = require('ramda')
 const { withTransaction } = require('./db')
 const { toResponse, toResult } = require('./into_safe_values')
@@ -52,6 +52,14 @@ const findOne_ = compose(toResult, _findOne)
 
 /** @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => ResultAsync<any, Error>} */
 const findMany_ = compose(toResult, _findMany)
+
+/**
+ * A count per distinct score, rather than the documents to count. Rows of
+ * `{ _id, count }` and not documents, so unlike everything else here they
+ * carry no `ref`.
+ * @type {(collection: ValidCollection, userId: string) => ResultAsync<{ _id: any, count: number }[], Error>}
+ */
+const countScoresByValue_ = compose(toResult, _countScoresByValue)
 
 /** @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => ResultAsync<any, Error>} */
 const findAllByFieldIn_ = compose(toResult, _findAllByFieldIn)
@@ -90,6 +98,7 @@ module.exports = {
   findAll,
   findOne_,
   findMany_,
+  countScoresByValue_,
   findAllByFieldIn_,
   findOneByField,
   findOneByField_,

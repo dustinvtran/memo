@@ -17,7 +17,12 @@ runs outside the transaction, and cannot see what it has written.
 Transactions need a replica set, which Atlas is; against a standalone
 `mongod` the writes run in order without one. See db.js.
 
-Every document handed out is wrapped as `{ data, ref: { id } }` —
+`countScoresByValue_` is the exception to the "every result is a
+document" rule: it returns the `{ _id, count }` rows of a `$group`,
+because counting entries per score is work the database should do
+rather than four lists downloaded to be counted in Node.
+
+Every other document handed out is wrapped as `{ data, ref: { id } }` —
 the shape callers across the API read — so a projection must keep
 `_id`. `queries.js` enforces that, and holds the parts of a query
 that can be tested without a database; `shapes.js` holds what the

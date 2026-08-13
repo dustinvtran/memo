@@ -50,6 +50,30 @@ const toUserEntriesPipeline = ({ userId, workCollection, limit }) => [
 ]
 
 /**
+ * A user's score histogram for one collection, counted by the database.
+ *
+ * The profile's forty-four numbers used to be four lists downloaded in full so
+ * that Node could count them. `$group` returns one row per score that occurs —
+ * at most eleven — and with the `userId` index the `$match` never touches a
+ * document it does not need.
+ *
+ * The `$match` is the filter it replaces: `$ne` excludes `Planned`, the status
+ * for an entry with nothing to score yet, and matches an entry carrying no
+ * status at all, as `doc.data.status !== 'Planned'` did.
+ *
+ * A score that is missing and one that is explicitly `null` group together
+ * under `_id: null`, which is the `unrated` bucket. Turning these rows into
+ * the stored shape — every bucket present, including the ones no row came back
+ * for — is `toScoreTally` in ../score_tallies.js.
+ *
+ * @type {(args: { userId: string }) => object[]}
+ */
+const toScoreTallyPipeline = ({ userId }) => [
+  { $match: { userId, status: { $ne: 'Planned' } } },
+  { $group: { _id: '$score', count: { $sum: 1 } } },
+]
+
+/**
  * The driver options of a `find` or a `findOne`, with the ones nobody asked
  * for left out rather than passed as `undefined`.
  *
@@ -69,6 +93,7 @@ const toFindOptions = ({ projection, sort, limit, session } = {}) => ({
 
 module.exports = {
   toUserEntriesPipeline,
+  toScoreTallyPipeline,
   toFindOptions,
 }
 
