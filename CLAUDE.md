@@ -78,14 +78,24 @@ scripts came to only work when run from one particular folder.
 `src/db_maintenance/scripts/` operates on production data with real users'
 entries. In order:
 
-1. **Snapshot first** with `scripts/backup_database.js`, and verify it —
-   manifest counts, file counts and live `countDocuments()` should agree
-   across every collection.
+1. **Snapshot first, always, no exceptions.** Take a fresh snapshot with
+   `scripts/backup_database.js` immediately before every `--apply`, and
+   verify it — manifest counts, file counts and live `countDocuments()`
+   should agree across every collection. There is no write small enough,
+   safe-looking enough or reversible-looking enough to skip this: a snapshot
+   costs seconds and is the only thing standing between a mistake and a
+   restore. It applies to writes that touch no documents at all — an index
+   build, a collection setting — because the reason to have the snapshot is
+   that you were wrong about what the run would do.
    `scripts/restore_backup.js --from=<snapshot> --only=<collection>` matches
    on `_id` only.
 2. **Dry run, and read the output.** Every script here is a dry run unless
    given `--apply`. Keep it that way in new ones.
-3. **Ask a human before the first `--apply`**, showing them the dry run.
+3. **`--apply` against production is authorised**, given steps 1, 2 and 4.
+   Say which snapshot you took and what the dry run said. Anything a restore
+   from that snapshot would not undo — dropping a collection or an index,
+   changing credentials, writing to a database other than `memo` — is still
+   a human's call, so ask first.
 4. **Verify afterwards**: no entry pointing at a work that doesn't exist, and
    entry counts unchanged.
 

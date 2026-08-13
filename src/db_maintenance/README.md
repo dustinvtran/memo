@@ -50,6 +50,46 @@ Two ways to override it, in the order they win:
   copy, so neither has to be moved to meet the other. Never copy the `.env`
   to solve this — point at it instead.
 
+## Indexes
+
+`scripts/ensure_indexes.js` creates the indexes the site's queries need. It is
+a **dry run unless you pass `--apply`**, and re-running it is a no-op:
+`createIndexes` is idempotent for an identical spec, and these specs are named
+the way MongoDB names them by default (`entryRef_1`), so an index made by hand
+at the mongosh prompt is recognised rather than collided with.
+
+```
+node scripts/ensure_indexes.js           # what exists, what is missing
+node scripts/ensure_indexes.js --apply
+```
+
+Flags: `--only=users,entryRevisions` (collection names, not the `films,books`
+types the other scripts take), `--json=path`.
+
+Which indexes, and why each one, is declared in `index_plan.js` — every entry
+names the queries that want it, because an index nobody can name a query for
+is an index to delete. They are all single ascending fields: every query the
+site makes goes through `findOneByField` / `findAllByField`, which is an
+equality match on one field, and `_id` is indexed by MongoDB already.
+
+- **`users.username` is unique**, which closes the check-then-write race in
+  the rename path — `assignName` reads the name and writes it in two round
+  trips, so two people claiming one name at the same moment both pass the
+  read. A unique index refuses to build over existing duplicates, so the
+  script looks for them first and prints the colliding documents instead of
+  letting the driver throw. The dry run tells you whether it would succeed;
+  if it wouldn't, that one index is skipped and the rest are still created.
+  Two users with no username at all count as duplicates — MongoDB indexes a
+  missing field as null.
+- **`apiRefs` is an array**, so its index is a *multikey* index. That is
+  correct, not something to fix: `findCachedWork` asks
+  `{ apiRefs: "igdb__1234" }`, an equality match against one element, which
+  is exactly what multikey serves.
+
+Indexes are metadata — the script writes no documents and touches no user
+data, so it needs no backup. It is a dry run by default anyway, because
+building an index on a live collection costs I/O.
+
 ## Auditing and backfilling metadata
 
 `scripts/audit_database.js` is read-only, needs no API keys, and reports every
@@ -227,9 +267,10 @@ Useful flags: `--dir=path`, `--from=name|path`, `--only=a,b`, `--prune`,
 ## Tests
 
 The parts that decide what to write (`work_metadata_merge.js`,
-`game_playtime_plan.js`), what to delete (`work_dedupe_plan.js`) and which
-snapshots a retention policy keeps (`backup_plan.js`) are pure and
-dependency-free, and are covered by `node --test`:
+`game_playtime_plan.js`), what to delete (`work_dedupe_plan.js`), which
+snapshots a retention policy keeps (`backup_plan.js`) and which indexes are
+missing (`index_plan.js`) are pure and dependency-free, and are covered by
+`node --test`:
 
 ```
 npm test

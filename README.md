@@ -106,8 +106,10 @@ until the user presses the button. The API is
 `GET|PUT|DELETE /api/revisions/:type/:dbRef/draft`.
 
 At most 50 versions are kept per entry, and every lookup is by `entryRef`, so
-give the collection an index once it has grown:
-`db.entryRevisions.createIndex({ entryRef: 1 })`.
+the collection needs an index on it — `findDraft` runs on every autosave,
+every 2.5 seconds while the form is open, against 50 full snapshots per entry.
+`src/db_maintenance/scripts/ensure_indexes.js` creates that index along with
+every other one the site's queries need, and is safe to re-run.
 
 The history, collapsed — one row per save, with the fields it touched:
 
