@@ -26,11 +26,7 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
             component: (entries) => SubLists(
               entryType,
               isOwner,
-              [...entries]
-                .sort((a, b) =>
-                  a.commonMetadata.englishTranslatedTitle
-                    - b.commonMetadata.englishTranslatedTitle
-                )
+              entries
                 .map((entry) => ({
                   ...entry,
                   originalData: entry.commonMetadata,
@@ -42,6 +38,7 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
                     ),
                   },
                 }))
+                .sort(byEnglishTitle)
             )}))}
       </div>
     </div>
@@ -285,6 +282,24 @@ const toStats = (entries, entryType) => {
 
   return `Total entries: ${entries.length}${entryType === 'tv' ? ` ${icon} Episodes seen: ${totalEpsSeen}` : ''} ${icon} Days spent: ${days.toFixed(2)} ${icon} Mean score: ${meanScore.toFixed(2)}`
 }
+
+/**
+ * Alphabetical by title, matching `byStatusThenScoreThenTitle` in
+ * `api/utils/export_view.js`. bootstrap-table re-sorts each sublist on score
+ * and its sort is stable, so this decides the order within a score — which in
+ * the Planned sublist is the whole of it, since the score column there is a
+ * preference almost nothing carries. It runs after the overrides are merged so
+ * that it sorts on the title the Title column actually shows.
+ *
+ * Subtracting one title from another, as this used to, is `NaN` for every
+ * pair; `sort` reads that as "these two are fine as they are" and leaves the
+ * array in the order the API returned it, i.e. most recently edited first.
+ * @type {(a: object, b: object) => number}
+ */
+const byEnglishTitle = (a, b) =>
+  // An entry can have no work, and a work can have no title.
+  String(get(a, 'englishTranslatedTitle') ?? '')
+    .localeCompare(String(get(b, 'englishTranslatedTitle') ?? ''))
 
 const get = (entry, prop) =>
   entry.commonMetadata?.[prop]
