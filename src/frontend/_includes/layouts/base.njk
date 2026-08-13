@@ -25,9 +25,12 @@
     {# 1.12.1, matching the bootstrap-table script below. #}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.css" integrity="sha384-HyusOcKCYSnjwC8jY4YvjZAwLgeqDPWFDu2/AFf5OrZd7ykufk0gwxexoqmg5W8N" crossorigin="anonymous" referrerpolicy="no-referrer">
     <link rel="icon" href="/img/favicon.ico" type="image/x-icon"/>
-    <style>
-        {% include "css/main.css" %}
-    </style>
+    {# `_includes/css/main.css`, copied to this url by the `addPassthroughCopy`
+       in `.eleventy.js`. #126 dropped a <link> at this url because nothing
+       emitted the file and every page load spent a request on a 404; the
+       passthrough is the other half of that, so the <link> comes back and the
+       stylesheet stops being re-sent inline with every HTML response. #}
+    <link rel="stylesheet" href="/css/main.css">
 
     {# The page cannot draw until every script below has been fetched and run,
        so anything not needed to draw it carries `defer` and gets out of the
@@ -49,63 +52,14 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.js" integrity="sha384-ClQpQScPqQSyD6GCOejtBWJ/GwscJaHjNtqDcG3/JmeQ1VBuzQCeZy0zNBQtuhiH" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js" integrity="sha384-pF+2qz7eFoUyrCTPr8gVboYJ7fNpmJKJzl0vPX6w3XDML+Of8bMSyd6fZIRJdwo7" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-    {# macro to include JS with its own const variable scope
-       to not have `const` assignments pollute projectwide scope #}
-    {% macro js(path) %}
-      (() => {
-        {% include path %}
-      })();
-    {% endmacro %}
-
-    {# Include *all* your JS files here.
-      The order matters, files above can't use
-      global variables set in files under.
-    #}
-    {% set scripts %}
-      {{ js("js/old_main.js") }}
-      {{ js("js/packages/neverthrow.js") }}
-      {{ js("js/utils/general.js") }}
-      {{ js("js/utils/nullable.js") }}
-      {{ js("js/utils/conversions.js") }}
-      {{ js("js/utils/http.js") }}
-      {{ js("js/utils/netlify.js") }}
-      {{ js("js/utils/diff.js") }}
-      {{ js("js/utils/entry_form_io.js") }}
-      {{ js("js/utils/review_template.js") }}
-      {{ js("js/utils/columns.js") }}
-      {{ js("js/utils/tables.js") }}
-      {{ js("js/components/index.js") }}
-      {{ js("js/components/common.js") }}
-      {{ js("js/components/with_remote_data.js") }}
-      {{ js("js/components/ui/button.js") }}
-      {{ js("js/components/ui/menu.js") }}
-      {{ js("js/components/ui/input_with_action.js") }}
-      {{ js("js/components/ui/notification.js") }}
-      {{ js("js/components/ui/base.js") }}
-      {{ js("js/components/ui/modal.js") }}
-      {{ js("js/components/ui/tabbed.js") }}
-      {{ js("js/components/home/username_setter.js") }}
-      {{ js("js/components/profile/profile_lists.js") }}
-      {{ js("js/components/profile/profile_stats.js") }}
-      {{ js("js/components/profile/biography.js") }}
-      {{ js("js/components/profile/index.js") }}
-      {{ js("js/components/home/index.js") }}
-      {{ js("js/components/list/add_edit_entry/buttons.js") }}
-      {{ js("js/components/list/add_edit_entry/external_fields.js") }}
-      {{ js("js/components/list/add_edit_entry/personal_fields.js") }}
-      {{ js("js/components/list/add_edit_entry/cover_column.js") }}
-      {{ js("js/components/list/add_edit_entry/draft.js") }}
-      {{ js("js/components/list/add_edit_entry/history.js") }}
-      {{ js("js/components/list/add_edit_entry/entry_form.js") }}
-      {{ js("js/components/list/add_edit_entry/search_results.js") }}
-      {{ js("js/components/list/add_edit_entry/add_entry_link.js") }}
-      {{ js("js/components/list/list.js") }}
-      {{ js("js/components/list/index.js") }}
-      {{ js("js/components/router.js") }}
-    {% endset %}
-    <script>
-      {{ scripts | safe }}
-    </script>
+    {# The frontend's own forty files, concatenated and minified into one file
+       by `js/bundle.njk` — which is where the list and, more to the point, the
+       order live. Inlining them here meant re-sending 140 KB with every HTML
+       response; as a url the browser fetches it once and revalidates it after
+       that. No `defer`: the block at the end of <body> reaches for
+       `Components`, and the CDN scripts above are what the bundle itself
+       reaches for while it runs. #}
+    <script src="/js/bundle.js"></script>
   </head>
   <body>
     {#

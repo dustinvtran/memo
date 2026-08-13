@@ -1,0 +1,69 @@
+---
+permalink: /js/bundle.js
+eleventyExcludeFromCollections: true
+---
+{# The frontend, concatenated and minified into one file the browser can keep.
+
+   This block used to sit inline in `layouts/base.njk`, so every HTML response
+   carried all 140 KB of it and no browser could ever reuse a copy. The site is
+   a client-side router, so `/`, `/profile/nil`, `/films/nil` and `/games/nil`
+   are one page answered four times — four copies of the same bytes for one
+   visitor. As a url it is fetched once and revalidated by ETag after that.
+
+   `base.njk` loads the result with `<script src="/js/bundle.js">`. #}
+
+{# macro to include JS with its own const variable scope
+   to not have `const` assignments pollute projectwide scope #}
+{% macro js(path) %}
+  (() => {
+    {% include path %}
+  })();
+{% endmacro %}
+
+{# Include *all* your JS files here.
+  The order matters, files above can't use
+  global variables set in files under.
+#}
+{% set scripts %}
+  {{ js("js/old_main.js") }}
+  {{ js("js/packages/neverthrow.js") }}
+  {{ js("js/utils/general.js") }}
+  {{ js("js/utils/nullable.js") }}
+  {{ js("js/utils/conversions.js") }}
+  {{ js("js/utils/http.js") }}
+  {{ js("js/utils/netlify.js") }}
+  {{ js("js/utils/diff.js") }}
+  {{ js("js/utils/entry_form_io.js") }}
+  {{ js("js/utils/review_template.js") }}
+  {{ js("js/utils/columns.js") }}
+  {{ js("js/utils/tables.js") }}
+  {{ js("js/components/index.js") }}
+  {{ js("js/components/common.js") }}
+  {{ js("js/components/with_remote_data.js") }}
+  {{ js("js/components/ui/button.js") }}
+  {{ js("js/components/ui/menu.js") }}
+  {{ js("js/components/ui/input_with_action.js") }}
+  {{ js("js/components/ui/notification.js") }}
+  {{ js("js/components/ui/base.js") }}
+  {{ js("js/components/ui/modal.js") }}
+  {{ js("js/components/ui/tabbed.js") }}
+  {{ js("js/components/home/username_setter.js") }}
+  {{ js("js/components/profile/profile_lists.js") }}
+  {{ js("js/components/profile/profile_stats.js") }}
+  {{ js("js/components/profile/biography.js") }}
+  {{ js("js/components/profile/index.js") }}
+  {{ js("js/components/home/index.js") }}
+  {{ js("js/components/list/add_edit_entry/buttons.js") }}
+  {{ js("js/components/list/add_edit_entry/external_fields.js") }}
+  {{ js("js/components/list/add_edit_entry/personal_fields.js") }}
+  {{ js("js/components/list/add_edit_entry/cover_column.js") }}
+  {{ js("js/components/list/add_edit_entry/draft.js") }}
+  {{ js("js/components/list/add_edit_entry/history.js") }}
+  {{ js("js/components/list/add_edit_entry/entry_form.js") }}
+  {{ js("js/components/list/add_edit_entry/search_results.js") }}
+  {{ js("js/components/list/add_edit_entry/add_entry_link.js") }}
+  {{ js("js/components/list/list.js") }}
+  {{ js("js/components/list/index.js") }}
+  {{ js("js/components/router.js") }}
+{% endset %}
+{{ scripts | jsmin | safe }}

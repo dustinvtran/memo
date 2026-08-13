@@ -1,4 +1,11 @@
+# The catch-all at the bottom is forced (`200!`), so it rewrites even urls
+# that do exist as files. Every static asset therefore needs a forced rule of
+# its own, mapping it to itself, or it is served the HTML of the homepage:
+# `/js/bundle.js` came back as `<!doctype html>` and the whole site was a
+# blank page with `Unexpected token '<'` in the console.
 /img/*	/img/:splat	200!
+/js/*	/js/:splat	200!
+/css/*	/css/:splat	200!
 
 # The functions answer at `/.netlify/functions/*`, which is not a url anyone
 # would type or hand to a language model. `/api/*` is the one the README and

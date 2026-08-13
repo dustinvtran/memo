@@ -19,11 +19,16 @@ const initComponent = ({ content, initializer, style }) => {
   // This is passed to `content`, `initializer` and `style`
   const id = uniqueId()
 
-  // Create <style> tag if none exists
-  const styleTag = $('head style')
-  if (styleTag.length === 0) {
-    $('head').prepend('<style></style>')
+  // The <style> the component styles below are collected into, created on
+  // first use. It is this component system's own tag, named rather than found
+  // with `$('head style')`: litepicker injects a <style> of its own at the top
+  // of <head>, and whichever of the two got there first used to decide where
+  // every component style landed. Appended, so it sits after the stylesheet
+  // <link>s and a component's style wins over main.css and bootstrap.
+  if ($('#component-styles').length === 0) {
+    $('head').append('<style id="component-styles"></style>')
   }
+  const styleTag = $('#component-styles')
 
   // Add the component style to the site if it has not already
   const componentStyle = style?.({ id })
