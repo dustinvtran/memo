@@ -7,7 +7,7 @@
 const { ResultAsync } = require('neverthrow')
 const errors = require('../../errors')
 const axios = require('axios').default
-const { retrying, describeFailure, statusOf } = require('../retry')
+const { retrying, describeFailure, publicFailure, statusOf } = require('../retry')
 
 const { GOOGLE_API_KEY } = process.env
 
@@ -88,12 +88,19 @@ const throwNoSuchVolume = (ref) => {
  * gets this far has already been retried and is worth logging with the status
  * that caused it — the message that used to reach the user said only that
  * there was a "problem".
+ *
+ * The whole of it goes to the log and only the class of failure to the
+ * caller, who is owed enough to know whether to try again and nothing about
+ * how this is wired up. #105.
  * @type {(doing: string) => (err: any) => Error}
  */
-const toError = (doing) => (err) => {
-  console.error(`Google Books failed while ${doing}: ${describeFailure(err)}`)
-
-  return statusOf(err) === 404
-    ? errors.notFound('Google Books')
-    : errors.internal(`Google Books failed while ${doing} (${describeFailure(err)})`)
-}
+const toError = (doing) => (err) =>
+  statusOf(err) === 404
+    ? errors.notFound(
+        `Google Books has no such book (${doing}): ${describeFailure(err)}`,
+        'no such book',
+      )
+    : errors.internal(
+        `Google Books failed while ${doing}: ${describeFailure(err)}`,
+        publicFailure('Google Books', err),
+      )

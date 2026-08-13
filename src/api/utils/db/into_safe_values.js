@@ -26,12 +26,16 @@ module.exports = {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-/** @type {(err: any) => Response} */
-const dbErrToResponse = (err) => {
-  const response = match(err.name)
-    .with('BadRequest', () => responses.badRequest)
-    .with('NotFound', () => responses.notFound)
-    .otherwise(() => responses.internalError)
-
-  return response(errors.db(err?.description))
-}
+/**
+ * The driver's error becomes the error's `detail`, which `fromError` logs and
+ * does not send: a failed topology description names every host in the
+ * replica set, and reads here are unauthenticated. #105.
+ * @type {(err: any) => Response}
+ */
+const dbErrToResponse = (err) =>
+  responses.fromError(
+    match(err?.name)
+      .with('BadRequest', () => errors.req(err))
+      .with('NotFound', () => errors.notFound(err))
+      .otherwise(() => errors.db(err))
+  )
