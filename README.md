@@ -57,6 +57,15 @@ You might need to run `npx netlify login` inside the project.
 
 We currently use mongoDB, logged into via the MONGODB_URL
 
+Saving an entry writes the entry and its long note in one transaction, so a
+failure part-way leaves neither rather than one of them. Transactions need a
+replica set, which Atlas is — and Atlas is what production and a local
+`netlify dev` both talk to, since `MONGODB_URL` points at the same place from
+either. Pointed at a standalone `mongod` instead, `db.withTransaction` warns
+once and runs the writes in order without a transaction, which is what the
+code did before it existed: the save still works, but a failure between the
+two writes can leave the note stale beside a freshly saved entry.
+
 **Backups.** `src/db_maintenance/backup_database.js` takes a timestamped
 snapshot of every collection and prunes old ones to a retention policy, so
 there is a history of backups rather than one overwritten dump;

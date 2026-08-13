@@ -9,6 +9,14 @@ The `*ByField*` functions are sugar over them for the common case.
 Anything the database can do, it should: a filter, a projection or
 a limit applied in Node is documents fetched and sent for nothing.
 
+`withTransaction` runs a group of writes so that either all of them
+land or none do — saving an entry and its long note is the one that
+needs it. A write takes the session it hands out as an optional last
+argument and a read takes it in its options; a query given neither
+runs outside the transaction, and cannot see what it has written.
+Transactions need a replica set, which Atlas is; against a standalone
+`mongod` the writes run in order without one. See db.js.
+
 Every document handed out is wrapped as `{ data, ref: { id } }` —
 the shape callers across the API read — so a projection must keep
 `_id`. `queries.js` enforces that, and holds the parts of a query

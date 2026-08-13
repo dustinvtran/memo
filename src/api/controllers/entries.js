@@ -4,6 +4,8 @@
 /** @typedef {import('../utils/errors').Error} Error */
 /** @typedef {import('../utils/responses').Response} Response */
 const responses = require('../utils/responses')
+const errors = require('../utils/errors')
+const { identity } = require('ramda')
 const { combine, okAsync } = require('neverthrow')
 const {
   getUserId,
@@ -14,7 +16,7 @@ const {
   toEntryType,
   toReviewCollection,
 } = require('./utils')
-const { triplet, quad, toPromise, toAsync } = require('../utils/general')
+const { triplet, quad, toPromise, toAsync, throwIt } = require('../utils/general')
 const db = require('../utils/db/')
 const { toResponse } = require('../utils/db/into_safe_values')
 const { recordRevision, discardDraft, discardHistory } = require('./revisions')
@@ -96,18 +98,36 @@ const getUserEntries = ([uid, col, limit]) => toResponse(toPromise(
 ))
 
 /** @type {([userId, body, collection]: [string, any, ValidCollection]) => Promise<Response>} */
-const createEntry = ([userId, body, collection]) => {
+const createEntry = async ([userId, body, collection]) => {
   const { review, ...entryWithoutReview } = body
   const reviewCollection = toReviewCollection(collection)
 
-  return db.create_(collection, { ...entryWithoutReview, userId, updatedDate: Date.now() })
-    .andThen((entry) => db.create_(reviewCollection, {
-      text: review,
-      entryRef: entry.ref.id,
-    }))
-    // `fromError`, not `internalError`: the latter would send the error object
-    // itself, detail and all, back as the body.
-    .match(responses.ok, responses.fromError)
+  try {
+    // An entry and its note are one thing to the person saving them, so they
+    // are one transaction. Written separately, a failure on the second left
+    // an entry no note could ever be attached to — reported to the user as a
+    // failure that had nonetheless half happened.
+    const entry = await db.withTransaction(async (session) => {
+      const created = await orThrow(db.create_(collection, {
+        ...entryWithoutReview,
+        userId,
+        updatedDate: Date.now(),
+      }, session))
+
+      await orThrow(db.create_(reviewCollection, {
+        text: review,
+        entryRef: created.ref.id,
+      }, session))
+
+      return created
+    })
+
+    // The entry, not the review it ends with: this response is the only place
+    // the caller can learn the id of what it just created.
+    return responses.ok(entry)
+  } catch (error) {
+    return failed(error)
+  }
 }
 
 /** @type {(col: ValidCollection, entry: any) => Promise<Response>} */
@@ -144,6 +164,13 @@ const updateEntry_ = async (uid, body, col, entry) => {
 
   // Recorded before anything is written, so the version this save replaces —
   // the long note included — can be read back and restored from the UI.
+  //
+  // Deliberately outside the transaction below. History is a convenience and
+  // its failure must never fail the save (see revisions.js), but a write that
+  // fails inside a transaction aborts it, which is precisely the wrong way
+  // round. The price is that a save that then rolls back leaves a version
+  // recording the state that is still current; noise on a path the user is
+  // already being shown an error on.
   await recordRevision({
     entryType: toEntryType(col),
     entry,
@@ -154,26 +181,65 @@ const updateEntry_ = async (uid, body, col, entry) => {
     ),
   })
 
-  if (reviewProvided) {
-    // Awaited so the write completes before the function returns; a
-    // serverless container can be frozen right after the response is sent.
-    await (existingReview?.ref
-      ? db.updateByRef_(reviewCollection, existingReview.ref.id, { text: review })
-      // Shouldn't be needed, but just in case.
-      : db.create_(reviewCollection, {
-          text: review,
-          entryRef: entry.ref.id,
-        }))
+  try {
+    // The entry and its note go together or not at all. Both writes are
+    // awaited inside the transaction so they complete before the function
+    // returns; a serverless container can be frozen right after the response
+    // is sent.
+    const written = await db.withTransaction(async (session) => {
+      // The entry first. Against a replica set the order does not matter —
+      // either both land or neither does — but `withTransaction` degrades to
+      // plain writes on a deployment that cannot transact, and there an entry
+      // left stale beside a fresh note is the more confusing of the two
+      // half-saves: the score and the dates say one thing, the comments
+      // another. A stale note beside a fresh entry at least looks like what
+      // it is.
+      const updated = await orThrow(db.updateByRef_(col, entry.ref.id, {
+        ...(reviewProvided ? body : entryWithoutReview),
+        updatedDate: Date.now(),
+      }, session))
+
+      if (reviewProvided) {
+        await orThrow(existingReview?.ref
+          ? db.updateByRef_(reviewCollection, existingReview.ref.id, { text: review }, session)
+          // Shouldn't be needed, but just in case.
+          : db.create_(reviewCollection, {
+              text: review,
+              entryRef: entry.ref.id,
+            }, session))
+      }
+
+      return updated
+    })
+
+    // The draft has been saved for real now, so it has nothing left to
+    // recover. Outside the transaction, and after it: a draft left behind by
+    // a save that rolled back still describes edits the user has not managed
+    // to store, which is exactly what a draft is for.
+    await discardDraft(entry.ref.id, uid)
+
+    return responses.ok(written)
+  } catch (error) {
+    return failed(error)
   }
-
-  const response = await db.updateByRef(col, entry.ref.id, {
-    ...(reviewProvided ? body : entryWithoutReview),
-    updatedDate: Date.now(),
-  })
-
-  // The draft has been saved for real now, so it has nothing left to recover.
-  await discardDraft(entry.ref.id, uid)
-
-  return response
 }
+
+/**
+ * The `_`-suffixed db helpers answer with a Result rather than throwing, and
+ * a transaction is only told to roll back by a rejected promise. This is the
+ * join between the two.
+ * @type {(result: import('neverthrow').ResultAsync<any, Error>) => Promise<any>}
+ */
+const orThrow = async (result) => (await result).match(identity, throwIt)
+
+/**
+ * A write that failed inside a transaction arrives here as whatever was
+ * thrown: an `Error` from the db helpers, or something the driver raised on
+ * the transaction itself. Either way it leaves through `fromError`, which
+ * logs what it knows and tells the caller only the class of failure — the
+ * driver's own account of one names every host it tried. See #105.
+ * @type {(error: any) => Response}
+ */
+const failed = (error) =>
+  responses.fromError(typeof error?.error === 'string' ? error : errors.db(error))
 
