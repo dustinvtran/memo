@@ -23,11 +23,18 @@ const {
   timeToBeatQuery,
   toPlaytime,
 } = require('./time_to_beat')
-const { retrying, describeFailure } = require('../retry')
+const { earliestReleaseDate } = require('./release_dates')
+const { throwIt } = require('../../general')
+const { retrying, describeFailure, statusOf } = require('../retry')
 
 const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET } = process.env
 if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) {
-  throw "Must set TWITCH_CLIENT_SECRET and TWITCH_CLIENT_ID environment variables."
+  // A real Error rather than the bare string this used to throw: this runs at
+  // require time, so it kills the cold start before any handler exists to
+  // report it, and a string leaves no stack behind to say where it came from.
+  throwIt(new Error(
+    'Must set TWITCH_CLIENT_SECRET and TWITCH_CLIENT_ID environment variables.'
+  ))
 }
 
 /**
@@ -67,7 +74,7 @@ const search = (titleSearch) => ResultAsync.fromPromise(
       .request('/games')
 
     return req.data.map(({ name, id, release_dates, cover, platforms }) => {
-      const earliest_date = release_dates?.sort((a,b) => a.date - b.date)[0]?.date * 1000
+      const earliest_date = earliestReleaseDate(release_dates) * 1000
       return {
         title: name + ` [${platforms?.map((p) => p.abbreviation ?? '?')?.join(', ') ?? '?'}]`,
         ref: id,
@@ -88,6 +95,12 @@ const retrieve = (ref) => ResultAsync.fromPromise(
       .where(`id = ${ref}`)
       .request('/games')
       .then(({ data }) => data[0])
+
+    // `where(id = ...)` on an id IGDB doesn't hold is an empty array, not an
+    // error, and every read below would be a TypeError on undefined. Thrown
+    // from inside `retrying` on purpose: a 404 isn't transient, so it comes
+    // straight back out rather than costing two more attempts.
+    if (!mainData) throwNoSuchGame(ref)
 
     const playtime = toPlaytime(await retrieveTimeToBeat(mainData.id))
 
@@ -126,8 +139,7 @@ const retrieve = (ref) => ResultAsync.fromPromise(
       studioIds
         .map((id) => companies.find((c) => c.id === id)?.name)
 
-    const releaseYearTs =
-      mainData.release_dates?.sort((a, b) => a.date - b.date)[0].date
+    const releaseYearTs = earliestReleaseDate(mainData.release_dates)
 
     const releaseYear = releaseYearTs
       ? parseInt(
@@ -145,7 +157,7 @@ const retrieve = (ref) => ResultAsync.fromPromise(
       releaseYear,
       // `duration` and `durationSource` together, or neither of them.
       ...playtime,
-      imageUrl: mainData.cover.url ? 'https:' + mainData.cover.url : '',
+      imageUrl: mainData.cover?.url ? 'https:' + mainData.cover.url : '',
       genres: mainData.genres?.map((g) => g.name) ?? [],
       platforms: mainData.platforms?.map((p) => p.abbreviation ?? '?') ?? [],
       studios: studioNames,
@@ -205,13 +217,32 @@ const retrieveTimeToBeat = async (gameId) => {
 }
 
 /**
+ * `status` is what carries this back out to `toError`, the same way
+ * `throwNoSuchVolume` marks a missing ISBN in books/google.js — `statusOf`
+ * reads it, so nothing else needs to know how the two got here.
+ * @type {(ref: string | number) => never}
+ */
+const throwNoSuchGame = (ref) => {
+  throw Object.assign(
+    new Error(`IGDB holds no game under id ${ref}.`),
+    { status: 404 },
+  )
+}
+
+/**
  * A failure that reaches here has already been retried, so it is worth saying
  * what it actually was. It used to arrive as the string "Something went
  * terribly wrong...", which told nobody anything.
+ *
+ * A 404 is the exception: it is an answer rather than a failure — an id
+ * IGDB doesn't hold — and telling the user their game doesn't exist beats
+ * telling them igdb failed.
  * @type {(doing: string) => (err: any) => Error}
  */
 const toError = (doing) => (err) => {
   console.error(`igdb failed while ${doing}: ${describeFailure(err)}`)
 
-  return errors.internal(`igdb failed while ${doing} (${describeFailure(err)})`)
+  return statusOf(err) === 404
+    ? errors.notFound('igdb')
+    : errors.internal(`igdb failed while ${doing} (${describeFailure(err)})`)
 }
