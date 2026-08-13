@@ -2,8 +2,8 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/errors').Error} Error */
-const { combine, ResultAsync } = require('neverthrow')
-const { findOneByField_, findOneByField, updateByRef, create } = require('../utils/db')
+const { combine, okAsync, ResultAsync } = require('neverthrow')
+const { findOneByField_, findOneByField, updateByRef_, create_ } = require('../utils/db')
 const { pair, toPromise } = require('../utils/general')
 const responses = require('../utils/responses')
 const { getUserId, getReqBody, getSegment } = require('./utils')
@@ -42,18 +42,27 @@ module.exports = {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-/** @type {([userId, req]: [string, any]) => ResultAsync<Response, Error>} */
+/**
+ * The write is chained rather than fired off, so the 200 means the name was
+ * actually taken: a serverless container can be frozen the moment the
+ * response is sent, and an unawaited write never lands.
+ *
+ * Two people claiming one name at the same moment still both pass this
+ * check — the read and the write are separate round trips. A unique index
+ * on `users.username` is what settles that; see #108.
+ * @type {([userId, req]: [string, any]) => ResultAsync<Response, Error>}
+ */
 const assignNameIfNotTaken = ([userId, { newName }]) =>
   findOneByField_('users', 'username', newName)
-    .map(({ data }) => data
-        ? responses.ok(feErrors.nameTaken(newName))
-        : (assignName(userId, newName), responses.ok())
+    .andThen(({ data }) => data
+        ? okAsync(responses.ok(feErrors.nameTaken(newName)))
+        : assignName(userId, newName).map(() => responses.ok())
     )
 
-/** @type {(userId: string, newName: string) => ResultAsync<Response, Error>} */
+/** @type {(userId: string, newName: string) => ResultAsync<any, Error>} */
 const assignName = (userId, newName) =>
   findOneByField_('users', 'userId', userId)
-    .map(({ ref }) => ref
-      ? updateByRef('users', ref, { data: { username: newName } })
-      : create('users', { userId, username: newName })
+    .andThen(({ ref }) => ref
+      ? updateByRef_('users', ref.id, { username: newName })
+      : create_('users', { userId, username: newName })
     )
