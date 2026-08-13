@@ -92,6 +92,25 @@ const escapeHtml = (text) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 
+/**
+ * A url out of the metadata, if it is one we are willing to put in an `href`
+ * or a `src`. Escaping does nothing about a scheme — `javascript:alert(1)`
+ * comes through `escapeHtml` unchanged and still runs when clicked — so the
+ * scheme has to be checked separately, and anything that is not http(s) is
+ * dropped rather than rendered. Relative urls (`/img/mawaru.png`) resolve
+ * against the base and are kept.
+ */
+/** @type {(url: any) => string | undefined} */
+const toSafeUrl = (url) => {
+  if (!url) return undefined
+  try {
+    const { protocol } = new URL(url, 'https://memo.invalid')
+    return protocol === 'http:' || protocol === 'https:' ? String(url) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 Utils = {
   html,
   css,
@@ -102,4 +121,5 @@ Utils = {
   dateTime,
   dateOnly,
   escapeHtml,
+  toSafeUrl,
 }

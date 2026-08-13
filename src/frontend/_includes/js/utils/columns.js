@@ -1,4 +1,4 @@
-const { html } = Utils
+const { html, escapeHtml, toSafeUrl } = Utils
 const { round } = Math
 const { apiTypeToType, statusToTitle } = Conversions
 
@@ -98,8 +98,13 @@ const edit = () =>
       // used to write a JSON copy of every entry — metadata, overrides and
       // all — into the markup, which on a long list was more bytes of DOM
       // than the visible table. `Rows.byRef` is filled in by `initFullTable`.
+      //
+      // The id goes through `JSON.stringify` and then `escapeHtml`, in that
+      // order: the browser un-escapes an attribute before the JS parser sees
+      // it, so a quote in the id has to arrive as a JS escape rather than an
+      // HTML one to still be inside the string by then.
       return html`
-        <i id="edit-${row.status}-${i}" class="fas fa-edit edit-button" onclick="window.editEntry('${row.dbRef}')"></i>
+        <i id="edit-${escapeHtml(row.status)}-${i}" class="fas fa-edit edit-button" onclick="window.editEntry(${escapeHtml(JSON.stringify(String(row.dbRef)))})"></i>
       `
     },
     cellStyle: () => ({ css: { 'width': '20px' } }),
@@ -145,7 +150,7 @@ const progress = () =>
       const seen = row.status === 'Completed'
         ? totalEps
         : progress ?? '-'
-      return `${seen}/${totalEps}`
+      return `${escapeHtml(seen)}/${escapeHtml(totalEps)}`
     }
   })
 
@@ -222,22 +227,26 @@ const titleFormatter = (_, row) => {
     ? `${originalTitle} (${englishTranslatedTitle})`
     : englishTranslatedTitle
 
-  const url = externalUrls?.[0]?.url || toWikipediaUrl(englishTranslatedTitle)
-  const cover = imageUrl || '/img/mawaru.png'
+  // Both of these are metadata: whatever TMDB or IGDB holds, or whatever the
+  // owner typed into an override. `toSafeUrl` drops any scheme we would not
+  // put in an `href` or a `src`; the title falls back to a Wikipedia search
+  // and the cover to the placeholder, exactly as a missing one does.
+  const url = toSafeUrl(externalUrls?.[0]?.url) || toWikipediaUrl(englishTranslatedTitle)
+  const cover = toSafeUrl(imageUrl) || '/img/mawaru.png'
   const anchorId = `entry-${row.dbRef}`
   // Lazily: a list is one row per work and every row carries a cover, so a
   // long one asked for a thousand full-size posters at once in order to draw
   // them sixteen pixels wide. The browser now fetches the handful that are
   // actually on screen. `.mini-thumb` fixes the size, so nothing shifts as
   // the rest arrive.
-  return `<span id="${anchorId}" class="title-with-cover"><img class="mini-thumb" src="${cover}" loading="lazy" decoding="async" alt=""><a href="${url}">${label}</span>`
+  return `<span id="${escapeHtml(anchorId)}" class="title-with-cover"><img class="mini-thumb" src="${escapeHtml(cover)}" loading="lazy" decoding="async" alt=""><a href="${escapeHtml(url)}">${escapeHtml(label)}</a></span>`
 }
 
 const englishTitleAndLastUpdatedFormatter = (_, row) => {
   const { englishTranslatedTitle } = get(row, ['englishTranslatedTitle'])
   const link = toWikipediaLink(englishTranslatedTitle, englishTranslatedTitle)
   return row.updatedDate
-    ? `${link}<i style="font-size:.85em; float: right; position: relative; top: 3px;">${statusToTitle(apiTypeToType[row.commonMetadata.entryType], row.status)} ${relativeTime(row.updatedDate)}</i>`
+    ? `${link}<i style="font-size:.85em; float: right; position: relative; top: 3px;">${escapeHtml(statusToTitle(apiTypeToType[row.commonMetadata.entryType], row.status))} ${relativeTime(row.updatedDate)}</i>`
     : link
 }
 
@@ -249,10 +258,13 @@ const listOfLinksFormatter = (prop, toLink) => (_, row) => {
 }
 
 const toWikipediaLink = (name, label) =>
-  `<a href="${toWikipediaUrl(name)}">${label ?? name}</a>`
+  `<a href="${escapeHtml(toWikipediaUrl(name))}">${escapeHtml(label ?? name)}</a>`
 
-const toWikipediaUrl = (name) => 
-  `http://en.wikipedia.org/wiki/Special:Search?search=${name}&go=Go`
+// A genre or a studio name is metadata like any other, and it is being put
+// into a query string: without `encodeURIComponent` an `&` in it silently
+// becomes another parameter, and a `"` ends the attribute it sits in.
+const toWikipediaUrl = (name) =>
+  `http://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(name ?? '')}&go=Go`
 
 const sortableAndLinked = (prop, toLink) => ({
   sortable: true,
@@ -278,9 +290,11 @@ const playtimeFormatter = (_, row) => {
     : rawMins < 40 ?  '&frac12'
     : '&frac34'
   const durationText = `${hours}h${minsAsHrFraction}`
-  const url = toPlaytimeUrl(row)
+  // `durationText` is ours and carries `&frac12` on purpose, so it is the one
+  // thing here that must not be escaped. The url is metadata, so it is.
+  const url = toSafeUrl(toPlaytimeUrl(row))
   return durationInMin && url
-    ? `<a href="${url}">${durationText}</a>`
+    ? `<a href="${escapeHtml(url)}">${durationText}</a>`
     : durationInMin
     ? durationText
     : '-'

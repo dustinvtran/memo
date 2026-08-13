@@ -1,4 +1,4 @@
-const { html } = Utils
+const { html, escapeHtml, toSafeUrl } = Utils
 
 const initTable = (selector, data, settings) =>
   $(selector).bootstrapTable({ ...settings, data })
@@ -66,9 +66,13 @@ window.includeReview = (type, entryId) => {
 
 const detailFormatter = (_, row) => {
   const anchorId = `entry-${row.dbRef}`
+  // Same treatment as the cover in `titleFormatter`: the url is metadata, so
+  // its scheme is checked before it is allowed near a `src` and it is escaped
+  // before it is allowed near an attribute.
+  const coverUrl = toSafeUrl(row.commonMetadata.imageUrl)
   const cover =
-    row.commonMetadata.imageUrl
-      ? `<img src="${row.commonMetadata.imageUrl}" class="review-cover" style="float:right;">`
+    coverUrl
+      ? `<img src="${escapeHtml(coverUrl)}" class="review-cover" style="float:right;">`
       : ''
 
   const type = Conversions.apiTypeToType[row.commonMetadata.entryType]
@@ -79,11 +83,11 @@ const detailFormatter = (_, row) => {
   return html`
     <div class="review">
       <p>
-        <b><a href="#${anchorId}"><i class="fas fa-link"></i></a> Comments:</b>
+        <b><a href="#${escapeHtml(anchorId)}"><i class="fas fa-link"></i></a> Comments:</b>
           ${cover}
-          <div id="review-${row.dbRef}">
+          <div id="review-${escapeHtml(row.dbRef)}">
           </div>
-          ${scriptTag(`includeReview('${type}', '${row.dbRef}')`)}
+          ${scriptTag(`includeReview(${JSON.stringify(String(type))}, ${JSON.stringify(String(row.dbRef))})`)}
         </p>
     </div>
   `
