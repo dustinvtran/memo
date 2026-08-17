@@ -50,9 +50,13 @@ module.exports = (config) => {
       input: 'src/frontend',
       output: 'dist',
     },
-    templateFormats: ['njk', 'md', '11ty.js'],
+    // No `md`. The input directory is source, not content: the only `.md`
+    // files under it are README notes to whoever is reading the code, and as a
+    // template format each one is a page — `src/frontend/README.md` was being
+    // published at `/README/` as a layout-less fragment. Every real page here
+    // is Nunjucks, so the format earns nothing back.
+    templateFormats: ['njk', '11ty.js'],
     htmlTemplateEngine: false,
-    markdownTemplateEngine: 'njk',
     passthroughFileCopy: true,
   }
 }
