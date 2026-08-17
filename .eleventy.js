@@ -2,7 +2,9 @@ const UglifyJS = require('uglify-js')
 const HtmlMinifier = require('html-minifier')
 
 module.exports = (config) => {
-  const env = process.env.ELEVENTY_ENV
+  // Set by both npm scripts. Anything else — a bare `eleventy`, a CI job, a
+  // Netlify build — is treated as production, so the fallback is the safe one.
+  const isDev = process.env.ELEVENTY_ENV === 'dev'
 
   // minify the html output
   config.addTransform('htmlmin', (content, outputPath) => {
@@ -22,7 +24,17 @@ module.exports = (config) => {
   config.addFilter('jsmin', (code) => {
     // `{% set %}` hands a filter a Nunjucks SafeString, and UglifyJS reads
     // anything that is not a string as a map of filenames to sources.
-    const minified = UglifyJS.minify(String(code))
+    //
+    // Compressing and mangling 140KB is the slowest thing in the build — 300ms
+    // of a 900ms run — and it buys a watch loop nothing. Parsing is the part
+    // worth keeping in dev: it costs 40ms and it is what the check below reads.
+    const minified = isDev
+      ? UglifyJS.minify(String(code), {
+          compress: false,
+          mangle: false,
+          output: { beautify: true },
+        })
+      : UglifyJS.minify(String(code))
 
     // Handing back the unminified input on failure is how a bundle that does
     // not parse gets shipped anyway. Every page on this site is drawn by that
