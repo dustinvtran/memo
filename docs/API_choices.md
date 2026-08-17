@@ -60,7 +60,7 @@ the old field silently returns nothing rather than erroring.
 Playtime comes from IGDB's `/game_time_to_beats` endpoint. The games adapter
 ([../src/api/utils/external_api_adapters/games/igdb.js](../src/api/utils/external_api_adapters/games/igdb.js))
 asks for it whenever it retrieves a game, and
-[../src/db_maintenance/backfill_game_playtimes.js](../src/db_maintenance/backfill_game_playtimes.js)
+[../src/db_maintenance/scripts/backfill_game_playtimes.js](../src/db_maintenance/scripts/backfill_game_playtimes.js)
 fills in games that have none.
 
 Note the endpoint is **plural**; `game_time_to_beat` and `time_to_beat` both

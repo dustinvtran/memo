@@ -22,9 +22,9 @@ const context = vm.createContext({
   Components: { UI: {}, List: {} },
 });
 
-// base.njk wraps each included file in its own IIFE, which is what keeps two
-// files' `const`s from colliding. Loading it the same way here keeps that
-// difference visible.
+// The `js()` macro in bundle.njk wraps each bundled file in its own IIFE,
+// which is what keeps two files' `const`s from colliding. Loading it the same
+// way here keeps that difference visible.
 const { byEnglishTitle } = vm.runInContext(
   `(() => {\n${source}\n;return ({ byEnglishTitle })\n})()`,
   context

@@ -16,10 +16,10 @@ const source = fs.readFileSync(path.join(__dirname, "profile_stats.js"), "utf8")
 // Netlify. They exist because the file destructures all of these at load time,
 // and because its last line writes itself onto `Components.Profile`.
 //
-// base.njk wraps each included file in its own IIFE, which is what keeps two
-// files' `const`s from colliding and what makes an assignment with no keyword
-// the only thing that crosses between them. Loading it the same way here keeps
-// that difference visible.
+// The `js()` macro in bundle.njk wraps each bundled file in its own IIFE,
+// which is what keeps two files' `const`s from colliding and what makes an
+// assignment with no keyword the only thing that crosses between them. Loading
+// it the same way here keeps that difference visible.
 const context = vm.createContext({
   Netlify: { entryTypes: [], getStats: () => {} },
   Tables: { col: () => {} },
