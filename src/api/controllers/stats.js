@@ -8,9 +8,16 @@ const { combine, okAsync, ResultAsync } = require('neverthrow')
 const { getSegment } = require('./utils')
 const { toPromise } = require('../utils/general')
 const db = require('../utils/db/')
-const { toScoreTally } = require('../utils/score_tallies')
+const { toScoreTally, toStats } = require('../utils/score_tallies')
 
-/** @type {(event: Event) => Promise<Response>} */
+/**
+ * GET /api/stats/:username
+ *
+ * Both paths answer with `{ scores, updatedDate }` — `toStats` builds it, and
+ * this one names the two fields rather than handing back the stored document
+ * as it found it. See #145 and score_tallies.js.
+ * @type {(event: Event) => Promise<Response>}
+ */
 const getUserStats = (event) => toPromise(
   db.findOneByField_('users', 'username', getSegment(0, event))
     .andThen(result => {
@@ -20,7 +27,7 @@ const getUserStats = (event) => toPromise(
       if (!lastUpdated || isMoreThan48HoursAgo(lastUpdated)) {
         return refreshStats(result)
       } else {
-        return okAsync(responses.ok(stats))
+        return okAsync(responses.ok(toStats(stats.scores, lastUpdated)))
       }
     }
   )
@@ -61,12 +68,14 @@ const refreshStats = (userDocument) =>
     )
   )
     .map(([games, tv, films, books]) => ({ games, tv, films, books }))
-    .andThen((scores) =>
-      db.updateByRef_('users', userDocument.ref.id, { stats: {
-        scores,
-        updatedDate: Date.now(),
-      }})
-        .map(() => responses.ok({ scores }))
+    .map((scores) => toStats(scores, Date.now()))
+    // The stats that are answered with are the stats that were stored, down to
+    // the one object: the response used to omit `updatedDate` entirely, and
+    // computing it a second time for the caller would have dated the numbers
+    // to a moment other than the one recorded beside them.
+    .andThen((stats) =>
+      db.updateByRef_('users', userDocument.ref.id, { stats })
+        .map(() => responses.ok(stats))
     )
 
 const MS_IN_DAY = 86400000

@@ -5,6 +5,7 @@ const {
   SCORE_TALLY_KEYS,
   toScoreTally,
   emptyScoreTally,
+  toStats,
 } = require('./score_tallies')
 
 /** What `scoreTallyParser` in parsers/users.js accepts, checked here without zod. */
@@ -107,4 +108,59 @@ test('a fresh tally each time, so one user cannot carry into the next', () => {
 
   assert.equal(toScoreTally([{ _id: 6, count: 5 }])[6], 5)
   assert.equal(emptyScoreTally()[6], 0)
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// The stats document: what `users.stats` holds, and what the endpoint answers
+// with on either side of the 48-hour cache. See #145 — and controllers/
+// stats.test.js, which asserts the same thing through the real handler.
+
+const fourTallies = () => ({
+  games: emptyScoreTally(),
+  tv: emptyScoreTally(),
+  films: emptyScoreTally(),
+  books: emptyScoreTally(),
+})
+
+test('the cached answer and the recomputed one have the same keys', () => {
+  // The bug: a cache hit returned the stored blob, which carries
+  // `updatedDate`, and a recompute returned `{ scores }`, which does not. A
+  // caller therefore saw a field appear and disappear depending on when
+  // someone last loaded that profile.
+  const stored = { scores: fourTallies(), updatedDate: 1700000000000 }
+
+  const cacheHit = toStats(stored.scores, stored.updatedDate)
+  const recomputed = toStats(fourTallies(), 1700000086400)
+
+  assert.deepEqual(Object.keys(cacheHit).sort(), Object.keys(recomputed).sort())
+  assert.deepEqual(Object.keys(cacheHit).sort(), ['scores', 'updatedDate'])
+})
+
+test('the four tallies and the timestamp come back as they went in', () => {
+  const scores = fourTallies()
+  const stats = toStats(scores, 1700000000000)
+
+  assert.deepEqual(stats.scores, scores)
+  assert.equal(stats.updatedDate, 1700000000000)
+  assert.deepEqual(Object.keys(stats.scores).sort(), [
+    'books', 'films', 'games', 'tv',
+  ])
+})
+
+test('anything else stored under users.stats is not published with it', () => {
+  // The cache-hit path used to hand back the stored document as it found it,
+  // so a field added to `users.stats` later would have gone out with it
+  // without anyone deciding to publish it — what #105 took out of user.js and
+  // name.js. Naming the two fields is what keeps that true.
+  const stored = {
+    scores: fourTallies(),
+    updatedDate: 1700000000000,
+    // Not real, and that is the point: it must not survive the trip.
+    computedFromEntryIds: ['e1', 'e2'],
+  }
+
+  assert.deepEqual(
+    Object.keys(toStats(stored.scores, stored.updatedDate)),
+    ['scores', 'updatedDate']
+  )
 })
