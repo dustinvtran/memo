@@ -1,7 +1,7 @@
 const { entryTypes, getStats } = Netlify
 const { col } = Tables
 const { typeToTitle } = Conversions
-const { html, css } = Utils
+const { html, css, timeAgo, dateTime } = Utils
 const { initComponent, WithRemoteData } = Components
 const { Tabbed } = Components.UI
 
@@ -18,6 +18,7 @@ const ProfileStats = (username) => initComponent({
                 { title: "Global stats", component: GlobalStats(stats) },
               ]
               ))}
+            ${include(StatsFreshness(stats.updatedDate))}
           `
         })
       }))}
@@ -80,6 +81,34 @@ const ProfileStatsOfType = (username, type, stats) => initComponent({
     )
       .render()
   }
+})
+
+/**
+ * When the numbers above were counted.
+ *
+ * They are a cache that stands for 48 hours — see api/controllers/stats.js —
+ * so a profile can be a day and a half behind the entries it is drawn from,
+ * and a reader comparing two of them is entitled to know which. The exact
+ * moment goes in the `title`, as it does everywhere else `timeAgo` is used.
+ *
+ * `updatedDate` reaches this on both of the endpoint's paths as of #145; the
+ * recomputing one used to leave it out. `timeAgo` answers "at an unknown
+ * time" for a response that predates that, which is the honest thing to say
+ * about it.
+ */
+const StatsFreshness = (updatedDate) => initComponent({
+  content: () => html`
+    <div class="stats-freshness" title="${dateTime(updatedDate)}">
+      Counted ${timeAgo(updatedDate)}
+    </div>
+  `,
+  style: () => css`
+    .stats-freshness {
+      text-align: right;
+      font-size: 11px;
+      color: #aaa;
+    }
+  `
 })
 
 const AdditionalStats = (relevantScores) => initComponent({

@@ -1,6 +1,7 @@
 /**
- * @file What a score histogram is, and how the database's count of one becomes
- * the shape that gets stored and drawn.
+ * @file What a score histogram is, how the database's count of one becomes the
+ * shape that gets stored and drawn, and what the four of them together are
+ * stored and published as.
  *
  * The counting is the database's job — `{ $group: { _id: '$score' } }` over the
  * user's entries, which is at most eleven rows instead of several hundred
@@ -63,10 +64,32 @@ const toScoreTally = (groups) =>
 const emptyScoreTally = () =>
   Object.fromEntries(SCORE_TALLY_KEYS.map((key) => [key, 0]))
 
+/**
+ * The four tallies and when they were counted — both what `users.stats` holds
+ * and what `GET /api/stats/:username` answers with.
+ *
+ * One function for both, because they were two. The endpoint handed back the
+ * stored document whole when the cache was fresh and `{ scores }` alone when
+ * it had just recomputed, so whether a caller got `updatedDate` depended on
+ * when somebody last loaded that profile — the sort of thing nobody
+ * reproduces on purpose. See #145.
+ *
+ * Naming the two fields is the other half of it. The cache-hit path used to
+ * publish the stored object as it found it, so anything ever added under
+ * `users.stats` would go out with it; here it stays unpublished until someone
+ * adds it below on purpose. Same shape #105 took out of user.js and name.js.
+ *
+ * @typedef {Record<string, number>} ScoreTally
+ * @typedef {{ scores: Record<string, ScoreTally>, updatedDate: number }} Stats
+ * @type {(scores: Record<string, ScoreTally>, updatedDate: number) => Stats}
+ */
+const toStats = (scores, updatedDate) => ({ scores, updatedDate })
+
 module.exports = {
   SCORE_TALLY_KEYS,
   toScoreTally,
   emptyScoreTally,
+  toStats,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
