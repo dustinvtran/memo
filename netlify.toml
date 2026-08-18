@@ -15,6 +15,51 @@
   # https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
   NODE_VERSION = "22"
 
+# Both of these urls carry a digest of their own contents in the filename —
+# `/js/bundle.<hash>.js` and `/css/main.<hash>.css`, built in
+# `src/frontend/_data/assets.js`. That is the precondition for `immutable`, and
+# it is not optional: the promise being made here is that the bytes at a given
+# url will never change, and a browser that believes it will not ask again for
+# a year. On an unhashed name that promise is a lie and the site is stuck.
+#
+# Without these, Netlify's default for a file with no rule is `public,
+# max-age=0, must-revalidate`, so every navigation on a client-side-routed site
+# spent a conditional request on each of the two before it could draw. They came
+# back `304` with no body, so it was two round trips rather than two payloads —
+# and still two round trips.
+#
+# The HTML that names these urls keeps that default and should: it is what
+# tells a browser the hash has changed.
+#
+# These rules are not verified, and on a deploy preview they cannot be. A
+# preview answers every url — html, bundle, stylesheet alike — with
+# `public,max-age=0,must-revalidate` and carries no custom header at all, not
+# even one written for a single exact path. So whether these take effect is a
+# thing to check against production once this is merged, with `curl -sI` on
+# either url.
+#
+# If they turn out not to have, the first thing to suspect is the forced
+# catch-all in `_redirects`. Netlify does not apply a custom header to a
+# response it produced by rewriting, and a forced rule (`200!`) rewrites a url
+# even when it exists as a file — which would make every rule here inert. The
+# known next thing to try is unforcing the catch-all and dropping the `/img/*`,
+# `/js/*` and `/css/*` self-rules that exist only to escape it. That is not
+# done here because there is no way to confirm from a preview that it helps,
+# and it changes how every url on the site is routed.
+#
+# Either way the hashed filenames stand on their own: `immutable` on a name
+# that is a digest of its own contents is safe if it applies and inert if it
+# does not.
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 [functions]
   directory = "src/api/routes"
 

@@ -57,16 +57,31 @@ jobs:
       # `_redirects` ends in a forced catch-all (`/* /index.html 200!`), so an
       # asset the build didn't write is not a 404 — it is served the homepage's
       # HTML. That is how `/js/bundle.js` once came back as `<!doctype html>`.
-      # Nothing upstream fails when a passthrough copy silently stops copying,
-      # so absence and emptiness both have to be asserted here.
+      # Nothing upstream fails when an asset silently stops being written, so
+      # absence and emptiness both have to be asserted here.
+      #
+      # Both names carry a content hash now, so they are read back out of the
+      # page that references them rather than written down. That checks the
+      # join as well as the files: a bundle emitted under a name `index.html`
+      # does not point at is exactly as broken as one never emitted at all, and
+      # writing the names here again would be a third place for them to drift.
       - name: The shipped assets must exist and be non-empty
         run: |
-          for asset in dist/js/bundle.js dist/css/main.css; do
-            if [ ! -s "$asset" ]; then
-              echo "$asset is missing or empty — every url that asks for it" \
-                   "will be served the homepage's HTML instead"
+          # Anchored on the opening quote so this matches a root-relative url
+          # and not the `/css/` inside a CDN one — Font Awesome's is
+          # `…/font-awesome/6.7.2/css/all.min.css`, which is not ours to check.
+          urls=$(grep -o '"/\(js\|css\)/[^"]*"' dist/index.html | tr -d '"' | sort -u)
+          if [ -z "$urls" ]; then
+            echo "index.html references no local js or css at all"
+            exit 1
+          fi
+          for url in $urls; do
+            if [ ! -s "dist$url" ]; then
+              echo "index.html references $url, which the build did not write" \
+                   "— every url that asks for it is served the homepage's HTML"
               exit 1
             fi
+            echo "ok: dist$url"
           done
 
       # Today `npm run build` is what actually goes red on a bundle that will
@@ -76,4 +91,6 @@ jobs:
       # returning its input — which is what it did before #135, and what let
       # `3c3fab0` ship. It is the cheap half of the pair, not the redundant one.
       - name: The bundle must parse
-        run: node --check dist/js/bundle.js
+        run: |
+          bundle=$(grep -o '/js/bundle\.[0-9a-f]*\.js' dist/index.html | head -1)
+          node --check "dist$bundle"

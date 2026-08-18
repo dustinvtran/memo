@@ -1,0 +1,14 @@
+---
+permalink: "{{ assets.css.url }}"
+eleventyExcludeFromCollections: true
+---
+{#- The stylesheet, emitted under a name that carries a digest of it.
+
+   This was an `addPassthroughCopy` in `.eleventy.js` until the cache headers in
+   `netlify.toml` went `immutable`, which is only honest if the name changes
+   when the bytes do. A passthrough copy keeps the source's name, so it had to
+   become a template that emits `_includes/css/main.css` at a hashed url.
+
+   As in `js/bundle.njk`, the trimmed delimiters and the missing final newline
+   keep the output byte-for-byte the file that was hashed. -#}
+{{- assets.css.code | safe -}}

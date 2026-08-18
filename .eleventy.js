@@ -1,16 +1,12 @@
-const UglifyJS = require('uglify-js')
 const HtmlMinifier = require('html-minifier')
 
 module.exports = (config) => {
-  // Set by both npm scripts. Anything else — a bare `eleventy`, a CI job, a
-  // Netlify build — is treated as production, so the fallback is the safe one.
-  const isDev = process.env.ELEVENTY_ENV === 'dev'
-
   // minify the html output
   config.addTransform('htmlmin', (content, outputPath) => {
-    // A transform runs over every output file, and `/js/bundle.js` is one of
-    // them now. `collapseWhitespace` over JavaScript eats the newline that
-    // ends a `//` comment, and the rest of the file goes with it.
+    // A transform runs over every output file, and the bundle and the
+    // stylesheet are two of them now. `collapseWhitespace` over JavaScript eats
+    // the newline that ends a `//` comment, and the rest of the file goes
+    // with it.
     if (!outputPath || !outputPath.endsWith('.html')) return content
 
     return HtmlMinifier.minify(content, {
@@ -20,42 +16,22 @@ module.exports = (config) => {
     })
   })
 
-  // compress and combine js files
-  config.addFilter('jsmin', (code) => {
-    // `{% set %}` hands a filter a Nunjucks SafeString, and UglifyJS reads
-    // anything that is not a string as a map of filenames to sources.
-    //
-    // Compressing and mangling 140KB is the slowest thing in the build — 300ms
-    // of a 900ms run — and it buys a watch loop nothing. Parsing is the part
-    // worth keeping in dev: it costs 40ms and it is what the check below reads.
-    const minified = isDev
-      ? UglifyJS.minify(String(code), {
-          compress: false,
-          mangle: false,
-          output: { beautify: true },
-        })
-      : UglifyJS.minify(String(code))
-
-    // Handing back the unminified input on failure is how a bundle that does
-    // not parse gets shipped anyway. Every page on this site is drawn by that
-    // one file, so a syntax error in it is a blank page on every url, with
-    // nothing in the build log above it. Fail the build instead.
-    if (minified.error) {
-      throw new Error(`jsmin: UglifyJS could not parse the bundle: ${minified.error}`)
-    }
-
-    return minified.code
-  })
+  // The bundle is concatenated, minified and hashed in `src/frontend/_data/
+  // assets.js` rather than by a filter here, because its filename has to carry
+  // a digest of its contents and `layouts/base.njk` needs that name before the
+  // file is written. Global data is built before anything renders, so that is
+  // where it can be known. `js/bundle.njk` and `css/main.njk` emit it, and the
+  // dev-versus-production minification choice moved there with it.
 
   // pass some assets right through
   config.addPassthroughCopy('./src/frontend/img')
-  // The stylesheet is served from `/css/main.css` rather than inlined into
-  // every page, for the same reason the scripts are. It lives under
-  // `_includes` because it used to be `{% include %}`d.
-  config.addPassthroughCopy({
-    './src/frontend/_includes/css/main.css': 'css/main.css',
-  })
   config.addPassthroughCopy('./_redirects')
+
+  // The bundle's sources are read by `_data/assets.js` with `fs`, so Eleventy
+  // has no idea that a page depends on them. Without this, editing a component
+  // under `--serve` rebuilds nothing.
+  config.addWatchTarget('./src/frontend/_includes/js/')
+  config.addWatchTarget('./src/frontend/_includes/css/')
 
   return {
     dir: {
