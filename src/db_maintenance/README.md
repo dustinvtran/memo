@@ -68,8 +68,8 @@ types the other scripts take), `--json=path`.
 
 Which indexes, and why each one, is declared in `index_plan.js` — every entry
 names the queries that want it, because an index nobody can name a query for
-is an index to delete. They are all single ascending fields: every query the
-site makes goes through `findOneByField` / `findAllByField`, which is an
+is an index to delete. Most are single ascending fields: almost every query
+the site makes goes through `findOneByField` / `findAllByField`, which is an
 equality match on one field, and `_id` is indexed by MongoDB already.
 
 - **`users.username` is unique**, which closes the check-then-write race in
@@ -81,6 +81,14 @@ equality match on one field, and `_id` is indexed by MongoDB already.
   if it wouldn't, that one index is skipped and the rest are still created.
   Two users with no username at all count as duplicates — MongoDB indexes a
   missing field as null.
+- **The entry lists have a compound index**, `{ userId: 1, updatedDate: -1,
+  _id: 1 }`, because `toUserEntriesPipeline` sorts as well as matches. An
+  index serves a sort only when the sort is a prefix of what is left of the
+  index after the equality match, so all three fields have to be there, in
+  that order and those directions; with any less, the `$sort` becomes a
+  blocking one in front of the `$limit`. The plain `{ userId: 1 }` index is
+  kept beside it even though a compound index serves its own prefix — see the
+  comment in `index_plan.js`.
 - **`apiRefs` is an array**, so its index is a *multikey* index. That is
   correct, not something to fix: `findCachedWork` asks
   `{ apiRefs: "igdb__1234" }`, an equality match against one element, which
