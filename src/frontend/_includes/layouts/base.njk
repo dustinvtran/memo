@@ -64,10 +64,18 @@
        with `immutable` for a year: the browser never has to ask whether this
        file is still current, because a new bundle arrives under a new name.
 
-       No `defer`: the block at the end of <body> reaches for `Components`, and
-       an inline script runs before a deferred one. The CDN scripts above are
-       what the bundle itself reaches for while it runs. #}
-    <script src="{{ assets.js.url }}"></script>
+       `defer`, so fetching it does not block the parser — which matters on a
+       page whose entire body is drawn by it. What used to prevent that was an
+       inline block at the end of <body> reaching for `Components`: an inline
+       script runs before a deferred one, so the bundle was not there yet. That
+       block is now `js/boot.js`, the last file in the bundle, which puts it
+       back after everything it depends on.
+
+       The CDN scripts above are what the bundle reaches for while it runs.
+       They stay ahead of it either way: the ones without `defer` run as the
+       parser reaches them, and the two with it are earlier in the document, so
+       they run first. #}
+    <script defer src="{{ assets.js.url }}"></script>
   </head>
   <body>
     {#
@@ -95,13 +103,6 @@
       </p>
     </noscript>
     <div id="site"></div>
-    <script>
-      // The 0 timeout is necessary to detect netlify auth token
-      window.setTimeout(async () => {
-        // Include the router
-        Components.setContent('#site', Components.Router())
-      }, 0)
-    </script>
   </body>
 </html>
 

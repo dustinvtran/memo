@@ -59,6 +59,7 @@ const BUNDLED_FILES = [
   "js/components/list/list.js",
   "js/components/list/index.js",
   "js/components/router.js",
+  "js/boot.js",
 ];
 
 /** The stylesheet, named relative to `_includes` the way the scripts are. */

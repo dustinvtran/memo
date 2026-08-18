@@ -106,6 +106,39 @@ test("base.njk loads both assets from the same data, and inlines neither", () =>
   );
 });
 
+test("the bundle defers, and nothing inline races it", () => {
+  // These two go together. `defer` stops the bundle blocking the parser, but a
+  // deferred script runs after every inline one, so any inline block that
+  // reaches for `Components` would find nothing there — which is the state
+  // this replaced. The drawing code lives in `js/boot.js` at the end of the
+  // bundle now, and <body> has no script of its own to get ahead of it.
+  const layout = read(LAYOUT);
+
+  assert.match(
+    layout,
+    /<script\s+defer\s+src="\{\{\s*assets\.js\.url\s*\}\}"><\/script>/,
+    "the bundle must be deferred; it draws the page and blocks the parser"
+  );
+
+  const inline = [...layout.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)]
+    .map(([, body]) => body.trim())
+    .filter(Boolean);
+
+  assert.deepEqual(
+    inline,
+    [],
+    "base.njk has an inline script again; it runs before the deferred bundle, " +
+      "so anything it reaches for in `Components` is not there yet"
+  );
+
+  assert.equal(
+    plan.BUNDLED_FILES[plan.BUNDLED_FILES.length - 1],
+    "js/boot.js",
+    "js/boot.js draws the page with what every file above it defines, so it " +
+      "has to be bundled last"
+  );
+});
+
 test("only asset_plan.js decides what the assets are called", () => {
   // A hardcoded `/js/bundle.js` or `/css/main.css` anywhere is either a 404 or,
   // worse, a second name for a file whose name is supposed to be its digest.
