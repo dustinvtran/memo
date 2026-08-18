@@ -27,6 +27,30 @@ const getEntryTypeFromUrl = () => {
   return urlParams.get('type') ?? getFirstPathnameSegment()
 }
 
+/** The list page's search query. See `utils/entry_search.js` for its syntax. */
+const getSearchFromUrl = () =>
+  new URLSearchParams(window.location.search).get(SEARCH_PARAM) ?? ''
+
+/**
+ * Puts the query in the url, so that a search can be linked to, bookmarked and
+ * come back on a reload. `replaceState` rather than `pushState`: the search
+ * fires as it is typed, and a history entry per keystroke would make the back
+ * button spell `director:nolan` backwards one letter at a time.
+ * @type {(text: string) => void}
+ */
+const setSearchInUrl = (text) => {
+  const params = new URLSearchParams(window.location.search)
+  if (text) {
+    params.set(SEARCH_PARAM, text)
+  } else {
+    params.delete(SEARCH_PARAM)
+  }
+  const query = params.toString()
+  const url = window.location.pathname +
+    (query ? `?${query}` : '') +
+    window.location.hash
+  window.history.replaceState(null, '', url)
+}
 
 Http = {
   get,
@@ -37,9 +61,14 @@ Http = {
   getToken,
   getNameFromUrl,
   getEntryTypeFromUrl,
+  getSearchFromUrl,
+  setSearchInUrl,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+/** Short, because it is the parameter a shared list url is mostly made of. */
+const SEARCH_PARAM = 'q'
 
 const getErrorStatusCode = (error) => error.response?.status ?? 500
 
