@@ -9,9 +9,17 @@
  * each other rather than each against a literal — a shape that changes has to
  * change on both paths or fail here.
  *
+ * The two at the end are #139: a name nobody has taken used to reach
+ * `refreshStats` with the `{}` the db module reports a miss as, read
+ * `.data.userId` off it and throw — inside an `andThen` callback, where
+ * neverthrow does not catch, so the handler returned a rejected promise and
+ * Netlify answered 502 with an empty body. The route is public, so that was
+ * one unauthenticated GET away.
+ *
  * That needs the actual dependencies, so the file **skips itself** when they
  * aren't installed (which is how CI runs the suite). The same shape is pinned
- * without them on `toStats` in ../utils/score_tallies.test.js.
+ * without them on `toStats` in ../utils/score_tallies.test.js, and the
+ * absent-document rule on `isFound` in ../utils/db/found.test.js.
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -236,4 +244,28 @@ test('a field stored beside the two is not published with them', options, async 
 
   assert.deepEqual(Object.keys(body).sort(), ['scores', 'updatedDate'])
   assert.equal('internalNote' in body, false)
+})
+
+/**
+ * #139. `findOneByField_` reports a miss as `{}`, which `refreshStats` used to
+ * read `.data.userId` off. The throw happened inside an `andThen` callback,
+ * where neverthrow does not catch it, so the handler returned a rejected
+ * promise and the caller got a 502 with no body.
+ */
+test('a username nobody has taken is a 404 and not a crash', options, async () => {
+  seed({ statsAge: MS_IN_DAY })
+
+  const { statusCode, body } = await getStats('nosuchuser')
+
+  assert.equal(statusCode, 404)
+  assert.equal(body.error, 'NotFound')
+})
+
+test('a username nobody has taken counts nothing and stores nothing', options, async () => {
+  seed({})
+  const before = JSON.stringify(store.users)
+
+  await getStats('nosuchuser')
+
+  assert.equal(JSON.stringify(store.users), before)
 })

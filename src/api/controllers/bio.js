@@ -15,8 +15,11 @@ const setBio = (event) => toPromise(
     getUserId(event),
     getReqBody(event)
   ]))
+    // A valid token for a `sub` with no user document — which is every account
+    // between signing up and `setOwnName` running — is a 404 rather than the
+    // 502 that destructuring the db module's `{}` used to give. See #139.
     .asyncAndThen(([uid, { newBio }]) =>
-      db.findOneByField_('users', 'userId', uid)
+      db.findOneByFieldOrFail_('users', 'userId', uid)
         .map(({ ref }) => [ref, newBio])
     )
     .andThen(([ref, newBio]) =>

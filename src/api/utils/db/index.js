@@ -21,11 +21,13 @@
 /** @typedef {import('../responses').Response} Response */
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../errors').Error} Error */
-const { ResultAsync } = require('neverthrow')
+const { ResultAsync, okAsync, errAsync } = require('neverthrow')
 const { _findOne, _findMany, _countScoresByValue, _findOneByField, _findOneByRef, _findAllByFieldIn, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
 const { compose } = require('ramda')
 const { withTransaction } = require('./db')
 const { toResponse, toResult } = require('./into_safe_values')
+const { isFound } = require('./found')
+const errors = require('../errors')
 
 /** @typedef {import('./queries').QueryOptions} QueryOptions */
 /** @typedef {import('mongodb').ClientSession} ClientSession */
@@ -41,6 +43,26 @@ const findOneByField = compose(toResponse, _findOneByField)
 
 /** @type {(collection: ValidCollection, field: string, value: any) => ResultAsync<any, Error>} */
 const findOneByField_ = compose(toResult, _findOneByField)
+
+/**
+ * The same read, for a caller that cannot carry on without the document.
+ *
+ * `findOneByField_` reports "no such document" as `{}`, which is the right
+ * answer for the callers that test it — see ./found.js — and a trap for the
+ * ones that destructure it. Absence becomes an err here instead, so the rest
+ * of the chain simply does not run and the `mapErr` every controller already
+ * ends with turns it into a 404. Two endpoints answered 502 for want of this;
+ * see #139.
+ *
+ * The err carries no `detail`. A name nobody has taken is a normal answer to a
+ * public, unauthenticated route rather than a fault, and `responses.fromError`
+ * logs every `detail` it is given — which would let anyone write to the
+ * function log by asking for profiles at random.
+ * @type {(collection: ValidCollection, field: string, value: any) => ResultAsync<any, Error>}
+ */
+const findOneByFieldOrFail_ = (collection, field, value) =>
+  findOneByField_(collection, field, value)
+    .andThen((found) => isFound(found) ? okAsync(found) : errAsync(errors.notFound()))
 
 /**
  * The general form of the two above: a filter of as many fields as the caller
@@ -93,6 +115,7 @@ const create_ = compose(toResult, _create)
 
 module.exports = {
   withTransaction,
+  isFound,
   findOneByRef,
   findOneByRef_,
   findAll,
@@ -102,6 +125,7 @@ module.exports = {
   findAllByFieldIn_,
   findOneByField,
   findOneByField_,
+  findOneByFieldOrFail_,
   findAllUserEntriesWithMetadata_,
   updateByRef,
   updateByRef_,

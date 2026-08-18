@@ -238,7 +238,7 @@ const findDraft = async (entryRef, userId) => {
 
   // A miss is `{}` from the db module, and every caller here tests the draft
   // for truthiness before reaching into it.
-  return found?.ref?.id ? found : undefined
+  return db.isFound(found) ? found : undefined
 }
 
 /** @type {(collection: ValidCollection, entryRef: string) => Promise<any | undefined>} */
