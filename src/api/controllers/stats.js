@@ -16,10 +16,18 @@ const { toScoreTally, toStats } = require('../utils/score_tallies')
  * Both paths answer with `{ scores, updatedDate }` — `toStats` builds it, and
  * this one names the two fields rather than handing back the stored document
  * as it found it. See #145 and score_tallies.js.
+ *
+ * A name nobody has taken is a 404, unlike `/api/user/:username` and
+ * `/api/name/:username`, which answer 200 with an empty body. Those two are
+ * existence probes the frontend calls *expecting* a miss — the list page asks
+ * whether a name is free, and the profile page turns an empty answer into its
+ * own 404. This route is neither: the profile page only asks for stats once
+ * `/api/user` has told it the user exists, so a miss here is a URL naming
+ * something that isn't there. It used to be a 502. See #139.
  * @type {(event: Event) => Promise<Response>}
  */
 const getUserStats = (event) => toPromise(
-  db.findOneByField_('users', 'username', getSegment(0, event))
+  db.findOneByFieldOrFail_('users', 'username', getSegment(0, event))
     .andThen(result => {
       // The stored tallies stand for 48 hours; past that they are recomputed.
       const stats = result?.data?.stats
