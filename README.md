@@ -123,6 +123,38 @@ is in its source, and it points at these urls, so a reader that fetches
 `/api/*` onto `/.netlify/functions/*`, which is what makes every url in this
 README real rather than aspirational.
 
+**Searching a list.** The box above each sublist takes a comma-separated list
+of terms, all of which have to match. A bare term is a case-insensitive
+substring, tried against the columns the table is currently showing; a
+`field:value` term is a case-insensitive **regular expression**, tried against
+that field alone:
+
+```
+nolan                          films whose visible columns say "nolan"
+director:nolan                 films Nolan directed
+title:"^the ",director:nolan   ...whose title starts with "The"
+completed:^2019                finished in 2019
+actor:"lee, christopher"       quotes keep spaces and commas out of the parse
+year:                          an empty value keeps the rows that have a year
+```
+
+The names are `title`, `score`, `year`, `duration` (`playtime`, `pages`),
+`director`, `actor`, `studio`, `publisher`, `author`, `platform`, `genre`,
+`progress`, `started`, `completed` and `status`. A prefix that is not one of
+them is part of the text, so `9:00` searches for `9:00`, and a value that is
+not a valid regex is matched as text rather than matching nothing — every
+query with a bracket in it is typed through that state.
+
+The query goes in `?q=`, so a search can be linked to and survives a reload:
+[`/films/nil?q=director:nolan`](https://nil.moe/films/nil?q=director:nolan).
+The sublists are one list cut up by status and share the query, since the url
+describes the page rather than one table on it.
+
+Only the columns on show are searched, which is the fix for `nolan` returning
+Goldfinger: Margaret Nolan is in its cast, and the cast column is hidden. Turn
+the column on from the dropdown and it counts again. See
+`src/frontend/_includes/js/utils/entry_search.js`.
+
 **Entry history and drafts.** Saving an entry stores the version it replaced
 in the `entryRevisions` collection, and the edit form autosaves what is in it
 to the same collection while it is open. The edit modal grows a *History*

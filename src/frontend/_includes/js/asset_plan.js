@@ -29,6 +29,7 @@ const BUNDLED_FILES = [
   "js/utils/diff.js",
   "js/utils/entry_form_io.js",
   "js/utils/review_template.js",
+  "js/utils/entry_search.js",
   "js/utils/columns.js",
   "js/utils/tables.js",
   "js/components/index.js",
