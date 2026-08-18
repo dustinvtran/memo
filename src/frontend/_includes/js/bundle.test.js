@@ -187,15 +187,28 @@ test("assets.js re-reads on every build", () => {
   );
 });
 
-test("the hashed assets are exempt from the SPA catch-all", () => {
-  // `/*  /index.html  200!` is forced, so it rewrites urls that exist as files
-  // too. An asset is only served as itself if it has a forced rule of its own,
-  // the way `/img/*` does. Without one, the bundle answers with the homepage's
-  // HTML and the site is blank with `Unexpected token '<'`. The hashed names
-  // have to keep matching those rules, which is why they keep their directory.
-  const exempt = [
-    ...read(REDIRECTS).matchAll(/^(\/\S*?)\/\*\s+\S+\s+200!/gm),
-  ].map(([, prefix]) => prefix + "/");
+test("the SPA catch-all is not forced, so the assets are served as files", () => {
+  // This is the whole reason netlify.toml's headers do anything. Netlify does
+  // not put a custom header on a response it produced by rewriting, and a
+  // forced rule rewrites a url even when it exists as a file — so a forced
+  // catch-all made every response on the site a rewrite, and every header rule
+  // inert. That is not hypothetical: it is what #157 shipped, and production
+  // answered the hashed bundle `max-age=0, must-revalidate` regardless.
+  //
+  // Unforced, a file that exists is served as itself and keeps its headers.
+  const redirects = read(REDIRECTS);
+
+  assert.match(
+    redirects,
+    /^\/\*\s+\/index\.html\s+200\s*$/m,
+    "the catch-all must be `/*  /index.html  200` and must not be forced; " +
+      "forced, it rewrites the hashed assets and netlify.toml's Cache-Control " +
+      "silently stops applying to anything"
+  );
+
+  // A forced rule above it would do the same to whatever it covers, which is
+  // exactly what the `/js/*` and `/css/*` self-rules used to do.
+  const forced = [...redirects.matchAll(/^(\S+)\s+\S+\s+200!/gm)].map(([, from]) => from);
 
   const hash = plan.digest("sample");
   const assets = [
@@ -212,11 +225,14 @@ test("the hashed assets are exempt from the SPA catch-all", () => {
   assert.ok(assets.length > 2, "found no local assets in base.njk");
 
   assets.forEach((url) =>
-    assert.ok(
-      exempt.some((prefix) => url.startsWith(prefix)),
-      `${url} is served by no forced rule in _redirects, so the catch-all ` +
-        `answers it with index.html`
-    )
+    forced.forEach((from) => {
+      const pattern = new RegExp(`^${from.replace(/[.]/g, "\\$&").replace(/\*$/, ".*")}$`);
+      assert.ok(
+        !pattern.test(url),
+        `_redirects forces ${from}, which covers ${url}; a rewritten response ` +
+          `is served without the Cache-Control netlify.toml gives it`
+      );
+    })
   );
 });
 

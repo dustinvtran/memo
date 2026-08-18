@@ -31,25 +31,24 @@
 # The HTML that names these urls keeps that default and should: it is what
 # tells a browser the hash has changed.
 #
-# These rules are not verified, and on a deploy preview they cannot be. A
-# preview answers every url — html, bundle, stylesheet alike — with
-# `public,max-age=0,must-revalidate` and carries no custom header at all, not
-# even one written for a single exact path. So whether these take effect is a
-# thing to check against production once this is merged, with `curl -sI` on
-# either url.
+# These rules did nothing at all when they first shipped, and nothing said so.
+# Netlify does not apply a custom header to a response it produced by
+# rewriting, and the catch-all in `_redirects` was forced (`200!`), which
+# rewrites a url even when it exists as a file — so every response on this site
+# was a rewrite and every rule here was dead. Production went on answering the
+# hashed bundle `public,max-age=0,must-revalidate` with these declared, exactly
+# as it had before they existed.
 #
-# If they turn out not to have, the first thing to suspect is the forced
-# catch-all in `_redirects`. Netlify does not apply a custom header to a
-# response it produced by rewriting, and a forced rule (`200!`) rewrites a url
-# even when it exists as a file — which would make every rule here inert. The
-# known next thing to try is unforcing the catch-all and dropping the `/img/*`,
-# `/js/*` and `/css/*` self-rules that exist only to escape it. That is not
-# done here because there is no way to confirm from a preview that it helps,
-# and it changes how every url on the site is routed.
+# Unforcing the catch-all is what turned them on; `_redirects` carries the
+# reasoning. The dependency runs the other way to how it reads: this block is
+# inert unless a file is served as a file, so a forced rule reintroduced above
+# the catch-all would switch it off again silently. A test pins that.
 #
-# Either way the hashed filenames stand on their own: `immutable` on a name
-# that is a digest of its own contents is safe if it applies and inert if it
-# does not.
+# Worth knowing that a deploy preview cannot be used to check any of this. A
+# preview answers every url with `max-age=0, must-revalidate` and carries no
+# custom header at all, not even one written for a single exact path, so the
+# only way to see whether a change here worked is `curl -sI` against
+# production after it merges.
 [[headers]]
   for = "/js/*"
   [headers.values]
