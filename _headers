@@ -1,0 +1,42 @@
+# Both of these urls carry a digest of their own contents in the filename —
+# `/js/bundle.<hash>.js` and `/css/main.<hash>.css`, built in
+# `src/frontend/_data/assets.js`. That is the precondition for `immutable`: the
+# promise is that the bytes at a given url will never change, and a browser that
+# believes it will not ask again for a year. On an unhashed name that promise is
+# a lie and the site is stuck; on a digest it is simply true.
+#
+# Netlify's default for a file with no rule is `public, max-age=0,
+# must-revalidate`, so every navigation on a client-side-routed site spends a
+# conditional request on each of these before it can draw. They come back `304`
+# with no body — two round trips rather than two payloads, and still two round
+# trips.
+#
+# These rules live here rather than in `netlify.toml` because the `[[headers]]`
+# block there never worked. #157 declared exactly these two rules that way and
+# production went on answering the hashed bundle `max-age=0, must-revalidate`;
+# #164 unforced the catch-all on the theory that the rewrite was eating them,
+# and production did not budge. Netlify's own deploy summary reports "Header
+# rules" as `skipping` on every one of those deploys, while "Redirect rules"
+# reports `pass` — and redirects are the thing this repo declares as a file in
+# the publish directory. Declared here instead, both rules arrive: a deploy
+# preview serves the hashed bundle and stylesheet `max-age=31536000,
+# immutable`, and Netlify's "Header rules" check flips from `skipping` to
+# `pass`. So a preview can check this, and is worth checking — it is only
+# `netlify.toml`'s version of these rules that was invisible everywhere.
+#
+# The forced catch-all in `_redirects` does not interfere: `/js/*` is a forced
+# rewrite and the header arrives on it regardless, which is what #164 was
+# wrong about.
+#
+# `.eleventy.js` copies this into `dist/` the same way it copies `_redirects`.
+# It has to be in the publish directory to be read at all; a `_headers` sitting
+# at the repo root does nothing.
+#
+# The HTML that names these urls keeps Netlify's default and should: it is what
+# tells a browser the hash has changed.
+
+/js/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/css/*
+  Cache-Control: public, max-age=31536000, immutable

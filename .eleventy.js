@@ -26,6 +26,10 @@ module.exports = (config) => {
   // pass some assets right through
   config.addPassthroughCopy('./src/frontend/img')
   config.addPassthroughCopy('./_redirects')
+  // `_headers` has to sit in the publish directory to be read at all. The
+  // `[[headers]]` block in `netlify.toml` is the other way to declare these and
+  // it never applied on this site; see the note in the file itself.
+  config.addPassthroughCopy('./_headers')
 
   // The bundle's sources are read by `_data/assets.js` with `fs`, so Eleventy
   // has no idea that a page depends on them. Without this, editing a component
