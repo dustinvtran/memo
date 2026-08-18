@@ -27,6 +27,7 @@ const {
   isMissingPlaytimeLink,
 } = require("../work_metadata_merge");
 const { groupWorksByApiRef } = require("../work_dedupe_plan");
+const { toSummary, countProblems } = require("../audit_report");
 
 const args = parseArgs(process.argv);
 
@@ -55,9 +56,19 @@ const main = async () => {
     report[collection.type] = await auditCollection(db, collection);
   }
 
+  // One number for "is anything actually wrong", so a clean run says so
+  // instead of leaving a reader to add up ten lines per collection and decide
+  // for themselves which of them counted.
+  const problems = countProblems(selected, report);
+  console.log(
+    problems === 0
+      ? "\nNo problems found."
+      : `\n${problems} problem(s) found across ${selected.length} collection(s).`
+  );
+
   if (args.json) {
     fs.writeFileSync(String(args.json), JSON.stringify(report, null, 2));
-    console.log(`\nFull report written to ${args.json}`);
+    console.log(`Full report written to ${args.json}`);
   }
 
   await client.close();
@@ -169,30 +180,28 @@ const describe = (work) => ({
   apiRefs: work.apiRefs,
 });
 
-const printSummary = (collection, r) => {
+const printSummary = (collection, result) => {
+  const { problems, notes } = toSummary(collection, result);
+
   console.log(`\n=== ${collection.works} ===`);
   console.log(
-    `  works: ${r.works}, entries: ${r.entries}, reviews: ${r.reviews}`
+    `  works: ${result.works}, entries: ${result.entries}, ` +
+      `reviews: ${result.reviews}`
   );
-  const lines = [
-    [`no ${collection.retrievePrefix}__ ref (cannot be refreshed)`, r.noApiRef],
-    ["apiRefs still stored as objects", r.legacyObjectApiRefs],
-    ["missing metadata fields", r.missingFields],
-    ["corrupt field values", r.corruptFields],
-    ...(collection.type === "games"
-      ? [["playtime with nothing to link it to", r.gamesMissingPlaytimeLink]]
-      : []),
-    ["duplicate works sharing an apiRef", r.duplicateWorks],
-    ["works no entry points at", r.orphanWorks],
-    ["entries with no workRef", r.entriesWithoutWorkRef],
-    ["entries with a dangling workRef", r.entriesWithDanglingWorkRef],
-    ["reviews with no entry", r.orphanReviews],
-  ];
-  for (const [label, items] of lines) {
-    console.log(`  ${String(items.length).padStart(5)}  ${label}`);
+
+  for (const line of problems) {
+    console.log(`  ${String(line.count).padStart(5)}  ${line.label}`);
   }
 
-  const examples = r.missingFields.slice(0, 5);
+  // Below the problems and marked, because these are supported states rather
+  // than damage — printed in the same list, the user-authored entries were
+  // read as broken ones. See ../audit_report.js.
+  console.log("  --- not problems, for information ---");
+  for (const line of notes) {
+    console.log(`  ${String(line.count).padStart(5)}  ${line.label}`);
+  }
+
+  const examples = result.missingFields.slice(0, 5);
   if (examples.length > 0) {
     console.log("  e.g. missing:");
     for (const e of examples) {

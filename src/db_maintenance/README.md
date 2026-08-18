@@ -123,12 +123,36 @@ building an index on a live collection costs I/O.
 inconsistency it can find: works that can't be refreshed because they
 have no usable apiRef, missing or corrupt metadata fields, games whose
 playtime has nothing to link it to, duplicate works sharing an apiRef,
-orphaned works, and entries with a missing or dangling `workRef`.
+entries whose `workRef` names a work that is gone, and reviews whose entry is
+gone.
 
 ```
 node scripts/audit_database.js
 node scripts/audit_database.js --only=games,books --json=./audit.json
 ```
+
+The summary prints those under a per-collection list of problems, and then a
+short **not problems, for information** block. What goes in which is
+`../audit_report.js`, and the distinction is worth reading before acting on a
+count:
+
+- **Entries with no linked work** are not damage. An entry the user typed in
+  by hand, rather than picking from a search result, has no work to point at
+  and carries its own metadata in `overrides` — which the list merges over
+  `commonMetadata`, so it renders correctly. There are 23 of these, and the
+  right number to repoint or delete is zero. They are only a line apart from
+  the dangling-`workRef` count, which is a genuine broken reference, and
+  reading one as the other is a mistake that has already been made once.
+- **Cached works no entry points at** are leftovers of the metadata cache, not
+  lost user data.
+
+`reviews whose entry is gone` **is** a problem, and an unfixable one from
+here: a review is only ever found by `entryRef`, so one whose entry is gone
+holds text no code path can reach. The ~248 of them are residue of the FaunaDB
+migration and of deletes that predate the cleanup in
+`api/controllers/entries.js`, which now removes an entry's review with it.
+They are user-written text in a collection these scripts do not write to, so
+deleting them is a human's decision, not a script's.
 
 `scripts/backfill_work_metadata.js` re-runs the API adapters for cached works
 and fills in what's missing / refreshes what's stale. It is a **dry run
