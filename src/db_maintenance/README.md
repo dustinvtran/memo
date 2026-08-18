@@ -85,6 +85,20 @@ node scripts/ensure_indexes.js --apply
 Flags: `--only=users,entryRevisions` (collection names, not the `films,books`
 types the other scripts take), `--json=path`.
 
+**These are applied to production, as of 2026-08-18 (UTC): all 23 of them.**
+Nineteen were already in place before that date, from whenever #121 was first
+run — nothing recorded it, which is what #147 was about. The four compound
+`*Entries.userId_1_updatedDate_-1__id_1` indexes were created on that date,
+over the snapshot `snapshot-2026-08-18T03-19-34-608Z`, and the winning plan
+for the list query went from a blocking `SORT` to
+`IXSCAN -> FETCH -> LIMIT` on all four entry collections.
+
+A dry run today therefore prints `23 index(es) already exist, 0 would be
+created, 0 conflict`, and that is what "applied" looks like from the outside.
+If it ever reports something to create, either `index_plan.js` has grown an
+entry or an index was dropped behind its back — both worth knowing before you
+reach for `--apply`.
+
 Which indexes, and why each one, is declared in `index_plan.js` — every entry
 names the queries that want it, because an index nobody can name a query for
 is an index to delete. Most are single ascending fields: almost every query
