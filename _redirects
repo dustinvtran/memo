@@ -1,11 +1,25 @@
-# The catch-all at the bottom is forced (`200!`), so it rewrites even urls
-# that do exist as files. Every static asset therefore needs a forced rule of
-# its own, mapping it to itself, or it is served the HTML of the homepage:
-# `/js/bundle.js` came back as `<!doctype html>` and the whole site was a
-# blank page with `Unexpected token '<'` in the console.
-/img/*	/img/:splat	200!
-/js/*	/js/:splat	200!
-/css/*	/css/:splat	200!
+# Netlify does not apply a custom header to a response it produced by rewriting,
+# and a forced rule (`200!`) rewrites a url even when it exists as a file. With
+# the catch-all forced, every response on this site was a rewrite — which is why
+# the `[[headers]]` block #157 added to `netlify.toml` did nothing whatsoever.
+# After it merged, production went on answering `/js/bundle.<hash>.js` with
+# `public,max-age=0,must-revalidate`, exactly as it had before the rules existed.
+# Nothing reports this: the deploy is green and the header is simply absent.
+#
+# Unforced, the catch-all does what it was always meant to. A url that exists as
+# a file is served as that file, and gets the headers written for it; a url that
+# does not exist — which is every client-side route — is rewritten to the app.
+# The `/img/*`, `/js/*` and `/css/*` rules that mapped those three directories
+# to themselves existed only to escape the forced catch-all, and go with it.
+#
+# The HTML is still rewritten and so still uncacheable, which is the right way
+# round: it is the thing that names the hashed assets, so it has to be
+# re-fetched for a browser to find out they changed.
+
+# This file is copied into the publish directory, because that is where Netlify
+# reads it from. The forced catch-all used to hide it by accident; now that the
+# catch-all serves files that exist, it is hidden on purpose.
+/_redirects	/index.html	200!
 
 # The functions answer at `/.netlify/functions/*`, which is not a url anyone
 # would type or hand to a language model. `/api/*` is the one the README and
@@ -13,4 +27,4 @@
 # doesn't matter which of the two Netlify reports as the request path.
 /api/*	/.netlify/functions/:splat	200
 
-/*	/index.html	200!
+/*	/index.html	200
