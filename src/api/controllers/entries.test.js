@@ -122,19 +122,24 @@ const collection = (name) => ({
   },
 })
 
-const startSession = () => ({
-  withTransaction: async (work) => {
-    const before = structuredClone(store)
-    try {
-      return await work()
-    } catch (error) {
-      for (const name of Object.keys(store)) delete store[name]
-      Object.assign(store, before)
-      throw error
-    }
-  },
-  endSession: async () => {},
-})
+// The driver hands the callback the session and hands the caller back what
+// the callback returned; `db.withTransaction` relies on both.
+const startSession = () => {
+  const session = {
+    withTransaction: async (work) => {
+      const before = structuredClone(store)
+      try {
+        return await work(session)
+      } catch (error) {
+        for (const name of Object.keys(store)) delete store[name]
+        Object.assign(store, before)
+        throw error
+      }
+    },
+    endSession: async () => {},
+  }
+  return session
+}
 
 class MongoClient {
   async connect() {}
