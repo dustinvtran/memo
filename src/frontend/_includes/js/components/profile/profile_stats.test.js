@@ -24,7 +24,12 @@ const context = vm.createContext({
   Netlify: { entryTypes: [], getStats: () => {} },
   Tables: { col: () => {} },
   Conversions: { typeToTitle: {} },
-  Utils: { html: () => "", css: () => "" },
+  Utils: {
+    html: () => "",
+    css: () => "",
+    timeAgo: () => "",
+    dateTime: () => "",
+  },
   Components: {
     initComponent: () => {},
     WithRemoteData: () => {},
@@ -126,5 +131,22 @@ test("the global tally keeps all eleven buckets whatever it was given", () => {
   assert.deepEqual(
     Object.keys(totals(scoresOf({}, {}, {}, {}))).sort(),
     [...BUCKETS].sort()
+  );
+});
+
+test("the timestamp beside the scores is not counted as a fifth type", () => {
+  // `GET /api/stats/:username` answers with `{ scores, updatedDate }` on both
+  // of its paths as of #145, where a recompute used to answer with `{ scores }`
+  // alone. The global chart sums `Object.values(stats.scores)`; were it ever
+  // to sum `Object.values(stats)`, the timestamp would be read as a tally and
+  // every bucket would come back `undefined`.
+  const stats = {
+    ...scoresOf(oneOfEach(), oneOfEach(), oneOfEach(), oneOfEach()),
+    updatedDate: 1700000000000,
+  };
+
+  assert.deepEqual(
+    totals(stats),
+    Object.fromEntries(BUCKETS.map((b) => [b, 4]))
   );
 });
