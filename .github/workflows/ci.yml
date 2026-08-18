@@ -25,3 +25,55 @@ jobs:
       # the Netlify functions and the frontend globals.
       - name: Syntax check every JS file
         run: git ls-files '*.js' | xargs -n1 node --check
+
+  # The job above checks the inputs; this one checks what ships. `node --check`
+  # reads each tracked file on its own, and `bundle.test.js` reconstructs the
+  # concatenation from the templates as text — both good proxies, neither the
+  # artefact. The bundle is forty files joined through Nunjucks and put through
+  # UglifyJS, and every page on the site is drawn by that one file, so a syntax
+  # change UglifyJS cannot parse blanks every url. Until this job existed that
+  # only surfaced on Netlify, after merge.
+  #
+  # It needs an install, which is why it is separate rather than more steps on
+  # the job above: keeping that one dependency-free is deliberate. The install
+  # is also the only thing in CI that would notice a dependency removal that
+  # breaks the build, or a `package-lock.json` out of step with `package.json`.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Matches `netlify.toml`'s `[build.environment]`. The point of building
+      # here is to build the way Netlify does, so the two versions stay equal.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      # `_redirects` ends in a forced catch-all (`/* /index.html 200!`), so an
+      # asset the build didn't write is not a 404 — it is served the homepage's
+      # HTML. That is how `/js/bundle.js` once came back as `<!doctype html>`.
+      # Nothing upstream fails when a passthrough copy silently stops copying,
+      # so absence and emptiness both have to be asserted here.
+      - name: The shipped assets must exist and be non-empty
+        run: |
+          for asset in dist/js/bundle.js dist/css/main.css; do
+            if [ ! -s "$asset" ]; then
+              echo "$asset is missing or empty — every url that asks for it" \
+                   "will be served the homepage's HTML instead"
+              exit 1
+            fi
+          done
+
+      # Today `npm run build` is what actually goes red on a bundle that will
+      # not parse, because #135 made the `jsmin` filter throw. This asserts the
+      # same thing about the artefact rather than about the build, so it still
+      # holds if that one line in `.eleventy.js` is ever softened back to
+      # returning its input — which is what it did before #135, and what let
+      # `3c3fab0` ship. It is the cheap half of the pair, not the redundant one.
+      - name: The bundle must parse
+        run: node --check dist/js/bundle.js
