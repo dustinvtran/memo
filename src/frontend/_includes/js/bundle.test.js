@@ -1,136 +1,246 @@
 /**
- * @file The frontend bundle is built by Nunjucks `{% include %}`-ing every file
- * listed in `src/frontend/js/bundle.njk` into one file, each wrapped in its own
- * IIFE, emitted to `/js/bundle.js` and loaded by base.njk from that url. So
- * Nunjucks reads these .js files as templates, and anything that looks like a
- * Nunjucks delimiter is not JavaScript to it.
+ * @file The frontend bundle is built by `_data/assets.js`: it reads every file
+ * listed in `asset_plan.js`, wraps each in its own IIFE, minifies the result,
+ * and names it after a digest of the bytes that come out. `js/bundle.njk` emits
+ * those bytes at that url and `layouts/base.njk` loads the same url from the
+ * same object.
  *
- * When that happens nothing fails loudly: the include renders to nothing, the
- * IIFE around it loses its closing brace, and the whole 140KB bundle becomes
- * one syntax error. The build is green, the deploy is green, and every page on
- * the site is blank. A JSDoc `@typedef` with a brace pair cost us exactly that,
- * so the delimiters are worth a test — as is the bundle parsing at all, which
- * is the check that catches the next cause rather than that one.
+ * The digest is the thing to protect. `netlify.toml` serves `/js/*` and
+ * `/css/*` with `immutable` for a year, which is only true if a change to any
+ * bundled file changes the url — and only checkable if exactly one place
+ * decides what that url is. A second place computing the name would not fail
+ * loudly; it would fail a year from now in someone else's browser.
+ *
+ * The other failure mode here is older and blunter: a syntax error anywhere in
+ * the concatenation is one broken 140KB file, and every page on this site is
+ * drawn by that file, so the build is green, the deploy is green, and the whole
+ * site is blank.
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
+const plan = require("./asset_plan");
+
 const INCLUDES = path.join(__dirname, "..");
-const BUNDLE = path.join(INCLUDES, "..", "js", "bundle.njk");
+const FRONTEND = path.join(INCLUDES, "..");
+const BUNDLE = path.join(FRONTEND, "js", "bundle.njk");
+const STYLESHEET_TEMPLATE = path.join(FRONTEND, "css", "main.njk");
 const LAYOUT = path.join(INCLUDES, "layouts", "base.njk");
-const ROOT = path.join(INCLUDES, "..", "..", "..");
-const ELEVENTY = path.join(ROOT, ".eleventy.js");
+const ROOT = path.join(FRONTEND, "..", "..");
+const DATA = path.join(FRONTEND, "_data", "assets.js");
 const REDIRECTS = path.join(ROOT, "_redirects");
+const NETLIFY = path.join(ROOT, "netlify.toml");
 
 const read = (file) => fs.readFileSync(file, "utf8");
 
-/** The files bundle.njk inlines, in the order it inlines them. */
-const includedFiles = () =>
-  [...read(BUNDLE).matchAll(/\{\{\s*js\("([^"]+)"\)\s*\}\}/g)].map(
-    ([, includePath]) => includePath
-  );
-
-/** `{{ … }}` interpolates, `{% … %}` is a tag, `{# … #}` is a comment. */
-const DELIMITERS = [
-  ["{{", /\{\{/],
-  ["{%", /\{%/],
-  ["{#", /\{#/],
-];
-
-test("bundle.njk still inlines the frontend scripts", () => {
-  assert.ok(includedFiles().length > 0, "found no js() includes in bundle.njk");
+test("the bundle still lists the frontend scripts", () => {
+  assert.ok(plan.BUNDLED_FILES.length > 0, "asset_plan.js bundles nothing");
 });
 
-test("bundle.njk emits the bundle to a url, minified", () => {
+test("every file the bundle lists exists", () => {
+  plan.BUNDLED_FILES.forEach((includePath) =>
+    assert.ok(
+      fs.existsSync(path.join(INCLUDES, includePath)),
+      `asset_plan.js lists ${includePath}, which does not exist`
+    )
+  );
+  assert.ok(
+    fs.existsSync(path.join(INCLUDES, plan.STYLESHEET)),
+    `asset_plan.js names ${plan.STYLESHEET}, which does not exist`
+  );
+});
+
+test("bundle.njk emits the shared bytes at the shared url", () => {
   const source = read(BUNDLE);
 
+  // Both halves matter. A permalink that named a fixed url would be cached
+  // `immutable` under a name that never changes; a body that rebuilt the
+  // bundle some other way would be hashed under a name describing something
+  // else. `assets.js.url` and `assets.js.code` are the one object.
   assert.match(
     source,
-    /^---\r?\n(?:.*\r?\n)*?permalink:\s*\/js\/bundle\.js\s*\r?$/m,
-    "bundle.njk must emit to /js/bundle.js, which is the url base.njk loads"
+    /^---\r?\n(?:.*\r?\n)*?permalink:\s*["']?\{\{\s*assets\.js\.url\s*\}\}["']?\s*\r?$/m,
+    "bundle.njk must take its permalink from assets.js.url"
   );
   assert.match(
     source,
-    /\{\{\s*scripts\s*\|\s*jsmin\s*\|\s*safe\s*\}\}/,
-    "the bundle must go through the jsmin filter"
+    /\{\{-?\s*assets\.js\.code\s*\|\s*safe\s*-?\}\}/,
+    "bundle.njk must emit assets.js.code, the bytes that url was hashed from"
   );
 });
 
-test("bundle.njk still wraps each file in its own IIFE", () => {
-  // `const` at the top level of a file would otherwise collide with the same
-  // name in any other file — they share one global scope. The concatenation
-  // this file's parse test builds mirrors this macro, so it has to hold.
+test("main.njk emits the stylesheet at the shared url", () => {
+  const source = read(STYLESHEET_TEMPLATE);
+
   assert.match(
-    read(BUNDLE),
-    /\{%\s*macro js\(path\)\s*%\}\s*\(\(\)\s*=>\s*\{\s*\{%\s*include path\s*%\}\s*\}\)\(\);\s*\{%\s*endmacro\s*%\}/,
-    "the js() macro no longer wraps its include in an IIFE"
+    source,
+    /^---\r?\n(?:.*\r?\n)*?permalink:\s*["']?\{\{\s*assets\.css\.url\s*\}\}["']?\s*\r?$/m,
+    "css/main.njk must take its permalink from assets.css.url"
+  );
+  assert.match(
+    source,
+    /\{\{-?\s*assets\.css\.code\s*\|\s*safe\s*-?\}\}/,
+    "css/main.njk must emit assets.css.code"
   );
 });
 
-test("base.njk loads the bundle by url and inlines no frontend script", () => {
+test("base.njk loads both assets from the same data, and inlines neither", () => {
   const layout = read(LAYOUT);
 
   assert.match(
     layout,
-    /<script src="\/js\/bundle\.js"><\/script>/,
-    "base.njk must load /js/bundle.js"
+    /<script[^>]*\bsrc="\{\{\s*assets\.js\.url\s*\}\}"><\/script>/,
+    "base.njk must load the bundle from assets.js.url, not a url of its own"
   );
-  assert.equal(
-    [...layout.matchAll(/\{\{\s*js\("([^"]+)"\)\s*\}\}/g)].length,
-    0,
-    "base.njk inlines frontend files again; the list belongs in bundle.njk"
+  assert.match(
+    layout,
+    /<link rel="stylesheet" href="\{\{\s*assets\.css\.url\s*\}\}">/,
+    "base.njk must load the stylesheet from assets.css.url"
   );
-});
-
-test("the stylesheet is served from a url, not inlined", () => {
-  const layout = read(LAYOUT);
-
-  assert.match(layout, /<link rel="stylesheet" href="\/css\/main\.css">/);
   assert.doesNotMatch(
     layout,
-    /\{%\s*include\s+"css\/main\.css"\s*%\}/,
-    "base.njk inlines the stylesheet again"
-  );
-  assert.match(
-    read(ELEVENTY),
-    /addPassthroughCopy\(\{[^}]*'\.\/src\/frontend\/_includes\/css\/main\.css':\s*'css\/main\.css'/,
-    ".eleventy.js must copy main.css to /css/, or that <link> is a 404"
+    /\{%\s*include\s+"(?:js|css)\//,
+    "base.njk inlines frontend files again; the list belongs in asset_plan.js"
   );
 });
 
-test("the assets base.njk loads are exempt from the SPA catch-all", () => {
+test("the bundle defers, and nothing inline races it", () => {
+  // These two go together. `defer` stops the bundle blocking the parser, but a
+  // deferred script runs after every inline one, so any inline block that
+  // reaches for `Components` would find nothing there — which is the state
+  // this replaced. The drawing code lives in `js/boot.js` at the end of the
+  // bundle now, and <body> has no script of its own to get ahead of it.
+  const layout = read(LAYOUT);
+
+  assert.match(
+    layout,
+    /<script\s+defer\s+src="\{\{\s*assets\.js\.url\s*\}\}"><\/script>/,
+    "the bundle must be deferred; it draws the page and blocks the parser"
+  );
+
+  const inline = [...layout.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)]
+    .map(([, body]) => body.trim())
+    .filter(Boolean);
+
+  assert.deepEqual(
+    inline,
+    [],
+    "base.njk has an inline script again; it runs before the deferred bundle, " +
+      "so anything it reaches for in `Components` is not there yet"
+  );
+
+  assert.equal(
+    plan.BUNDLED_FILES[plan.BUNDLED_FILES.length - 1],
+    "js/boot.js",
+    "js/boot.js draws the page with what every file above it defines, so it " +
+      "has to be bundled last"
+  );
+});
+
+test("only asset_plan.js decides what the assets are called", () => {
+  // A hardcoded `/js/bundle.js` or `/css/main.css` anywhere is either a 404 or,
+  // worse, a second name for a file whose name is supposed to be its digest.
+  [
+    ["base.njk", LAYOUT],
+    ["bundle.njk", BUNDLE],
+    ["css/main.njk", STYLESHEET_TEMPLATE],
+  ].forEach(([name, file]) =>
+    assert.doesNotMatch(
+      read(file),
+      /(?:href|src)="\/(?:js|css)\//,
+      `${name} names an asset url literally; it must come from the assets data`
+    )
+  );
+});
+
+test("a change to any bundled file changes the url", () => {
+  // The invariant `immutable` rests on, checked on the pure functions so it
+  // needs no install: same bytes, same name; different bytes, different name.
+  const one = plan.concatenate(["window.x = 1"]);
+  const other = plan.concatenate(["window.x = 2"]);
+
+  assert.notEqual(plan.digest(one), plan.digest(other));
+  assert.equal(plan.digest(one), plan.digest(plan.concatenate(["window.x = 1"])));
+
+  assert.notEqual(plan.bundleUrl(plan.digest(one)), plan.bundleUrl(plan.digest(other)));
+  assert.match(plan.bundleUrl(plan.digest(one)), new RegExp(plan.digest(one)));
+  assert.match(
+    plan.stylesheetUrl(plan.digest(one)),
+    new RegExp(plan.digest(one)),
+    "the stylesheet url must carry its digest too; /css/* is immutable as well"
+  );
+});
+
+test("assets.js re-reads on every build", () => {
+  // Node caches the module, so an object export would freeze the bundle at
+  // whatever the first build of a `--serve` process read off disk, and editing
+  // a component would stop changing the page.
+  //
+  // Read rather than required: `_data/assets.js` pulls in uglify-js, and this
+  // suite runs with no install.
+  assert.match(
+    read(DATA),
+    /module\.exports\s*=\s*\(\s*\)\s*=>/,
+    "_data/assets.js must export a function, or `--serve` serves a stale bundle"
+  );
+});
+
+test("the hashed assets are exempt from the SPA catch-all", () => {
   // `/*  /index.html  200!` is forced, so it rewrites urls that exist as files
   // too. An asset is only served as itself if it has a forced rule of its own,
-  // the way `/img/*` does. Without one, `/js/bundle.js` answers with the
-  // homepage's HTML and the site is blank with `Unexpected token '<'`.
+  // the way `/img/*` does. Without one, the bundle answers with the homepage's
+  // HTML and the site is blank with `Unexpected token '<'`. The hashed names
+  // have to keep matching those rules, which is why they keep their directory.
   const exempt = [
     ...read(REDIRECTS).matchAll(/^(\/\S*?)\/\*\s+\S+\s+200!/gm),
   ].map(([, prefix]) => prefix + "/");
 
+  const hash = plan.digest("sample");
   const assets = [
-    ...read(LAYOUT).matchAll(/<(?:link|script)\b[^>]*?\b(?:href|src)="(\/[^"]*)"/g),
-  ].map(([, url]) => url);
+    plan.bundleUrl(hash),
+    plan.stylesheetUrl(hash),
+    // Only <link> and <script> load assets. The <noscript> block links
+    // `/films/nil` and `/api/export/films/nil`, which are a page and a
+    // function — both of them are supposed to reach the catch-all.
+    ...[
+      ...read(LAYOUT).matchAll(/<(?:link|script)\b[^>]*?\b(?:href|src)="(\/[^"{]*)"/g),
+    ].map(([, url]) => url),
+  ];
 
-  assert.ok(assets.length > 0, "found no local assets in base.njk");
+  assert.ok(assets.length > 2, "found no local assets in base.njk");
 
   assets.forEach((url) =>
     assert.ok(
       exempt.some((prefix) => url.startsWith(prefix)),
-      `base.njk loads ${url}, which no forced rule in _redirects exempts, so ` +
-        `the catch-all answers it with index.html`
+      `${url} is served by no forced rule in _redirects, so the catch-all ` +
+        `answers it with index.html`
     )
   );
 });
 
-test("every file the bundle lists exists", () => {
-  includedFiles().forEach((includePath) =>
-    assert.ok(
-      fs.existsSync(path.join(INCLUDES, includePath)),
-      `bundle.njk lists ${includePath}, which does not exist`
-    )
-  );
+test("the immutable headers cover the directories the assets are emitted to", () => {
+  // `immutable` on a url whose contents can change under it is the one way
+  // this gets worse rather than better, so the rule and the hashed name are
+  // checked against each other rather than each being trusted on its own.
+  const netlify = read(NETLIFY);
+  const hash = plan.digest("sample");
+
+  [plan.bundleUrl(hash), plan.stylesheetUrl(hash)].forEach((url) => {
+    const directory = url.slice(0, url.indexOf("/", 1) + 1);
+    const rule = new RegExp(
+      `\\[\\[headers\\]\\]\\s*for\\s*=\\s*"${directory}\\*"\\s*` +
+        `\\[headers\\.values\\]\\s*Cache-Control\\s*=\\s*"[^"]*immutable"`
+    );
+
+    assert.match(
+      netlify.replace(/#.*$/gm, ""),
+      rule,
+      `netlify.toml has no immutable Cache-Control for ${directory}*, which is ` +
+        `where ${url} is served from`
+    );
+  });
 });
 
 test("components/index.js comes before the files that populate it", () => {
@@ -138,7 +248,7 @@ test("components/index.js comes before the files that populate it", () => {
   // / `.Home` / `.Profile` / `.List` objects every other component assigns
   // into. Order is load-bearing across the whole list; this is the edge of it
   // that turns into a TypeError on a blank page rather than something subtle.
-  const files = includedFiles();
+  const files = plan.BUNDLED_FILES;
   const root = files.indexOf("js/components/index.js");
 
   assert.notEqual(root, -1, "js/components/index.js is no longer bundled");
@@ -153,32 +263,14 @@ test("components/index.js comes before the files that populate it", () => {
   });
 });
 
-includedFiles().forEach((includePath) => {
-  test(`${includePath} holds no Nunjucks delimiter`, () => {
-    const lines = read(path.join(INCLUDES, includePath)).split("\n");
-
-    lines.forEach((line, i) => {
-      DELIMITERS.forEach(([delimiter, pattern]) =>
-        assert.ok(
-          !pattern.test(line),
-          `${includePath}:${i + 1} contains ${delimiter}, which Nunjucks ` +
-            `reads as a template delimiter and swallows:\n  ${line.trim()}`
-        )
-      );
-    });
-  });
-});
-
 test("the concatenated bundle parses as JavaScript", () => {
-  // Mirrors the js() macro in bundle.njk, which the test above pins. `new
-  // Function` compiles the body without running it, so this is a syntax check
-  // and nothing more — but a syntax error here is the whole site, blank.
-  const bundle = includedFiles()
-    .map((includePath) => {
-      const source = read(path.join(INCLUDES, includePath));
-      return `(() => {\n${source}\n})();\n`;
-    })
-    .join("");
+  // Exactly what `_data/assets.js` hands to UglifyJS, built by the same pure
+  // function. `new Function` compiles the body without running it, so this is a
+  // syntax check and nothing more — but a syntax error here is the whole site,
+  // blank.
+  const bundle = plan.concatenate(
+    plan.BUNDLED_FILES.map((includePath) => read(path.join(INCLUDES, includePath)))
+  );
 
   assert.doesNotThrow(
     () => new Function(bundle),

@@ -25,12 +25,14 @@
     {# 1.12.1, matching the bootstrap-table script below. #}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.css" integrity="sha384-HyusOcKCYSnjwC8jY4YvjZAwLgeqDPWFDu2/AFf5OrZd7ykufk0gwxexoqmg5W8N" crossorigin="anonymous" referrerpolicy="no-referrer">
     <link rel="icon" href="/img/favicon.ico" type="image/x-icon"/>
-    {# `_includes/css/main.css`, copied to this url by the `addPassthroughCopy`
-       in `.eleventy.js`. #126 dropped a <link> at this url because nothing
-       emitted the file and every page load spent a request on a 404; the
-       passthrough is the other half of that, so the <link> comes back and the
-       stylesheet stops being re-sent inline with every HTML response. #}
-    <link rel="stylesheet" href="/css/main.css">
+    {# `_includes/css/main.css`, emitted at this url by `css/main.njk`. #126
+       dropped a <link> here because nothing emitted the file and every page
+       load spent a request on a 404; emitting it is the other half of that, so
+       the <link> comes back and the stylesheet stops being re-sent inline with
+       every HTML response. The name carries a digest of the file, which is
+       what lets `netlify.toml` cache `/css/*` for a year: change the CSS and
+       this url changes with it. #}
+    <link rel="stylesheet" href="{{ assets.css.url }}">
 
     {# The page cannot draw until every script below has been fetched and run,
        so anything not needed to draw it carries `defer` and gets out of the
@@ -53,13 +55,27 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js" integrity="sha384-pF+2qz7eFoUyrCTPr8gVboYJ7fNpmJKJzl0vPX6w3XDML+Of8bMSyd6fZIRJdwo7" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     {# The frontend's own forty files, concatenated and minified into one file
-       by `js/bundle.njk` — which is where the list and, more to the point, the
-       order live. Inlining them here meant re-sending 140 KB with every HTML
-       response; as a url the browser fetches it once and revalidates it after
-       that. No `defer`: the block at the end of <body> reaches for
-       `Components`, and the CDN scripts above are what the bundle itself
-       reaches for while it runs. #}
-    <script src="/js/bundle.js"></script>
+       by `_data/assets.js` — which is where the list and, more to the point,
+       the order live. Inlining them here meant re-sending 140 KB with every
+       HTML response.
+
+       The url carries a digest of those bytes, so it changes exactly when they
+       do. That is what `netlify.toml` is relying on when it serves `/js/*`
+       with `immutable` for a year: the browser never has to ask whether this
+       file is still current, because a new bundle arrives under a new name.
+
+       `defer`, so fetching it does not block the parser — which matters on a
+       page whose entire body is drawn by it. What used to prevent that was an
+       inline block at the end of <body> reaching for `Components`: an inline
+       script runs before a deferred one, so the bundle was not there yet. That
+       block is now `js/boot.js`, the last file in the bundle, which puts it
+       back after everything it depends on.
+
+       The CDN scripts above are what the bundle reaches for while it runs.
+       They stay ahead of it either way: the ones without `defer` run as the
+       parser reaches them, and the two with it are earlier in the document, so
+       they run first. #}
+    <script defer src="{{ assets.js.url }}"></script>
   </head>
   <body>
     {#
@@ -87,13 +103,6 @@
       </p>
     </noscript>
     <div id="site"></div>
-    <script>
-      // The 0 timeout is necessary to detect netlify auth token
-      window.setTimeout(async () => {
-        // Include the router
-        Components.setContent('#site', Components.Router())
-      }, 0)
-    </script>
   </body>
 </html>
 
