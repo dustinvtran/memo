@@ -46,7 +46,10 @@ We use:
   `AWS_LAMBDA_JS_RUNTIME` overrides the functions runtime, but only when set
   from the Netlify UI — it is ignored in `netlify.toml`.
 - [Eleventy](https://11ty.io) for static site generation
-- A tiny inline JS pipeline with a [component-based architecture](https://medium.com/@dan.shapiro1210/understanding-component-based-architecture-3ff48ec0c238)
+- A tiny JS pipeline with a [component-based architecture](https://medium.com/@dan.shapiro1210/understanding-component-based-architecture-3ff48ec0c238)
+  — no module system, just globals. `src/frontend/js/bundle.njk` lists every
+  frontend JS file, wraps each in its own IIFE, and concatenates and minifies
+  them into `/js/bundle.js`, which `layouts/base.njk` loads by url.
 - Serverless (FaaS) development pipeline with [Netlify Dev](https://www.netlify.com/products/dev) and [Netlify Functions](https://www.netlify.com/products/functions)
 
 **Credentials.**
@@ -61,7 +64,10 @@ You might need to run `npx netlify login` inside the project.
 **Netlify plugins.**
 
 - Identity. Managed at https://app.netlify.com/sites/td-memo/identity
-- FaunaDB. Managed at https://dashboard.fauna.com by logging in with netlify account integration.
+- FaunaDB. A leftover: we moved to MongoDB Atlas on 2022-10-10 and nothing
+  in this repo speaks FQL any more. The integration may still be attached to
+  the Netlify account, but the database the site reads is the one under **DB**
+  below.
 
 **DB**
 
@@ -76,11 +82,14 @@ once and runs the writes in order without a transaction, which is what the
 code did before it existed: the save still works, but a failure between the
 two writes can leave the note stale beside a freshly saved entry.
 
-**Backups.** `src/db_maintenance/backup_database.js` takes a timestamped
-snapshot of every collection and prunes old ones to a retention policy, so
-there is a history of backups rather than one overwritten dump;
-`restore_backup.js` puts a snapshot (or one collection of it) back. See
-[src/db_maintenance/README.md](src/db_maintenance/README.md).
+**Backups.** `src/db_maintenance/scripts/backup_database.js` takes a
+timestamped snapshot of every collection and prunes old ones to a retention
+policy, so there is a history of backups rather than one overwritten dump;
+`scripts/restore_backup.js` puts a snapshot (or one collection of it) back.
+Both live alongside the rest of the maintenance scripts, each of which is a
+dry run unless given `--apply`;
+[src/db_maintenance/README.md](src/db_maintenance/README.md) lists them and
+says what each one is for.
 
 **Reading a list without a browser.** The lists are drawn client-side, so
 fetching `https://nil.moe/films/nil` and reading the HTML gets you an empty

@@ -17,10 +17,10 @@ const generalSource = fs.readFileSync(path.join(__dirname, "general.js"), "utf8"
 // testing the stand-in. `URL` is a host global rather than a JS builtin, so a
 // fresh vm context has to be handed one.
 //
-// base.njk wraps each included file in its own IIFE, which is what keeps two
-// files' `const`s from colliding and what makes an assignment with no keyword
-// (`Utils = …`) the only thing that crosses between them. Loading them the
-// same way here keeps that difference visible.
+// The `js()` macro in bundle.njk wraps each bundled file in its own IIFE,
+// which is what keeps two files' `const`s from colliding and what makes an
+// assignment with no keyword (`Utils = …`) the only thing that crosses between
+// them. Loading them the same way here keeps that difference visible.
 const context = vm.createContext({
   URL,
   console,

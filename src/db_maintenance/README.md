@@ -6,6 +6,25 @@
 library: the pure modules that decide what a script should write, and their
 tests.
 
+The scripts, and the section below that explains each:
+
+| Script | What it does | Writes? |
+| --- | --- | --- |
+| `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, dangling `workRef`s. Needs no API keys. | never |
+| `backup_database.js` | Takes a timestamped snapshot of every collection and prunes old ones to a retention policy. | to disk only |
+| `restore_backup.js` | Puts a snapshot, or one collection of it, back — matching on `_id`. | `--apply` |
+| `ensure_indexes.js` | Creates the indexes the site's queries need. Re-running is a no-op. | `--apply` |
+| `backfill_work_metadata.js` | Re-runs the API adapters over cached works, filling gaps and refreshing stale metadata. | `--apply` |
+| `backfill_game_playtimes.js` | Fills in games with no playtime, from IGDB's `/game_time_to_beats`. | `--apply` |
+| `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
+
+Everything marked `--apply` is a **dry run without it**, and takes a backup of
+each collection it writes to first — except `ensure_indexes.js`, which writes
+no documents at all. The two backfills touch the **work** collections only, so
+the overrides a user set by hand, which live on the entry documents, are out
+of reach by construction; `dedupe_works.js` is the one that also writes to the
+entry collections, repointing `workRef` at the document it merged into.
+
 The commands below are written from this folder, as
 `node scripts/audit_database.js`, but nothing depends on that. The `.env` and
 the backups directory are both resolved from a fixed point in the tree rather
