@@ -25,3 +25,46 @@ jobs:
       # the Netlify functions and the frontend globals.
       - name: Syntax check every JS file
         run: git ls-files '*.js' | xargs -n1 node --check
+
+  # The `test` job above is deliberately install-free, which leaves the build
+  # unexercised: nothing in CI has ever run `.eleventy.js`, Nunjucks, UglifyJS
+  # or the passthrough copies. That matters since #135, because the build now
+  # produces the one file every page on the site depends on, and a bundle
+  # UglifyJS cannot parse blanks every url. It used to be found on Netlify,
+  # after merge.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches NODE_VERSION in netlify.toml, so a build that passes here
+          # is the build Netlify runs.
+          node-version: 22
+          cache: npm
+
+      # `ci` and not `install`: it fails outright when package.json and
+      # package-lock.json disagree, which is otherwise invisible until deploy.
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # A green build is not the same as a usable site. Eleventy reports
+      # success for a passthrough copy that quietly matched nothing, so name
+      # the files the site actually asks for.
+      - name: Check the build emitted what the site loads
+        run: |
+          for file in index.html js/bundle.js css/main.css _redirects \
+                      img/favicon.ico img/favicon.png img/memo_logo.png \
+                      img/mawaru.png; do
+            test -s "dist/$file" || { echo "missing or empty: dist/$file"; exit 1; }
+          done
+
+      # The failure `bundle.test.js` is a proxy for. That test reconstructs the
+      # concatenation from the templates as text; this is the real output of
+      # the real minifier.
+      - name: Check the bundle parses
+        run: node --check dist/js/bundle.js
