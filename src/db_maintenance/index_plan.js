@@ -5,11 +5,15 @@
  *
  * The I/O lives in scripts/ensure_indexes.js.
  *
- * Every query the site makes goes through `_findOneByField` /
+ * Almost every query the site makes goes through `_findOneByField` /
  * `_findAllByField` in ../api/utils/db/unsafe_functions.js, which is an
- * equality `$match` on one field. Each entry below names a field one of those
- * calls is given. Nothing here is a sort or a range, so every index is a
- * single ascending field, and `_id` is already indexed by MongoDB itself.
+ * equality `$match` on one field, so almost every index below is a single
+ * ascending field named after the field one of those calls is given. `_id` is
+ * already indexed by MongoDB itself.
+ *
+ * The exception is the entry list, which sorts as well as matches, and wants a
+ * compound index so that the sort can be *served* rather than performed. See
+ * the `updatedDate` entry below.
  *
  * The collection names come from ../api/utils/work_types.js, which is pure
  * too, so this file stays testable without an install.
@@ -49,10 +53,41 @@ const DESIRED_INDEXES = [
     key: { userId: 1 },
     why: "findOwnName, setBio, assignName",
   },
+  // Kept, though the compound index below begins with `userId` and a compound
+  // index serves its own prefix — so anything this one can answer, that one can
+  // answer too. It stays for two reasons. Dropping an index is a human's call
+  // (CLAUDE.md), and nothing here drops one anyway: taking an entry out of this
+  // list does not remove it from the database, it only leaves it live and no
+  // longer declared, which is the one state worse than either. And it is the
+  // narrower index — `toScoreTallyPipeline`'s four `$group`s match on `userId`
+  // and read no dates, so they walk fewer bytes through it.
   ...ENTRY_COLLECTIONS.map((collection) => ({
     collection,
     key: { userId: 1 },
-    why: "every list load, every profile load, /api/export, refreshStats",
+    why: "the $match in toScoreTallyPipeline, /api/export, refreshStats",
+  })),
+  // The list query, `toUserEntriesPipeline` in ../api/utils/db/queries.js, is
+  // `$match: { userId }` then `$sort: { updatedDate: -1, _id: 1 }` then
+  // `$limit`. Matching on the `userId` index alone leaves the sort a *blocking*
+  // one: every one of the user's entries has to be read and ordered before the
+  // limit can take five, and a blocking sort gives up at 100 MB rather than
+  // spilling. Walking a compound index in order instead means the limit stops
+  // the scan after five documents.
+  //
+  // `_id` is in the key because the sort names it. An index serves a sort only
+  // when the sort is a prefix of what the index has left after the equality
+  // match, so `{ userId: 1, updatedDate: -1 }` on its own serves
+  // `{ updatedDate: -1 }` but not `{ updatedDate: -1, _id: 1 }` — the planner
+  // would add the blocking sort back to break the ties. Which would matter:
+  // the ties are the reason `_id` is in the sort at all, a bulk import stamping
+  // a whole list with one millisecond.
+  //
+  // Directions have to line up too, and here they do: the index is read
+  // forwards for `{ updatedDate: -1, _id: 1 }`.
+  ...ENTRY_COLLECTIONS.map((collection) => ({
+    collection,
+    key: { userId: 1, updatedDate: -1, _id: 1 },
+    why: "the sort and limit in toUserEntriesPipeline — every list load and every profile load",
   })),
   ...ENTRY_COLLECTIONS.map((collection) => ({
     collection,

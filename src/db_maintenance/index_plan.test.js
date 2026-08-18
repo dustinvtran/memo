@@ -2,12 +2,14 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  ENTRY_COLLECTIONS,
   DESIRED_INDEXES,
   indexName,
   planIndexes,
   duplicateValues,
   uniqueIndexes,
 } = require("./index_plan");
+const { toUserEntriesPipeline } = require("../api/utils/db/queries");
 
 /** What `db.collection(name).indexes()` hands back, trimmed to what we read. */
 const existing = (name, key, unique) => ({
@@ -27,6 +29,11 @@ const desired = (collection, key, options) => ({
 test("an index is named the way MongoDB would name it", () => {
   assert.equal(indexName({ entryRef: 1 }), "entryRef_1");
   assert.equal(indexName({ userId: 1, updatedDate: -1 }), "userId_1_updatedDate_-1");
+  // Underscores double up around `_id`, because the field is already one.
+  assert.equal(
+    indexName({ userId: 1, updatedDate: -1, _id: 1 }),
+    "userId_1_updatedDate_-1__id_1"
+  );
 });
 
 test("every desired index names a collection, a key and a reason", () => {
@@ -50,6 +57,10 @@ test("the list covers every field the issue names, and no field twice", () => {
     "tvShowEntries.userId_1",
     "gameEntries.userId_1",
     "bookEntries.userId_1",
+    "filmEntries.userId_1_updatedDate_-1__id_1",
+    "tvShowEntries.userId_1_updatedDate_-1__id_1",
+    "gameEntries.userId_1_updatedDate_-1__id_1",
+    "bookEntries.userId_1_updatedDate_-1__id_1",
     "filmEntries.workRef_1",
     "tvShowEntries.workRef_1",
     "gameEntries.workRef_1",
@@ -201,4 +212,73 @@ test("values of different types are not conflated", () => {
   const documents = [{ _id: "a", ref: 1 }, { _id: "b", ref: "1" }];
 
   assert.deepEqual(duplicateValues(documents, "ref"), []);
+});
+
+test("the entry list's sort is served by a compound index, not performed", () => {
+  // The index has to answer the whole of `toUserEntriesPipeline`: `userId`
+  // first, for the equality match, then the sort's fields in the sort's own
+  // order and directions. Anything less and the planner puts a blocking sort
+  // back in front of the `$limit` — which is what the single-field `userId`
+  // index on its own leaves it doing. Reading the pipeline rather than
+  // restating it is what keeps the two from drifting apart.
+  const [{ $match }, { $sort }] = toUserEntriesPipeline({
+    userId: "u1",
+    workCollection: "films",
+  });
+  const wanted = {
+    ...Object.fromEntries(Object.keys($match).map((field) => [field, 1])),
+    ...$sort,
+  };
+
+  assert.deepEqual(wanted, { userId: 1, updatedDate: -1, _id: 1 });
+
+  for (const collection of ENTRY_COLLECTIONS) {
+    const keys = DESIRED_INDEXES.filter(
+      (index) => index.collection === collection
+    ).map((index) => JSON.stringify(index.key));
+
+    assert.ok(
+      keys.includes(JSON.stringify(wanted)),
+      `${collection} has no index matching ${JSON.stringify(wanted)}`
+    );
+  }
+});
+
+test("the plain userId index is still declared alongside the compound one", () => {
+  // A compound index serves its own prefix, so this one answers nothing the
+  // compound one cannot. It stays anyway: nothing in this folder drops an
+  // index, so undeclaring it would leave it live and no longer explained. See
+  // the comment on it in index_plan.js.
+  for (const collection of ENTRY_COLLECTIONS) {
+    const names = DESIRED_INDEXES.filter(
+      (index) => index.collection === collection
+    ).map((index) => indexName(index.key));
+
+    assert.ok(names.includes("userId_1"), `${collection} lost its userId index`);
+  }
+});
+
+test("the compound index is created beside the plain one, not in place of it", () => {
+  // Same leading field, but a different key and a different name, so a database
+  // that already has the single-field index — which is what the dry run of
+  // #147 found — needs the compound one built and keeps both.
+  const plan = planIndexes(
+    [
+      desired("filmEntries", { userId: 1 }),
+      desired("filmEntries", { userId: 1, updatedDate: -1, _id: 1 }),
+    ],
+    {
+      filmEntries: [
+        existing("_id_", { _id: 1 }),
+        existing("userId_1", { userId: 1 }),
+      ],
+    }
+  );
+
+  assert.deepEqual(plan.conflicting, []);
+  assert.equal(plan.satisfied.length, 1);
+  assert.deepEqual(
+    plan.create.map((index) => indexName(index.key)),
+    ["userId_1_updatedDate_-1__id_1"]
+  );
 });
