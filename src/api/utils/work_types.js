@@ -29,6 +29,7 @@
  *   entryType: string,
  *   apiRefPrefixes: string[],
  *   identityPrefixes: string[],
+ *   refShape: 'id' | 'isbn',
  * }} WorkType
  */
 
@@ -41,6 +42,9 @@
  * of those that actually names the work, and so the only ones a lookup by
  * external id may use — they are not always the same list.
  *
+ * `refShape` names the shape of the id that follows the prefix, which is what
+ * `parseRef` checks a url segment against — see REF_SHAPES.
+ *
  * @type {WorkType[]}
  */
 const WORK_TYPES = [
@@ -52,6 +56,7 @@ const WORK_TYPES = [
     entryType: 'Film',
     apiRefPrefixes: ['tmdb'],
     identityPrefixes: ['tmdb'],
+    refShape: 'id',
   },
   {
     type: 'tv',
@@ -61,6 +66,7 @@ const WORK_TYPES = [
     entryType: 'TVShow',
     apiRefPrefixes: ['tmdb'],
     identityPrefixes: ['tmdb'],
+    refShape: 'id',
   },
   {
     type: 'games',
@@ -77,6 +83,7 @@ const WORK_TYPES = [
     // games share the placeholder `hltb__N/A`. Only igdb establishes identity,
     // so only igdb may be looked up by.
     identityPrefixes: ['igdb'],
+    refShape: 'id',
   },
   {
     type: 'books',
@@ -90,6 +97,7 @@ const WORK_TYPES = [
     apiRefPrefixes: ['ISBN', 'google'],
     // Both name the same ISBN, so either establishes identity.
     identityPrefixes: ['ISBN', 'google'],
+    refShape: 'isbn',
   },
 ]
 
@@ -111,14 +119,60 @@ const byType = (type) => BY_TYPE[type]
  */
 const byEntryCollection = (entryCollection) => BY_ENTRY_COLLECTION[entryCollection]
 
+/**
+ * The external id a `/works/retrieve/:type/:ref` segment names, or undefined
+ * if it names nothing a work of that type could be held under. An unknown type
+ * has no shape to check against, so it answers undefined as well — the same
+ * answer `byType` gives it, and `controllers/works.js` turns both into the 404
+ * it already answers an unknown type with.
+ *
+ * The segment is not decoration. The games adapter interpolates it into an
+ * apicalypse `where id = <ref>` clause and the books adapter into a Google
+ * Books query string carrying GOOGLE_API_KEY, so until #175 a caller wrote
+ * part of both. Checking the shape here, where the segment is read, is what
+ * saves three adapters from each deciding for themselves what a safe ref is.
+ *
+ * Returns the segment itself rather than a number: each accepted shape is
+ * already the canonical spelling, so there is nothing to normalise, and the
+ * adapters and the `<prefix>__<ref>` lookups all want a string.
+ *
+ * @type {(type: string, segment: string) => string | undefined}
+ */
+const parseRef = (type, segment) => {
+  const shape = REF_SHAPES[byType(type)?.refShape]
+  return shape?.test(segment) ? segment : undefined
+}
+
 module.exports = {
   WORK_TYPES,
   TYPES,
   byType,
   byEntryCollection,
+  parseRef,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * What an id of each shape looks like: as the two APIs write them, and as
+ * every one of the 3794 identity refs in the four works collections — 2034
+ * tmdb, 1128 igdb, 632 ISBN — is spelled.
+ *
+ * A trailing `$` would not be the end of it — `$` also matches before a final
+ * newline, and `%0A` in a url is a newline once `decodeURI` has had it, an
+ * `id = 1020\n...` being just the sort of segment this exists to refuse.
+ * `(?![\s\S])` is "and then nothing whatsoever".
+ */
+const REF_SHAPES = {
+  // A tmdb or igdb id. Leading zeros are refused rather than tolerated:
+  // neither API writes one, so `tmdb__007` could only be a cache miss that
+  // then asks tmdb for a work we would go on to cache a second time.
+  id: /^[1-9][0-9]*(?![\s\S])/,
+  // ISBN-13, or an ISBN-10 whose check digit may be an X. Unpunctuated and
+  // uppercase, because that is how Google Books writes the identifiers in the
+  // search results a ref is taken from, and so how every book is cached.
+  isbn: /^(?:[0-9]{9}[0-9X]|[0-9]{13})(?![\s\S])/,
+}
 
 /** @type {(field: keyof WorkType) => Record<string, WorkType>} */
 const indexBy = (field) =>
