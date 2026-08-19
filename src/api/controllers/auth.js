@@ -78,12 +78,19 @@ const generateEncodedStateString = (route) => {
   return stateBuffer.toString("base64")
 }
 
+/* Both of these clear a cookie, which is `Max-Age=0`. They said `new Date(0)`
+   before, and reached the same header only because `serialize` coerces what it
+   is handed to a number and the epoch is 0 — `maxAge` is a count of seconds,
+   not a date, so any other Date would have been read as its epoch milliseconds
+   and set an expiry tens of thousands of years out instead of clearing
+   anything. `cookie` 1.x rejects a Date outright, so the coercion was also the
+   thing standing between here and the next upgrade. */
 const generateAuth0LoginResetCookie = () => {
   return cookie.serialize(AUTH0_LOGIN_COOKIE_NAME, "", {
     secure: !isRunningLocally,
     httpOnly: true,
     path: "/",
-    maxAge: new Date(0),
+    maxAge: 0,
   })
 }
 
@@ -91,7 +98,7 @@ const generateLogoutCookie = () => {
   return cookie.serialize(NETLIFY_COOKIE_NAME, "", {
     secure: !isRunningLocally,
     path: "/",
-    maxAge: new Date(0),
+    maxAge: 0,
     httpOnly: true,
   })
 }
