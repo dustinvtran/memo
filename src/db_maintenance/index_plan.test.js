@@ -70,6 +70,7 @@ test("the list covers every field the issue names, and no field twice", () => {
     "gameReviews.entryRef_1",
     "bookReviews.entryRef_1",
     "entryRevisions.entryRef_1",
+    "entryRevisions.entryRef_1_kind_1_userId_1",
     "films.apiRefs_1",
     "tvShows.apiRefs_1",
     "games.apiRefs_1",
@@ -281,4 +282,86 @@ test("the compound index is created beside the plain one, not in place of it", (
     plan.create.map((index) => indexName(index.key)),
     ["userId_1_updatedDate_-1__id_1"]
   );
+});
+
+test("findDraft's three fields are all in one index, in an order findRevisions can share", () => {
+  // findDraft asks `{ entryRef, kind: 'draft', userId }` — the hottest read in
+  // the collection — and findRevisions asks `{ entryRef, kind: 'revision' }`.
+  // An index serves an equality match on a set of fields when they are a
+  // prefix of the key, so `kind` has to come before `userId` for the second
+  // query to be served by the first one's index.
+  const keys = DESIRED_INDEXES.filter(
+    (index) => index.collection === "entryRevisions"
+  ).map((index) => index.key);
+
+  const draft = keys.find(
+    (key) => JSON.stringify(key) === JSON.stringify({ entryRef: 1, kind: 1, userId: 1 })
+  );
+  assert.ok(draft, "entryRevisions has no index over entryRef, kind and userId");
+
+  const fields = Object.keys(draft);
+  assert.deepEqual(fields.slice(0, 2), ["entryRef", "kind"]);
+  assert.ok(
+    Object.values(draft).every((direction) => direction === 1),
+    "nothing here sorts on these, so every field is ascending"
+  );
+});
+
+test("the plain entryRef index is still declared alongside the compound one", () => {
+  // Same reason as the plain userId index above: the compound serves this
+  // one's prefix, but undeclaring it would leave it live in the database and
+  // no longer explained.
+  const names = DESIRED_INDEXES.filter(
+    (index) => index.collection === "entryRevisions"
+  ).map((index) => indexName(index.key));
+
+  assert.ok(names.includes("entryRef_1"));
+});
+
+test("the draft index is one to create against the database as #147 left it", () => {
+  // The 23 indexes applied on 2026-08-18 include `entryRevisions.entryRef_1`
+  // and nothing else on that collection, so the compound one is new work for
+  // `ensure_indexes.js` rather than something it would consider satisfied.
+  const plan = planIndexes(
+    DESIRED_INDEXES.filter((index) => index.collection === "entryRevisions"),
+    { entryRevisions: [existing("_id_", { _id: 1 }), existing("entryRef_1", { entryRef: 1 })] }
+  );
+
+  assert.deepEqual(plan.conflicting, []);
+  assert.deepEqual(
+    plan.create.map((index) => indexName(index.key)),
+    ["entryRef_1_kind_1_userId_1"]
+  );
+  assert.equal(plan.satisfied.length, 1);
+});
+
+test("every workRef index says it has no query, rather than naming one it cannot serve", () => {
+  // The $lookup these used to name joins `localField: 'workRef'` to
+  // `foreignField: '_id'`, and a $lookup uses the index on the foreign side —
+  // `works._id`. Nothing else filters on `workRef` either. They stay declared
+  // because dropping an index is a human's call and undeclaring one only hides
+  // it, so what the dry run prints has to be the honest version.
+  const workRefIndexes = DESIRED_INDEXES.filter(
+    (index) => JSON.stringify(index.key) === JSON.stringify({ workRef: 1 })
+  );
+
+  assert.deepEqual(
+    workRefIndexes.map((index) => index.collection),
+    ENTRY_COLLECTIONS
+  );
+  for (const index of workRefIndexes) {
+    assert.doesNotMatch(index.why, /\$lookup in _findAllUserEntriesWithMetadata/);
+    assert.match(index.why, /no query/);
+  }
+});
+
+test("nothing in toUserEntriesPipeline's $lookup wants a local index", () => {
+  // Reading the pipeline rather than restating it: if the join ever turns
+  // around — `workRef` on the foreign side of a lookup from `works` — these
+  // four indexes acquire a user and this test is the thing that fails.
+  const stages = toUserEntriesPipeline({ userId: "u1", workCollection: "films" });
+  const { $lookup } = stages.find((stage) => stage.$lookup);
+
+  assert.equal($lookup.localField, "workRef");
+  assert.equal($lookup.foreignField, "_id");
 });
