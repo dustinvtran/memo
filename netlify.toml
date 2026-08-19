@@ -1,5 +1,8 @@
 [build]
-  command = "npm run build"
+  # TEMPORARY, deleted with `scripts/probe_build_env.js` before this PR
+  # leaves draft: reports what the build can see of
+  # `AWS_LAMBDA_JS_RUNTIME` (#185, #190).
+  command = "npm run build && node scripts/probe_build_env.js"
   publish = "dist"
 
 [build.environment]
