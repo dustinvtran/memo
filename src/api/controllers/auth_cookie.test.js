@@ -7,6 +7,13 @@
  * through the same `generateNetlifyCookie`, needs nothing but a valid token,
  * and is therefore where the attributes can be asserted at all.
  *
+ * A deploy preview is not the fallback it looks like: Netlify sets `URL` to
+ * the site's primary url in every context, so a preview's `/api/auth/login`
+ * redirects with `redirect_uri=https://nil.moe/...` and Auth0 posts the
+ * callback to production. The login cookie was set on the preview's domain
+ * and is not sent there, so the flow fails on the preview whatever the branch
+ * says — which leaves this file and, after a merge, a real login.
+ *
  * The `httpOnly` assertion is inverted on purpose: it is deliberately absent,
  * because `Http.getToken` reads this cookie out of `document.cookie`. Turning
  * it on is a separate change that has to move the API to cookie-borne auth
