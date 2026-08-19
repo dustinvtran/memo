@@ -17,6 +17,7 @@ The scripts, and the section below that explains each:
 | `backfill_work_metadata.js` | Re-runs the API adapters over cached works, filling gaps and refreshing stale metadata. | `--apply` |
 | `backfill_game_playtimes.js` | Fills in games with no playtime, from IGDB's `/game_time_to_beats`. | `--apply` |
 | `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
+| `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. The one script here that writes outside the work collections. | `--apply` |
 
 Everything marked `--apply` is a **dry run without it**, and takes a backup of
 each collection it writes to first — except `ensure_indexes.js`, which writes
@@ -166,17 +167,34 @@ they were created in the same batches as their surviving neighbours. The
 remaining 71 carry uuid `entryRef`s, so they postdate the FaunaDB migration
 and can only be bounded as older than the earliest snapshot.
 
-What is in them: **171 are empty**, because `createEntry` writes a review
-document for every entry whether or not a note was typed. Of the 77 that hold
-text, **27 duplicate a note that still exists** — the same text, verbatim,
+What was in them: **171 were empty**, because `createEntry` writes a review
+document for every entry whether or not a note was typed. Of the 77 that held
+text, **27 duplicated a note that still exists** — the same text, verbatim,
 under a live entry, which is what deleting a row and re-adding the same title
-leaves behind. **50 hold text found nowhere else.**
+leaves behind. **50 held text found nowhere else.**
 
-Those 50 are the only real loss, and they are still not obviously data anyone
-wants back: the user deleted the entry, and #117 treats the note as something
-"the user asked to be rid of". Clearing them is a delete of user-written text
-in a collection these scripts do not write to, so it is a human's decision and
-nothing here does it.
+All 50 were read before anything was deleted. Each was attributed to the work
+it belonged to — from the note's own content plus 4-gram overlap against every
+surviving note — and in every case the surviving note turned out to be the
+fuller version, with the orphan an earlier draft. What genuinely did not
+survive was 2,793 characters across 10 entries, mostly reference links
+(comic readers, an RPCS3 setup guide, wikidot pages) and a block of weapon
+notes on Blood. That was reported for hand-merging through the app rather than
+written by a script: the note lives in **two** places — `entry.review` and the
+review document, in sync across all 810 entries that carry both — and a script
+writing one and not the other would create the first divergence in the
+database. Editing through the app writes both and records a revision.
+
+`scripts/prune_orphan_reviews.js` then deleted all 248, on 2026-08-19, against
+snapshot `snapshot-2026-08-19T02-51-54-658Z`. Entry counts were unchanged
+afterwards and the audit reports zero unreachable reviews.
+
+That script is the one exception to "write only to the work collections", and
+it is a narrow one: it reads `*Entries` but never writes to them, so no
+override and no live note is reachable from it, and everything it removes is
+restorable by `_id` from the snapshot it takes first. The rule it bends exists
+to protect notes people can still read; these were, by definition, notes
+nobody could.
 
 `scripts/backfill_work_metadata.js` re-runs the API adapters for cached works
 and fills in what's missing / refreshes what's stale. It is a **dry run

@@ -103,6 +103,12 @@ Write only to the **work** collections. User overrides live on entry
 documents (`entry.overrides`), so a script that never touches `*Entries`
 cannot clobber one.
 
+The one exception is `scripts/prune_orphan_reviews.js`, which deletes review
+documents whose entry is gone — notes no code path can reach, since a review
+is only ever looked up by `entryRef`. It reads `*Entries` but never writes to
+them. Adding a second exception is a human's call: the rule is what keeps a
+maintenance script away from text people can still read.
+
 ## Tests
 
 `npm test` is `node --test`, and CI also parses every tracked `.js` file.
