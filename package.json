@@ -24,7 +24,7 @@
     "html-minifier": "^4.0.0",
     "igdb-api-node": "^5.0.1",
     "jose": "^6.2.9",
-    "mongodb": "^6.20.0",
+    "mongodb": "^7.6.0",
     "neverthrow": "^8.2.0",
     "node-themoviedb": "^0.2.8",
     "openid-client": "^5.1.10",
