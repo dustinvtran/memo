@@ -5,6 +5,16 @@ on:
     branches: [main]
   pull_request:
 
+# A branch that gets three pushes in a minute had three full runs going at
+# once, and the two the reviewer will never look at were still holding runners
+# the third one needed. Cancelling is right for a pull request, where only the
+# head commit's answer is ever read, and wrong for main, where every commit's
+# result is the record of whether that commit was good — hence the condition
+# rather than a plain `true`.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -23,8 +33,13 @@ jobs:
 
       # Cheap guard against a typo in the files the tests don't reach —
       # the Netlify functions and the frontend globals.
+      #
+      # One `node --check` per file is one process per file, and there are 154
+      # of them — the spawning, not the parsing, is the cost. `-P4` runs a few
+      # at a time; `-n1` stays because `node --check` reads a single file, and
+      # xargs still fails the step if any one of them exits non-zero.
       - name: Syntax check every JS file
-        run: git ls-files '*.js' | xargs -n1 node --check
+        run: git ls-files '*.js' | xargs -n1 -P4 node --check
 
   # The job above checks the inputs; this one checks what ships. `node --check`
   # reads each tracked file on its own, and `bundle.test.js` reconstructs the
@@ -50,7 +65,18 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # `--omit=dev` because the devDependencies are almost the whole install:
+      # 1319 of the 1575 packages in the lockfile are `netlify-cli` and its
+      # tree, which is here so that `npx netlify dev` works on a laptop and
+      # which nothing in CI or on Netlify ever runs. Installing all of it took
+      # longer than every check in this file put together.
+      #
+      # What makes that safe is that `cross-env` is a `dependency`: `npm run
+      # build` calls it, so it is needed wherever the site is built rather than
+      # only where it is developed. Moving it back under devDependencies would
+      # break this job and the Netlify build with it, which is the one thing to
+      # watch if these lists are ever tidied.
+      - run: npm ci --omit=dev
 
       # The functions are CommonJS, and the runtime they get cannot `require`
       # an ES module. Node 22 can — `require(esm)` works from 22.12 — so the
