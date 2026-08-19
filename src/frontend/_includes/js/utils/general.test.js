@@ -93,3 +93,88 @@ test('a missing url is missing, not a link to nowhere', () => {
   assert.equal(toSafeUrl(null), undefined)
   assert.equal(toSafeUrl(''), undefined)
 })
+
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * `waitForEl` is the one thing in this file that touches the DOM, so it gets a
+ * context with just enough of one: a `document` that answers `querySelector`
+ * from a variable the test sets, and a `MutationObserver` that keeps hold of
+ * its callback — so a test can say when the page changed — and records whether
+ * it is still watching.
+ *
+ * The same source, evaluated into a context of its own rather than into this
+ * one: the tests above want Node's real globals and this one wants a page.
+ */
+const withFakeDom = () => {
+  const page = { el: null, observing: false, notify: () => {} }
+
+  const context = vm.createContext({
+    document: {
+      body: {},
+      querySelector: () => page.el,
+    },
+    MutationObserver: class {
+      constructor(callback) { page.notify = callback }
+      observe() { page.observing = true }
+      disconnect() { page.observing = false }
+    },
+    setTimeout,
+    clearTimeout,
+  })
+
+  const { waitForEl } = vm.runInContext(
+    `(() => {\n${source}\n;return Utils\n})()`,
+    context
+  )
+
+  /** Put the element on the page, and tell the observer the page changed. */
+  page.render = (el) => {
+    page.el = el
+    page.notify()
+  }
+
+  return { page, waitForEl }
+}
+
+test('an element already on the page is handed over without a wait', async () => {
+  const { page, waitForEl } = withFakeDom()
+  page.el = 'the icon'
+
+  assert.equal(await waitForEl('a.detail-icon', { timeout: 50 }), 'the icon')
+  assert.equal(page.observing, false)
+})
+
+test('an element that arrives ends the wait and the watching', async () => {
+  const { page, waitForEl } = withFakeDom()
+  const waiting = waitForEl('a.detail-icon', { timeout: 50 })
+
+  page.render('the icon')
+
+  assert.equal(await waiting, 'the icon')
+  assert.equal(page.observing, false)
+})
+
+test('a page that changes into something else is still waited on', async () => {
+  const { page, waitForEl } = withFakeDom()
+  const waiting = waitForEl('a.detail-icon', { timeout: 50 })
+
+  page.notify()
+  assert.equal(page.observing, true)
+
+  page.render('the icon')
+  assert.equal(await waiting, 'the icon')
+})
+
+test('an element that never arrives gives up rather than watching forever', async () => {
+  // The bug the timeout is here for: a logged-out visitor on a list with no
+  // rows in it never produces an `a.detail-icon`, and the wait for one used to
+  // run a `querySelector` over the whole document on every mutation for the
+  // life of the page, holding a promise that never settled.
+  const { page, waitForEl } = withFakeDom()
+  const started = Date.now()
+
+  assert.equal(await waitForEl('a.detail-icon', { timeout: 30 }), undefined)
+  assert.ok(Date.now() - started >= 20)
+  assert.equal(page.observing, false)
+})
