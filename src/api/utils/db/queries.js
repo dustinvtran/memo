@@ -42,11 +42,15 @@ const toUserEntriesPipeline = ({ userId, workCollection, limit }) => [
       as: 'work',
     },
   },
-  // Nobody reads either of these from a list, and they are not small:
+  // Nobody reads any of these from a list, and they are not small:
   // `review` is the whole note, which the reviews endpoint serves when a row
-  // is actually opened, and `userId` is an auth0 id repeated once per entry
-  // for anyone who asks for the list.
-  { $project: { review: 0, userId: 0 } },
+  // is actually opened; `userId` is an auth0 id repeated once per entry for
+  // anyone who asks for the list; and `commonMetadata` is a stale copy of the
+  // work that the `$lookup` above has just fetched the live version of — the
+  // caller overwrites it with `work.data` on the way out, so every byte of it
+  // crossed the wire to be thrown away. 1.2 MB of that on a four-list profile
+  // load. See #176.
+  { $project: { review: 0, userId: 0, commonMetadata: 0 } },
 ]
 
 /**

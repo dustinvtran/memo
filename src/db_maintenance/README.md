@@ -17,7 +17,8 @@ The scripts, and the section below that explains each:
 | `backfill_work_metadata.js` | Re-runs the API adapters over cached works, filling gaps and refreshing stale metadata. | `--apply` |
 | `backfill_game_playtimes.js` | Fills in games with no playtime, from IGDB's `/game_time_to_beats`. | `--apply` |
 | `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
-| `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. The one script here that writes outside the work collections. | `--apply` |
+| `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
+| `strip_dead_entry_fields.js` | Unsets `review` and `commonMetadata` from entry documents — a duplicated note and a stale copy of the work, neither of which any reader uses. | `--apply` |
 
 Everything marked `--apply` is a **dry run without it**, and takes a backup of
 each collection it writes to first — except `ensure_indexes.js`, which writes
@@ -25,6 +26,12 @@ no documents at all. The two backfills touch the **work** collections only, so
 the overrides a user set by hand, which live on the entry documents, are out
 of reach by construction; `dedupe_works.js` is the one that also writes to the
 entry collections, repointing `workRef` at the document it merged into.
+
+Two scripts write outside the work collections, and both say so in their own
+section below: `prune_orphan_reviews.js` deletes review documents nothing can
+reach, and `strip_dead_entry_fields.js` unsets two named dead fields from
+entry documents. Neither can reach an override, and neither creates or
+deletes an entry.
 
 The commands below are written from this folder, as
 `node scripts/audit_database.js`, but nothing depends on that. The `.env` and
@@ -303,6 +310,81 @@ the work and the entry collection are backed up before anything is written.
 Run it before a full `scripts/backfill_work_metadata.js`, so you aren't
 paying for an API call per duplicate.
 
+## Dead fields on entry documents
+
+Two fields on an entry document are written and never read back:
+
+- **`review`** — a second copy of the note. The note's home is the `*Reviews`
+  collections, which is where `getReview`, the export and the history all read
+  it from, and `toUserEntriesPipeline` projects the entry's copy away
+  specifically so it cannot reach a response.
+- **`commonMetadata`** — a snapshot of the work document the entry points at,
+  taken before the `$lookup` existed. `getUserEntries` sets
+  `commonMetadata: work.data` from the lookup *after* spreading the entry, so
+  the stored value is overwritten on every read. These are not merely
+  redundant, they are stale: they disagree with the `works` collections they
+  mirror.
+
+Measured over `snapshot-2026-08-19T02-51-54-658Z`, the two came to **3.21 MB
+of the entry collections' 4.32 MB** — 1.9 MB of duplicated note across 1034
+entries, and 1.2 MB of stale metadata across 3267 (762 of them literally
+`null`). See #176.
+
+`scripts/strip_dead_entry_fields.js` `$unset`s them. It is a **dry run unless
+you pass `--apply`**, and it dumps each entry collection before writing to it.
+
+```
+node scripts/strip_dead_entry_fields.js
+node scripts/strip_dead_entry_fields.js --fields=commonMetadata
+node scripts/strip_dead_entry_fields.js --apply
+```
+
+Flags: `--only=films,tv,games,books`, `--fields=review,commonMetadata`,
+`--json=path`, `--backup-dir=path`.
+
+**Before it drops a note it proves the other copy is there.** Every entry
+carrying a `review` must have a review document under its `_id` holding the
+same text, verbatim — not merely a review document, the same text. An entry
+that fails is printed and left entirely alone, `commonMetadata` included: a
+document we cannot account for is not one to write to. The check is equality
+rather than existence for a second reason, too. `toSnapshot` takes
+`reviewText ?? entryData.review`, so a revision falls back to the entry's copy
+when the review document has no text, and verbatim equality is exactly the
+condition under which that fallback cannot change its answer.
+
+It is the second script here that writes outside the work collections, and the
+only one that writes to `*Entries`. What bounds it:
+
+- It `$unset`s those two named fields and nothing else. `overrides`, `status`,
+  `score`, the dates and `workRef` are unreachable from it, and an `$unset`
+  can neither create, delete nor repoint a document.
+- It never touches `updatedDate`. A write that bumped it would reorder every
+  list on the site — a visible change to data nobody asked to change.
+- It re-reads the collection afterwards and reports the entry count and what
+  still carries each field, so a run that did something other than what it
+  planned says so rather than exiting quietly.
+
+**Applied to production on 2026-08-19 (UTC)**, against snapshot
+`snapshot-2026-08-19T17-25-19-670Z` — verified first against live
+`countDocuments()` and the manifest's own SHA-256s, all 14 collections
+agreeing. The dry run matched every one of the 1034 notes to its review
+document verbatim and refused none, and found 3267 stale metadata objects
+(762 `null`). Applying removed both. The four entry collections went from
+**4,320,256 bytes to 1,119,513** — 74% gone, and within 5 KB of what #176
+predicted.
+
+Afterwards: entry counts unchanged in all four collections (1527 / 548 / 1089
+/ 660), the audit reports zero dangling `workRef`s and zero unreachable
+reviews, the `*Reviews` collections are unchanged document for document, and
+all 1034 notes were re-read from them verbatim.
+
+The write side is a separate fix: the form's `readForm` sends
+`commonMetadata: null` and `review` on every save, and the update path used to
+store the request body wholesale. #171 (PR #183) validates a PATCH body
+against what an entry may hold instead, which is what stops these coming back.
+Until that lands, a run of this clears the backlog rather than settling the
+question, and an entry edited through the form afterwards carries them again.
+
 ## Backing up the database, with history
 
 `scripts/backup_database.js` writes a **snapshot**: a timestamped directory
@@ -374,9 +456,10 @@ Useful flags: `--dir=path`, `--from=name|path`, `--only=a,b`, `--prune`,
 ## Tests
 
 The parts that decide what to write (`work_metadata_merge.js`,
-`game_playtime_plan.js`), what to delete (`work_dedupe_plan.js`), which
-snapshots a retention policy keeps (`backup_plan.js`) and which indexes are
-missing (`index_plan.js`) are pure and dependency-free, and are covered by
+`game_playtime_plan.js`), what to delete (`work_dedupe_plan.js`,
+`orphan_review_plan.js`, `dead_entry_fields_plan.js`), which snapshots a
+retention policy keeps (`backup_plan.js`) and which indexes are missing
+(`index_plan.js`) are pure and dependency-free, and are covered by
 `node --test`:
 
 ```
