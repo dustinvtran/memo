@@ -28,6 +28,31 @@
 [functions]
   directory = "src/api/routes"
 
+  # The functions runtime is started with `--no-experimental-require-module`,
+  # so `require` of an ES module throws `ERR_REQUIRE_ESM` and every route 502s
+  # while the module is being read. That is #162 (`uuid` 13) and it nearly was
+  # #168 (`jose` 6). The flag is passed by AWS on the command line, by name,
+  # and #185 read it off `process.execArgv` on `nodejs22.x` and `nodejs26.x`
+  # alike — identical both times, on a Node where `require(esm)` has been
+  # stable for two releases. It is policy, not version drift, so waiting for a
+  # newer runtime is not a plan and `NODE_OPTIONS` cannot undo it: a
+  # command-line flag beats `NODE_OPTIONS`.
+  #
+  # esbuild inlines dependencies at build time, so the deployed function has
+  # no module boundary left for the runtime to refuse. The default bundler,
+  # `zisi`, copies each function verbatim and ships `node_modules` beside it,
+  # which is why the boundary survived to production.
+  node_bundler = "esbuild"
+
+  # `mongodb` reaches its optional native extras — `kerberos`, `snappy`,
+  # `aws4`, `mongodb-client-encryption` and the rest — through requires inside
+  # `try`/`catch`, for packages that are deliberately not installed. A bundler
+  # has to resolve what it inlines, so bundling the driver means failing on
+  # every one of them. Left external it is copied rather than inlined, exactly
+  # as `zisi` did for everything, which is safe here because the driver is
+  # requireable CommonJS — the one dependency #170 checked by hand.
+  external_node_modules = ["mongodb"]
+
 [dev]
   command = "npm run start"
   # Netlify Dev waits for this port specifically, so the `dev` script passes a
