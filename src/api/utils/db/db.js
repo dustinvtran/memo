@@ -40,20 +40,12 @@ const mongo = async (query) => {
 const withTransaction = async (work) => {
   if (!(await transactionsAvailable())) return work(undefined)
 
-  /** @type {any} */
-  let result
-
-  // The driver's v4 `withTransaction` does not hand back what the callback
-  // returned, and it may run the callback more than once when the server asks
-  // for a retry, so the result is picked up from whichever run committed
-  // rather than from the call itself.
-  await mongoClient.withSession((session) =>
-    session.withTransaction(async () => {
-      result = await work(session)
-    })
+  // The driver may run the callback more than once when the server asks for a
+  // retry, and hands back what the run that committed returned — so `work`
+  // must stay safe to repeat, but the result needs no catching on the side.
+  return mongoClient.withSession((session) =>
+    session.withTransaction(() => work(session))
   )
-
-  return result
 }
 
 module.exports = {
