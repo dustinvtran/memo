@@ -60,25 +60,48 @@ Same trick for regenerating `package-lock.json`: run
 `npm install --package-lock-only` on the local copy and copy the lockfile
 back.
 
-## The API cannot depend on an ES-module-only package
+## ES modules, the functions runtime, and why the API is bundled
 
-**Anything `src/api/routes/**` can reach has to be requireable from
-CommonJS.** The deployed functions runtime cannot `require` an ES module.
-The failure is not a bad response from one route — the throw happens while
-the module is being read, before a handler runs, so every route 502s at
-once: entries, stats, export, auth, the lot. `uuid` 13 did that to
-production (#162, fixed by #169) and `jose` 6 would have done it again
-(#168).
+**The functions runtime cannot `require` an ES module, and `netlify.toml`
+bundles the API with esbuild so that it never has to.** Both halves matter:
+the constraint is real and permanent, and the reason you can ignore it most
+of the time is one line of configuration that nothing else in the repo
+asserts.
 
-**Nothing local will tell you.** `require(esm)` works from Node 22.12, so
-the suite, the CI install and the build all load an ESM-only package
-perfectly happily — and this repo builds on Node 22 deliberately, so that
-agreement looks like confirmation. The functions runtime is the only place
-the difference shows, and you cannot get to it from here.
+The failure it prevents is not a bad response from one route. The throw
+happens while the module is being read, before a handler runs, so every
+route 502s at once: entries, stats, export, auth, the lot. `uuid` 13 did
+that to production (#162, fixed by #169) and `jose` 6 would have done it
+again (#168).
 
-So after bumping anything the API imports, ask the loader rather than
+**The mechanism, which #185 finally read rather than guessed.** A throwaway
+function on a deploy preview reported `process.execArgv`, and AWS starts the
+runtime with `--no-experimental-require-module` on the command line, by
+name, next to `--no-experimental-detect-module`. Identical on `nodejs22.x`
+and on `nodejs26.x` — a Node where `require(esm)` has been stable and on by
+default for two releases. So this is AWS policy, not version drift: a newer
+runtime will not grow out of it, and `NODE_OPTIONS` cannot undo it, because
+a command-line flag beats `NODE_OPTIONS`. `process.features.require_module`
+is `false` on the deployed runtime for that reason and no other.
+
+**What esbuild does about it.** It inlines dependencies at build time, so
+the deployed function has no module boundary left for the runtime to refuse.
+The default bundler, `zisi`, copies each function verbatim and ships
+`node_modules` beside it, which is exactly how the boundary used to survive
+to production. With `node_bundler = "esbuild"` set, an ESM-only package in
+the API is simply fine — verified on a preview, where `require` of an
+ESM-only package returns cleanly on a runtime still reporting
+`features.require_module: false`.
+
+**What still bites.** `external_node_modules` bypasses the bundler by
+design, so anything in that list is copied rather than inlined and the
+original rule applies to it unchanged. `mongodb` is there because it reaches
+its optional native extras — `kerberos`, `snappy`, `aws4`,
+`mongodb-client-encryption` — through requires inside `try`/`catch`, for
+packages deliberately not installed, and a bundler has to resolve what it
+inlines. Before adding anything to that list, ask the loader rather than
 reading the package's own metadata — an `exports` map without a `require`
-condition means ESM-only, but plenty of requireable packages have no
+condition does mean ESM-only, but plenty of requireable packages ship no
 `exports` map at all, and `mongodb` is one of them:
 
 ```
@@ -86,30 +109,32 @@ node --no-experimental-require-module -e "require('<pkg>')"
 ```
 
 That flag turns off the `require(esm)` support the runtime does not have,
-which is the whole trick. `.github/workflows/ci.yml` runs the same check
-over every route:
+which is the whole trick. `scripts/check_function_dependencies.js` runs it
+over every external and asserts the bundler is still esbuild, reading both
+out of `netlify.toml` rather than keeping a copy that can drift.
+`.github/workflows/ci.yml` runs that script.
 
-```
-node --no-experimental-require-module -e "require('./src/api/routes/entries.js')"
-```
+It replaced a job that loaded every *route* under the same flag. That check
+has outlived its question: the source still says `require('jose')` while the
+artefact has jose inlined, so an ESM-only dependency would fail it and ship
+perfectly well. A check that cries wolf gets deleted, and the real rule
+would have gone with it.
 
-It is there because this has now cost one outage and nearly a second, and
-it is the only thing in CI that behaves the way production does.
+**The runtime is pinned outside the repo.** `AWS_LAMBDA_JS_RUNTIME` is set
+from the Netlify UI, and Netlify does not read it from `netlify.toml`. That
+is not a footnote: the API ran on `nodejs18.x` — deprecated by AWS in
+September 2025, Node 18 itself end-of-life since April 2025 — for years,
+while `netlify.toml` pinned `NODE_VERSION = "22"`, CI pinned Node 22, and
+this file said the repo builds on Node 22 deliberately. All true, all about
+the build, none of it about the runtime that serves requests. If you want to
+know what the functions actually run on, deploy something that reports
+`process.version` and read it; nothing in the repo can tell you.
 
-**When a package goes ESM-only, the fix is on our side, not theirs.** Take
-the last version that still ships CommonJS — `jose` stays on 4 for exactly
-this, and the code it wants is the code 5 and 6 want, so the eventual move
-is packaging and not a rewrite — or drop the dependency for a platform
-built-in, which is what `crypto.randomUUID` did for `uuid`.
-
-Two ways out exist if that ever stops being enough, neither of them small:
-`node_bundler = "esbuild"` in `netlify.toml` inlines ESM at build time so
-the runtime never sees it (`mongodb` is the one to watch there — optional
-native dependencies and dynamic requires are what `external_node_modules`
-is for); or the functions become ES modules themselves, which is what
-Netlify now recommends, but the controller tests mock their dependencies by
-monkey-patching `Module._load`, so that is a test-harness rewrite before it
-is anything else.
+**The remaining way out, if esbuild ever stops being enough**, is ES modules
+for the functions themselves, which is what Netlify now recommends. That is
+#185's route 3 and it is a project: 77 files, and the controller tests mock
+their dependencies by monkey-patching `Module._load`, which `import()` does
+not go through, so it is a test-harness rewrite before it is anything else.
 
 ## Credentials
 
