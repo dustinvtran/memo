@@ -97,6 +97,50 @@ const statuses = ['InProgress', 'Completed', 'Dropped', 'Planned']
 
 const filmStatuses = ['Completed', 'Planned']
 
+/**
+ * bootstrap-table 1.12's `customSearch` is the *name of a global function*
+ * rather than a function — it calls `window[options.customSearch]` — so this
+ * has to be on `window` and its name has to be worth having there.
+ *
+ * It is called with the table as `this`, once per keystroke and again whenever
+ * a column is shown or hidden, and leaves the surviving rows in `this.data`
+ * the way the search it replaces does.
+ */
+const CUSTOM_SEARCH = 'searchListRows'
+
+/**
+ * The settings that put `utils/entry_search.js` in charge of a table's search
+ * box, for a table that wants one. The placeholder is where the field syntax
+ * is advertised: a query language nothing mentions is a query language nobody
+ * types.
+ */
+const searchSettings = () => ({
+  search: true,
+  customSearch: CUSTOM_SEARCH,
+  formatSearch: () => 'Search, e.g. director:nolan',
+})
+
+window[CUSTOM_SEARCH] = function (searchText) {
+  this.data = EntrySearch.filterEntries(
+    this.options.data,
+    searchText,
+    freeTextFields(this.columns)
+  )
+}
+
+/**
+ * A bare term is tried against the columns the table is showing. Hidden ones
+ * are what made `nolan` return films no Nolan worked on — the cast column is
+ * hidden by default — and a row that matches on something the reader cannot
+ * see is indistinguishable from a bug. The column dropdown can bring one back,
+ * and bootstrap-table re-runs the search when it does.
+ */
+const freeTextFields = (columns) =>
+  columns
+    .filter((column) => column.visible && column.searchable !== false)
+    .map((column) => EntrySearch.fieldFor(column.field))
+    .filter((field) => field !== undefined)
+
 Tables = {
   initTable,
   detailFormatter,
@@ -104,4 +148,5 @@ Tables = {
   statuses,
   filmStatuses,
   entryTypeToFullColumns,
+  searchSettings,
 }

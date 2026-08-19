@@ -1,5 +1,5 @@
 const { html, css } = Utils
-const { col, initTable, detailFormatter, allColumns, statuses, entryTypeToFullColumns, editColumn, filmStatuses } = Tables
+const { col, initTable, detailFormatter, allColumns, statuses, entryTypeToFullColumns, editColumn, filmStatuses, searchSettings } = Tables
 const { typeToTitle, statusToTitle } = Conversions
 const { initComponent, WithRemoteData, appendContent, Nothing } = Components
 const { Modal_ } = Components.UI
@@ -232,12 +232,18 @@ const initFullTable = (selector, data, entryType, isOwner, status) => {
   // one registry serves every table on it.
   data.forEach((row) => { Rows.byRef[row.dbRef] = row })
 
+  searchedTables.push(selector)
+
   initTable(selector, data, {
     detailView: true,
     detailFormatter,
     icons: 'icons',
     iconsPrefix: 'fa',
-    search: true,
+    ...searchSettings(),
+    // Every sublist opens on whatever the url asked for, which is what makes
+    // a searched list a thing you can link someone.
+    searchText: Http.getSearchFromUrl(),
+    onSearch: (text) => onSearched(selector, text),
     showColumns: true,
     sortName: 'score',
     sortOrder: 'desc',
@@ -253,6 +259,26 @@ const initFullTable = (selector, data, entryType, isOwner, status) => {
       showCloseConfirmationDialog: () => window.hasUnsavedChange === true
     }))
   }
+}
+
+/** Every table on the page, in the order they were built. */
+const searchedTables = []
+
+/**
+ * The sublists are one list cut up by status, and each of them draws a search
+ * box of its own. Searching one and not the others leaves the page in a state
+ * no single url can describe — and the url is where the query now lives — so
+ * a search in any box is a search in all of them.
+ * @type {(selector: string, text: string) => void}
+ */
+const onSearched = (selector, text) => {
+  Http.setSearchInUrl(text)
+  searchedTables
+    .filter((other) => other !== selector)
+    // `resetSearch` comes back through here, but bootstrap-table drops a
+    // search that does not change the text before it fires the event, so the
+    // second lap is where this stops.
+    .forEach((other) => $(other).bootstrapTable('resetSearch', text))
 }
 
 const toStats = (entries, entryType) => {
