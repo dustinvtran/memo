@@ -15,6 +15,17 @@
   # https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
   NODE_VERSION = "22"
 
+  # Netlify installs devDependencies too, so its build was carrying the same
+  # 1319 packages of `netlify-cli` that CI was — a deploy preview reinstalling
+  # the Netlify CLI on Netlify. Nothing the build runs comes from that list:
+  # `npm run build` needs `cross-env` and Eleventy, and `cross-env` is a
+  # `dependency` for exactly this reason.
+  #
+  # Unlike the CI flag this one cannot be checked from a laptop; the deploy
+  # preview on the pull request that adds it is the test. If it ever stops
+  # being honoured the build gets slower, not wrong.
+  NPM_FLAGS = "--omit=dev"
+
 # There is deliberately no `[[headers]]` block here. #157 declared
 # `Cache-Control` for `/js/*` and `/css/*` this way and it never applied:
 # production kept answering the hashed bundle `public,max-age=0,

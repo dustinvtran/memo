@@ -19,6 +19,7 @@
     "@netlify/functions": "^2.5.1",
     "axios": "^1.13.1",
     "cookie": "^0.7.2",
+    "cross-env": "^7.0.3",
     "dotenv": "^17.2.3",
     "html-minifier": "^4.0.0",
     "igdb-api-node": "^5.0.1",
@@ -35,7 +36,6 @@
   },
   "devDependencies": {
     "@types/igdb-api-node": "^5.0.0",
-    "cross-env": "5.2.0",
     "netlify-cli": "^17.16.1",
     "typescript": "^4.5.0-dev.20210930"
   }
