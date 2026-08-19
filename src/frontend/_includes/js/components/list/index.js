@@ -1,6 +1,7 @@
 const { initComponent, Error404, WithRemoteData } = Components
 const { getUserIdFromName, getUserName, getEntries } = Netlify
 const { getNameFromUrl, getEntryTypeFromUrl } = Http
+const { waitForEl } = Utils
 const { List } = Components.List
 const { typeToTitle } = Conversions
 
@@ -41,24 +42,23 @@ const ListPage = () => initComponent({
     const urlAnchor = window.location.hash.substring(1)
 
     // Wait for the anchor element to actually be rendered, then unfold
-    // the review and jump to the element
+    // the review and jump to the element. The fragment is whatever was in the
+    // url, so it may well name a row that is not on this page — a deleted
+    // entry, a link to somebody else's list, a typo — and the wait has to end
+    // either way rather than watch the document for a row that is not coming.
+    //
+    // `CSS.escape` because that same fragment goes into a selector here: an
+    // id is free to contain characters that mean something to a selector
+    // parser, and an unescaped one throws instead of matching nothing.
     if (urlAnchor) {
-      const observer = new MutationObserver((mutations, obs) => {
-        const element = document.getElementById(urlAnchor)
-        if (element) {
-          $(`#${urlAnchor}`).parent().prev().find('i').trigger('click')
+      waitForEl(`#${CSS.escape(urlAnchor)}`).then((element) => {
+        if (!element) return
 
-          // jump to the element, hacky as fuck
-          location.hash = '#__nothing'
-          location.hash = '#' + urlAnchor
-          obs.disconnect()
-          return
-        }
-      })
+        $(element).parent().prev().find('i').trigger('click')
 
-      observer.observe(document, {
-        childList: true,
-        subtree: true
+        // jump to the element, hacky as fuck
+        location.hash = '#__nothing'
+        location.hash = '#' + urlAnchor
       })
     }
   }

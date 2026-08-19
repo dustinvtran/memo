@@ -139,10 +139,7 @@ Components.List.DraftNotice = DraftNotice
  * entirely and that must not disable autosaving the rest of the form.
  */
 const whenCommentsAreLoaded = () =>
-  Promise.race([
-    waitForEl('#add-entry-fields textarea'),
-    new Promise((resolve) => setTimeout(resolve, COMMENTS_WAIT_MS)),
-  ])
+  waitForEl('#add-entry-fields textarea', { timeout: COMMENTS_WAIT_MS })
 
 const offerExistingDraft = ({ id, type, data, saved }) => {
   getDraft(type, data.dbRef)

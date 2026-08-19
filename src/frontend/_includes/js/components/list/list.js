@@ -1,4 +1,4 @@
-const { html, css, escapeHtml } = Utils
+const { html, css, escapeHtml, waitForEl } = Utils
 const { col, initTable, detailFormatter, allColumns, statuses, entryTypeToFullColumns, editColumn, filmStatuses } = Tables
 const { typeToTitle, statusToTitle } = Conversions
 const { initComponent, WithRemoteData, appendContent, Nothing } = Components
@@ -44,38 +44,47 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
     </div>
   `,
   initializer: () => {
-    // Show helpful image next to the first open-review-icon
-    // in the DOM
-    
+    // Emptied here, before the tables below fill it, so that what a render
+    // leaves behind is its own rows rather than those plus every row of every
+    // list drawn before it.
+    Rows.byRef = {}
+
+    // One handler for the page rather than one per sublist: the button hands
+    // over a `dbRef` and the registry it is looked up in is shared, so what
+    // each table used to install was this same closure, and only the last of
+    // them survived.
+    window.editEntry = (dbRef) => {
+      appendContent('body', Modal_({
+        title: "Edit an entry",
+        content: EntryForm(entryType, Rows.byRef[dbRef]),
+        showCloseConfirmationDialog: () => window.hasUnsavedChange === true
+      }))
+    }
+
+    // Show helpful image next to the first open-review-icon in the DOM. A
+    // list with no rows in it never grows one, which is what the wait gives
+    // up on: a hint nobody can be shown is not worth watching the document
+    // for as long as the page is open.
     if (Netlify.isLoggedIn()) {
       return
     }
 
-    const observer = new MutationObserver((mutations, obs) => {
-      const el = document.querySelector('a.detail-icon')
-      const helperImg = document.querySelector('#click-to-see-comments')
-      if (el && !helperImg) {
-        obs.disconnect()
-        setTimeout(() => {
-          $(el)
-            .parent()
-            .parent()
-            .parent()
-            .parent()
-            .parent()
-            .parent()
-            .parent()
-            .before(html`
-              <div id="click-to-see-comments">Click here to<br>read comments! <i class="fas fa-location-arrow" style="opacity:.7;"></i></div>
-            `)
-        }, 200)
-        return
-      }
-    })
+    waitForEl('a.detail-icon').then((el) => {
+      if (!el || document.querySelector('#click-to-see-comments')) return
 
-    observer.observe(document, {
-      childList: true,
-      subtree: true
+      setTimeout(() => {
+        $(el)
+          .parent()
+          .parent()
+          .parent()
+          .parent()
+          .parent()
+          .parent()
+          .parent()
+          .before(html`
+            <div id="click-to-see-comments">Click here to<br>read comments! <i class="fas fa-location-arrow" style="opacity:.7;"></i></div>
+          `)
+      }, 200)
     })
   },
   style: () => css`
@@ -229,7 +238,7 @@ const SubList = (status, entryType, isOwner, data) => initComponent({
 const initFullTable = (selector, data, entryType, isOwner, status) => {
   // The edit button names its row rather than carrying a copy of it, so
   // rows are kept here for it to name. `dbRef` is unique across the page, so
-  // one registry serves every table on it.
+  // one registry serves every table on it, and `List` empties it per render.
   data.forEach((row) => { Rows.byRef[row.dbRef] = row })
 
   initTable(selector, data, {
@@ -246,13 +255,6 @@ const initFullTable = (selector, data, entryType, isOwner, status) => {
       ...(isOwner ? [Columns.edit()] : []),
     ]
   })
-  window.editEntry = (dbRef) => {
-    appendContent('body', Modal_({
-      title: "Edit an entry",
-      content: EntryForm(entryType, Rows.byRef[dbRef]),
-      showCloseConfirmationDialog: () => window.hasUnsavedChange === true
-    }))
-  }
 }
 
 const toStats = (entries, entryType) => {

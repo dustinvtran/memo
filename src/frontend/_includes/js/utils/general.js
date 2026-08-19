@@ -16,20 +16,46 @@ const css = noOpTagFunction
 
 const noOp = () => undefined
 
-const waitForEl = (selector) => new Promise((resolve) => {
-  if (document.querySelector(selector)) {
-    return resolve(document.querySelector(selector))
-  }
+/**
+ * Long enough for anything the page is already fetching to arrive, short
+ * enough that a wait for something that is never coming ends.
+ */
+const WAIT_FOR_EL_TIMEOUT_MS = 10000
 
-  const observer = new MutationObserver((mutations) => {
-    if (document.querySelector(selector)) {
-      resolve(document.querySelector(selector))
+/**
+ * The element once it is on the page, or `undefined` if it has not arrived
+ * within `timeout`.
+ *
+ * The timeout is the point. Every caller here is waiting for something a
+ * failed request, an empty list or a stale url can leave out of the page
+ * entirely, and a wait that only ends on a match is a `querySelector` over
+ * the whole document on every mutation for the life of the page — on a page
+ * that redraws its tables on every column toggle, sort and search — plus a
+ * promise that never settles and whatever the caller was holding for it.
+ *
+ * So callers have to handle `undefined`, and in exchange they never have to
+ * bound the wait themselves.
+ * @type {(selector: string, options?: { timeout?: number }) => Promise<Element | undefined>}
+ */
+const waitForEl = (selector, { timeout = WAIT_FOR_EL_TIMEOUT_MS } = {}) =>
+  new Promise((resolve) => {
+    const existing = document.querySelector(selector)
+    if (existing) return resolve(existing)
+
+    let timer
+    const observer = new MutationObserver(() => {
+      const el = document.querySelector(selector)
+      if (el) settle(el)
+    })
+    const settle = (el) => {
+      clearTimeout(timer)
       observer.disconnect()
+      resolve(el)
     }
-  })
 
-  observer.observe(document.body, { childList: true, subtree: true })
-})
+    timer = setTimeout(() => settle(undefined), timeout)
+    observer.observe(document.body, { childList: true, subtree: true })
+  })
 
 /**
  * "3 hours ago" reads faster than a date when something just happened, which
