@@ -146,13 +146,37 @@ count:
 - **Cached works no entry points at** are leftovers of the metadata cache, not
   lost user data.
 
-`reviews whose entry is gone` **is** a problem, and an unfixable one from
-here: a review is only ever found by `entryRef`, so one whose entry is gone
-holds text no code path can reach. The ~248 of them are residue of the FaunaDB
-migration and of deletes that predate the cleanup in
-`api/controllers/entries.js`, which now removes an entry's review with it.
-They are user-written text in a collection these scripts do not write to, so
-deleting them is a human's decision, not a script's.
+`reviews whose entry is gone` **is** a problem: a review is only ever found by
+`entryRef`, so one whose entry is gone holds text no code path can reach.
+There are 248 — 44 films, 14 tv, 150 games, 40 books.
+
+None of them was written unattached. Every one was saved against an entry that
+existed at the time and was deleted afterwards, and until
+`fix: delete an entry's review along with the entry` (#117, 2026-08-12) a
+delete removed the entry and left the review sitting there. The 248 are that
+bug's whole backlog, not an ongoing leak.
+
+The evidence, if it needs re-checking: Fauna-era ids are allocated in creation
+order, at a rate of about 1.027e6 id units per millisecond, which fits the
+3189 surviving numeric entries with zero violations — no entry's inferred
+creation time lands after its `updatedDate`. Every one of the 177 numeric
+orphan `entryRef`s decodes to a 2022 creation, sits *inside* the surviving id
+range, and is a median of zero seconds from an entry that is still there, so
+they were created in the same batches as their surviving neighbours. The
+remaining 71 carry uuid `entryRef`s, so they postdate the FaunaDB migration
+and can only be bounded as older than the earliest snapshot.
+
+What is in them: **171 are empty**, because `createEntry` writes a review
+document for every entry whether or not a note was typed. Of the 77 that hold
+text, **27 duplicate a note that still exists** — the same text, verbatim,
+under a live entry, which is what deleting a row and re-adding the same title
+leaves behind. **50 hold text found nowhere else.**
+
+Those 50 are the only real loss, and they are still not obviously data anyone
+wants back: the user deleted the entry, and #117 treats the note as something
+"the user asked to be rid of". Clearing them is a delete of user-written text
+in a collection these scripts do not write to, so it is a human's decision and
+nothing here does it.
 
 `scripts/backfill_work_metadata.js` re-runs the API adapters for cached works
 and fills in what's missing / refreshes what's stale. It is a **dry run
