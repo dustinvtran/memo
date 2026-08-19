@@ -3,6 +3,12 @@
 const { Issuer, generators } = require("openid-client")
 const { SignJWT, jwtVerify } = require("jose")
 const cookie = require("cookie")
+const {
+  VERIFY_OPTIONS,
+  isWithinAbsoluteLifetime,
+  sessionStartedAt,
+  tokenSecret,
+} = require("../utils/session_token")
 
 const NETLIFY_JWT_EXPIRATION_SECONDS = 14 * 24 * 3600
 // cookie's maxAge is in seconds
@@ -10,15 +16,6 @@ const LOGIN_COOKIE_MAX_AGE = 30 * 60
 const AUTH0_LOGIN_COOKIE_NAME = "auth0_login_cookie"
 const NETLIFY_COOKIE_NAME = "nf_jwt"
 const isRunningLocally = process.env.NETLIFY_DEV === "true"
-
-/* HS256 signs with bytes, not with a string, and the secret is read at call
-   time rather than at import time so a function that never touches a token
-   does not care whether TOKEN_SECRET is set. */
-const tokenSecret = () => new TextEncoder().encode(process.env.TOKEN_SECRET)
-
-/* Naming the algorithm on the way in is what stops a caller choosing it for
-   us by sending a token whose header says something else. */
-const VERIFY_OPTIONS = { algorithms: ["HS256"] }
 
 const getOpenIDClient = async () => {
   const issuer = await Issuer.discover(`https://${process.env.AUTH0_DOMAIN}`)
@@ -30,13 +27,17 @@ const getOpenIDClient = async () => {
 }
 
 //Refer to Netlify Documentation for token formatting - https://docs.netlify.com/visitor-access/role-based-access-control/#external-providers
-const signNetlifyJWT = async ({ aud, sub, roles }) => {
+const signNetlifyJWT = async ({ aud, sub, roles, startedAt }) => {
   const iat = Math.floor(Date.now() / 1000)
   const exp = Math.floor(iat + NETLIFY_JWT_EXPIRATION_SECONDS)
   const tokenPayload = {
     exp,
     iat,
     updated_at: iat,
+    /* A login starts the session here; a renewal passes the original forward
+       untouched, which is the only thing that keeps the sliding window from
+       sliding for ever. See ../utils/session_token.js. */
+    session_started_at: startedAt ?? iat,
     aud,
     sub,
     app_metadata: {
@@ -202,10 +203,23 @@ const handleCallback = async (event) => {
   }
 }
 
+/* Clears the cookie and says so. The frontend keeps using the token it has for
+   the request in flight, and the cleared cookie is what stops it asking
+   again. */
+const sessionOver = () => ({
+  statusCode: 401,
+  headers: {
+    "Cache-Control": "no-store",
+    "Set-Cookie": generateLogoutCookie(),
+  },
+  body: JSON.stringify({ error: "Session expired" }),
+})
+
 /* Re-issues the nf_jwt cookie with a fresh expiry so that an active session
    slides forward instead of hard-expiring NETLIFY_JWT_EXPIRATION_SECONDS after
    login. The frontend calls this once the current token is past halfway
-   through its lifetime. */
+   through its lifetime, and MAX_SESSION_SECONDS is how far forward it may go
+   in total. */
 const handleRenew = async (event) => {
   const currentToken = getNetlifyJWTFromEvent(event)
   if (!currentToken) {
@@ -216,26 +230,35 @@ const handleRenew = async (event) => {
     }
   }
 
+  /* Read before the try, so that an unset TOKEN_SECRET throws out of here
+     rather than being caught below and dressed up as an ordinary expired
+     session. The server being misconfigured is not the user's fault to fix. */
+  const secret = tokenSecret()
+
   let claims
   try {
     /* A token still inside its renewal window verifies fine, so a failure here
        means the session is genuinely over and the user has to log in again. */
-    claims = (await jwtVerify(currentToken, tokenSecret(), VERIFY_OPTIONS)).payload
+    claims = (await jwtVerify(currentToken, secret, VERIFY_OPTIONS)).payload
   } catch (err) {
-    return {
-      statusCode: 401,
-      headers: {
-        "Cache-Control": "no-store",
-        "Set-Cookie": generateLogoutCookie(),
-      },
-      body: JSON.stringify({ error: "Session expired" }),
-    }
+    return sessionOver()
+  }
+
+  /* The bound the sliding window was missing. Renewal asks nothing of Auth0
+     and mints from the presented token's own claims, so without a cap a token
+     stolen once was renewable indefinitely and a user disabled in Auth0 kept a
+     working session for as long as anything went on renewing it. Reaching the
+     cap looks exactly like an expired session from out here, which is both
+     true and none of a stranger's business. */
+  if (!isWithinAbsoluteLifetime(claims, Math.floor(Date.now() / 1000))) {
+    return sessionOver()
   }
 
   const renewedToken = await signNetlifyJWT({
     aud: claims.aud,
     sub: claims.sub,
     roles: claims.app_metadata?.authorization?.roles,
+    startedAt: sessionStartedAt(claims),
   })
 
   return {

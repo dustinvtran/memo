@@ -9,13 +9,7 @@ const workTypes = require('../utils/work_types')
 const { validateExists } = require('../utils/general')
 const { identity } = require('ramda')
 const { jwtVerify } = require("jose")
-
-/* HS256 verifies against bytes, not a string, and the secret is read at call
-   time so that importing this module does not require it to be set. Naming
-   the algorithm is what stops a caller picking one for us in the token's own
-   header. */
-const tokenSecret = () => new TextEncoder().encode(process.env.TOKEN_SECRET)
-const VERIFY_OPTIONS = { algorithms: ['HS256'] }
+const { tokenSecret, VERIFY_OPTIONS } = require('../utils/session_token')
 
 /**
  * The `sub` of the bearer token, or an unauthorized error.
@@ -33,6 +27,11 @@ const VERIFY_OPTIONS = { algorithms: ['HS256'] }
  * log in again. `ResultAsync.fromPromise` catches the rejection, so a bad
  * token, a tampered one and an expired one are all 401 now. See #139 for the
  * same shape of bug one layer down.
+ *
+ * A missing `TOKEN_SECRET` deliberately does not land here. `tokenSecret`
+ * throws on one, out of this function and out of the handler, because a
+ * server with no signing key is a fault of ours and a 401 would tell the user
+ * to go and log in again over something logging in cannot fix.
  *
  * @type {(event: Event) => ResultAsync<string, Error>}
  */

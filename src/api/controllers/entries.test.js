@@ -32,6 +32,9 @@ const options = {
 }
 
 process.env.MONGODB_URL = process.env.MONGODB_URL ?? 'mongodb://in-memory'
+/* The jose below takes every token at its word, but `getUserId` asks for the
+   signing key before it gets there, and a key of no bytes is refused now. */
+process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
 
 ///////////////////////////////////////////////////////////////////////////////
 // A Mongo small enough to keep in a variable, with a transaction that is a
