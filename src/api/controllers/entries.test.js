@@ -340,3 +340,86 @@ test('a save that goes through writes both halves and clears the draft', options
   assert.equal(history.length, 1)
   assert.equal(history[0].snapshot.review, 'the note as it was')
 })
+
+///////////////////////////////////////////////////////////////////////////////
+// What a PATCH is allowed to put in the document. `_updateOneByRef` writes
+// what it is handed and parses nothing, so before #171 the request body was
+// the update. These drive the real handler and assert on the store, because
+// the whole question is what ended up in it.
+
+test('a save cannot hand the entry to another user', options, async () => {
+  seedSavedEntry()
+
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: form({ userId: 'u2' }),
+  })
+
+  // The save itself is legitimate — u1 owns this entry — so it goes through.
+  // The one field it may not touch is the one every ownership check reads.
+  assert.equal(statusCode, 200)
+  assert.equal(store.filmEntries[0].userId, 'u1')
+  assert.equal(store.filmEntries[0].status, 'Completed')
+})
+
+test('the note is stored in the reviews collection and not on the entry', options, async () => {
+  seedSavedEntry()
+
+  await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: form({ review: 'a note long enough to be worth not storing twice' }),
+  })
+
+  assert.equal(
+    store.filmReviews[0].text,
+    'a note long enough to be worth not storing twice'
+  )
+  assert.equal(store.filmEntries[0].review, undefined)
+})
+
+test('commonMetadata sent by the form is not written to the entry', options, async () => {
+  seedSavedEntry()
+
+  // `form()` still sends it, which is the point: an older bundle is still a
+  // client, so the server has to drop this rather than trust the form to stop.
+  await call(entries, 'PATCH', 'entries/films/e1', { as: 'u1', body: form() })
+
+  assert.ok(!('commonMetadata' in store.filmEntries[0]))
+})
+
+test('a field nobody defined is dropped rather than stored', options, async () => {
+  seedSavedEntry()
+
+  await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: form({ somethingInvented: 'x'.repeat(1000) }),
+  })
+
+  assert.ok(!('somethingInvented' in store.filmEntries[0]))
+})
+
+test('a field of the wrong type is a 400, and nothing is written', options, async () => {
+  seedSavedEntry()
+
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: form({ score: 'nine' }),
+  })
+
+  assert.equal(statusCode, 400)
+  assert.equal(store.filmEntries[0].status, 'InProgress')
+  assert.equal(store.filmEntries[0].score, 7)
+  assert.equal(store.filmReviews[0].text, 'the note as it was')
+})
+
+test('an ownership check still runs before any of this', options, async () => {
+  seedSavedEntry()
+
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u2',
+    body: form(),
+  })
+
+  assert.equal(statusCode, 401)
+  assert.equal(store.filmEntries[0].status, 'InProgress')
+})

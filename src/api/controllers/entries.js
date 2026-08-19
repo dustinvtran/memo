@@ -18,6 +18,7 @@ const {
 } = require('./utils')
 const { triplet, quad, toPromise, toAsync, throwIt } = require('../utils/general')
 const db = require('../utils/db/')
+const updateParsers = require('../utils/parsers/updates')
 const { toResponse } = require('../utils/db/into_safe_values')
 const { recordRevision, discardDraft, discardHistory } = require('./revisions')
 const { toSnapshot } = require('../utils/revision_history')
@@ -149,12 +150,20 @@ const deleteEntry_ = async (col, entry) => {
 const updateEntry_ = async (uid, body, col, entry) => {
   if (entry.data.userId !== uid) return responses.unauthorized()
 
-  const { review, ...entryWithoutReview } = body
+  const { review, ...rest } = body
   // `review` is only absent when the request genuinely omitted it (e.g. a save
   // that didn't include the comments field). An explicit empty string is a
   // real value and must still clear the review. Treating "absent" as "clear"
   // previously nulled out review text on unrelated saves.
   const reviewProvided = review !== undefined
+
+  // `updateByRef_` writes what it is handed, so this is the only thing between
+  // the request body and the document. Without it a caller could set `userId`
+  // and move the entry into someone else's list, and the form's own
+  // `commonMetadata: null` was being stored on every save. See #171.
+  const parsed = updateParsers[col](rest)
+  if (parsed.isErr()) return responses.fromError(parsed.error)
+  const entryWithoutReview = parsed.value
 
   const reviewCollection = toReviewCollection(col)
 
@@ -194,8 +203,12 @@ const updateEntry_ = async (uid, body, col, entry) => {
       // half-saves: the score and the dates say one thing, the comments
       // another. A stale note beside a fresh entry at least looks like what
       // it is.
+      //
+      // `entryWithoutReview` and not `body`: the note is written to the
+      // reviews collection just below, and a second copy of it on the entry is
+      // what put 1.9 MB of duplicated note into production. #171, #176.
       const updated = await orThrow(db.updateByRef_(col, entry.ref.id, {
-        ...(reviewProvided ? body : entryWithoutReview),
+        ...entryWithoutReview,
         updatedDate: Date.now(),
       }, session))
 

@@ -1,5 +1,5 @@
 const { initComponent } = Components
-const { html, css } = Utils
+const { html, css, escapeHtml } = Utils
 
 const Menu = () => initComponent({
   content: ({ include }) => html`
@@ -28,7 +28,7 @@ const Menu = () => initComponent({
       .map(({ username }) => {
         if (username) {
           $('#home-menu-item').after(html`
-            <li id="home-menu-item"><a href="/profile/${username}">Profile</a></li>
+            <li id="home-menu-item"><a href="/profile/${escapeHtml(encodeURIComponent(username))}">Profile</a></li>
           `)
         }
       })

@@ -81,7 +81,15 @@ const dateOnly = (timestamp) =>
       })
     : 'unknown'
 
-/** These strings are the user's own text, and they go into innerHTML. */
+/**
+ * These strings are the user's own text, and they go into innerHTML.
+ *
+ * `'` is escaped as well as `"`. Nothing here currently interpolates into a
+ * single-quoted attribute, so that is a guard against the next thing that
+ * does rather than a fix for something live — but the whole value of an
+ * escaper is that a caller does not have to know which quote its template
+ * happened to use.
+ */
 /** @type {(text: any) => string} */
 const escapeHtml = (text) =>
   String(text)
@@ -89,6 +97,7 @@ const escapeHtml = (text) =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 
 /**
  * A url out of the metadata, if it is one we are willing to put in an `href`

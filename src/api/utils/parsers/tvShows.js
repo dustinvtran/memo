@@ -6,7 +6,7 @@
 const { workParser } = require('./works')
 const { validate } = require('./utils')
 const { z } = require('zod')
-const { entryParser } = require('./entries')
+const { entryParser, entryUpdateParser } = require('./entries')
 
 
 const tvShowParser = workParser.extend({
@@ -25,10 +25,17 @@ const tvShowEntryParser = entryParser(tvShowParser)
 /** @type Validator<TVShowEntry> */
 const tvShowEntries = (x) => validate(tvShowEntryParser, x)
 
+const tvShowEntryUpdateParser = entryUpdateParser(tvShowParser)
+
+/** The fields a PATCH may set; see `entryUpdateParser`. */
+/** @type Validator<Partial<TVShowEntry>> */
+const tvShowEntryUpdates = (x) => validate(tvShowEntryUpdateParser, x)
+
 /** @type Validator<TVShow> */
 const tvShows = (x) => validate(tvShowParser, x)
 
 module.exports = {
   tvShowEntries,
+  tvShowEntryUpdates,
   tvShows
 }

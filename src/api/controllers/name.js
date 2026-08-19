@@ -8,6 +8,7 @@ const { pair, toAsync, toPromise } = require('../utils/general')
 const responses = require('../utils/responses')
 const { getUserId, getReqBody, getSegment } = require('./utils')
 const feErrors = require('../utils/frontend_errors')
+const { username: parseUsername } = require('../utils/parsers/users')
 
 /** @type {(event: Event) => Promise<Response>} */
 const findOwnName = (event) => toPromise(
@@ -65,10 +66,21 @@ module.exports = {
  * @type {([userId, req]: [string, any]) => ResultAsync<Response, Error>}
  */
 const assignNameIfNotTaken = ([userId, { newName }]) =>
-  findOneByField_('users', 'username', newName)
-    .andThen(({ data }) => data
-        ? okAsync(responses.ok(feErrors.nameTaken(newName)))
-        : assignName(userId, newName).map(() => responses.ok())
+  // Checked here rather than only on the way into the database, because the
+  // rename path writes through `updateByRef_`, which parses nothing: the
+  // `max(16).min(2)` alphanumeric rule in the users parser only ever ran for
+  // an account claiming its first name. A name is also read back out and
+  // interpolated into the profile page. See #172.
+  //
+  // Before the lookup as well as before the write — `{ newName: { $ne: null } }`
+  // reaching `findOneByField_` is a filter, not a name.
+  toAsync(parseUsername(newName))
+    .andThen((name) =>
+      findOneByField_('users', 'username', name)
+        .andThen(({ data }) => data
+            ? okAsync(responses.ok(feErrors.nameTaken(name)))
+            : assignName(userId, name).map(() => responses.ok())
+        )
     )
 
 /** @type {(userId: string, newName: string) => ResultAsync<any, Error>} */

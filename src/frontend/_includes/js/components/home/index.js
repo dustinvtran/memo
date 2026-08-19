@@ -1,4 +1,4 @@
-const { html } = Utils
+const { html, escapeHtml } = Utils
 const { isLoggedIn, getUserName } = Netlify
 const { ProfileLists } = Components.Profile
 const { initComponent, WithRemoteData, Redirect } = Components
@@ -35,7 +35,7 @@ const ProfileListsOrUsernameSetter = ({ error, username }) => initComponent({
 const AuthenticatedHomePage = (username) => initComponent({
   content: () => html`
     <div id="authenticated-home-page" class="row">
-      Hi ${username}! Not much here yet. Why not visit <a href="/profile/${username}">your profile</a>?
+      Hi ${escapeHtml(username)}! Not much here yet. Why not visit <a href="/profile/${escapeHtml(encodeURIComponent(username))}">your profile</a>?
     </div>
 
     <div class="row">
