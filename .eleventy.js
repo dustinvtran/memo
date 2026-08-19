@@ -49,6 +49,5 @@ module.exports = (config) => {
     // is Nunjucks, so the format earns nothing back.
     templateFormats: ['njk', '11ty.js'],
     htmlTemplateEngine: false,
-    passthroughFileCopy: true,
   }
 }
