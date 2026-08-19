@@ -7,13 +7,42 @@ const errors = require('../utils/errors')
 const db = require('../utils/db')
 const workTypes = require('../utils/work_types')
 const { validateExists } = require('../utils/general')
-const { JWT } = require("jose")
+const { identity } = require('ramda')
+const { jwtVerify } = require("jose")
 
-/** @type {(event: Event) => Result<string, Error>} */
+/* HS256 verifies against bytes, not a string, and the secret is read at call
+   time so that importing this module does not require it to be set. Naming
+   the algorithm is what stops a caller picking one for us in the token's own
+   header. */
+const tokenSecret = () => new TextEncoder().encode(process.env.TOKEN_SECRET)
+const VERIFY_OPTIONS = { algorithms: ['HS256'] }
+
+/**
+ * The `sub` of the bearer token, or an unauthorized error.
+ *
+ * `ResultAsync` rather than `Result` because verification is a promise from
+ * jose v4 onward. That is the whole reason this returns what it returns, and
+ * why every caller reaches it through `combine` on a list of `ResultAsync`.
+ *
+ * It also fixes something the synchronous version got wrong. `Result.map`
+ * does not catch, so a token that failed to verify did not become an `Err` —
+ * it threw out of here, out of the controller, and out of the async handler,
+ * and Netlify answered 502. Only a *missing* Authorization header ever
+ * produced the 401. An expired session is the common case of that: every
+ * authenticated request answered 502 until the user worked out they had to
+ * log in again. `ResultAsync.fromPromise` catches the rejection, so a bad
+ * token, a tampered one and an expired one are all 401 now. See #139 for the
+ * same shape of bug one layer down.
+ *
+ * @type {(event: Event) => ResultAsync<string, Error>}
+ */
 const getUserId = (event) =>
-   validateExists(event.headers?.authorization)
+  validateExists(event.headers?.authorization)
     .map((authString) => authString.replace('Bearer ', ''))
-    .map((jwt) => JWT.verify(jwt, process.env.TOKEN_SECRET).sub)
+    .asyncAndThen((jwt) =>
+      ResultAsync.fromPromise(jwtVerify(jwt, tokenSecret(), VERIFY_OPTIONS), identity)
+    )
+    .map(({ payload }) => payload.sub)
     .mapErr(errors.unauthorized)
 
 /** @type {(segmentIndex: number, event: Event) => string} */

@@ -1,7 +1,7 @@
 // file mostly copypasted from:
 // https://github.com/jamesqquick/netlify-auth0-rbac-integration-demo/blob/master/functions/AuthUtils.js
 const { Issuer, generators } = require("openid-client")
-const { JWT } = require("jose")
+const { SignJWT, jwtVerify } = require("jose")
 const cookie = require("cookie")
 
 const NETLIFY_JWT_EXPIRATION_SECONDS = 14 * 24 * 3600
@@ -10,6 +10,15 @@ const LOGIN_COOKIE_MAX_AGE = 30 * 60
 const AUTH0_LOGIN_COOKIE_NAME = "auth0_login_cookie"
 const NETLIFY_COOKIE_NAME = "nf_jwt"
 const isRunningLocally = process.env.NETLIFY_DEV === "true"
+
+/* HS256 signs with bytes, not with a string, and the secret is read at call
+   time rather than at import time so a function that never touches a token
+   does not care whether TOKEN_SECRET is set. */
+const tokenSecret = () => new TextEncoder().encode(process.env.TOKEN_SECRET)
+
+/* Naming the algorithm on the way in is what stops a caller choosing it for
+   us by sending a token whose header says something else. */
+const VERIFY_OPTIONS = { algorithms: ["HS256"] }
 
 const getOpenIDClient = async () => {
   const issuer = await Issuer.discover(`https://${process.env.AUTH0_DOMAIN}`)
@@ -34,12 +43,11 @@ const signNetlifyJWT = async ({ aud, sub, roles }) => {
       authorization: { roles },
     },
   }
-  return await JWT.sign(tokenPayload, process.env.TOKEN_SECRET, {
-    algorithm: "HS256",
-    header: {
-      typ: "JWT",
-    },
-  })
+  /* Netlify insists on `typ`, and the payload carries its own `exp` and
+     `iat`, so none of `SignJWT`'s claim setters are wanted here. */
+  return await new SignJWT(tokenPayload)
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .sign(tokenSecret())
 }
 
 //copy over appropriate properties from the original token data
@@ -212,7 +220,7 @@ const handleRenew = async (event) => {
   try {
     /* A token still inside its renewal window verifies fine, so a failure here
        means the session is genuinely over and the user has to log in again. */
-    claims = JWT.verify(currentToken, process.env.TOKEN_SECRET)
+    claims = (await jwtVerify(currentToken, tokenSecret(), VERIFY_OPTIONS)).payload
   } catch (err) {
     return {
       statusCode: 401,
