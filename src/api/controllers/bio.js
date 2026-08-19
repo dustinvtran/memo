@@ -23,15 +23,15 @@ const setBio = (event) => toPromise(
       toAsync(parseBiography(newBio ?? null))
         // A valid token for a `sub` with no user document — which is every
         // account between signing up and `setOwnName` running — is a 404
-        // rather than the 502 that destructuring the db module's `{}` used to
-        // give. See #139.
+        // rather than the 502 that destructuring the db module's miss used
+        // to give. See #139.
         .andThen((bio) =>
           db.findOneByFieldOrFail_('users', 'userId', uid)
-            .map(({ ref }) => [ref, bio])
+            .map((user) => [user._id, bio])
         )
     )
-    .andThen(([ref, newBio]) =>
-      db.updateByRef_('users', ref.id, { biography: newBio })
+    .andThen(([userRef, newBio]) =>
+      db.updateByRef_('users', userRef, { biography: newBio })
     )
     .map(responses.ok)
     .mapErr(responses.fromError)

@@ -10,16 +10,17 @@
  * change on both paths or fail here.
  *
  * The two at the end are #139: a name nobody has taken used to reach
- * `refreshStats` with the `{}` the db module reports a miss as, read
+ * `refreshStats` with the `{}` the db module then reported a miss as, read
  * `.data.userId` off it and throw — inside an `andThen` callback, where
  * neverthrow does not catch, so the handler returned a rejected promise and
  * Netlify answered 502 with an empty body. The route is public, so that was
- * one unauthenticated GET away.
+ * one unauthenticated GET away. A miss is `null` now and `findOneByFieldOrFail_`
+ * turns it into an err, but the endpoint is what has to answer 404, so the
+ * test stays here.
  *
  * That needs the actual dependencies, so the file **skips itself** when they
  * aren't installed (which is how CI runs the suite). The same shape is pinned
- * without them on `toStats` in ../utils/score_tallies.test.js, and the
- * absent-document rule on `isFound` in ../utils/db/found.test.js.
+ * without them on `toStats` in ../utils/score_tallies.test.js.
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -251,7 +252,7 @@ test('a field stored beside the two is not published with them', options, async 
 })
 
 /**
- * #139. `findOneByField_` reports a miss as `{}`, which `refreshStats` used to
+ * #139. `findOneByField_` used to report a miss as `{}`, which `refreshStats`
  * read `.data.userId` off. The throw happened inside an `andThen` callback,
  * where neverthrow does not catch it, so the handler returned a rejected
  * promise and the caller got a 502 with no body.

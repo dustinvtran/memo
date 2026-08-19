@@ -71,7 +71,7 @@ const deleteEntry = (event) => toPromise(
       ]))
     )
     .map(([uid, col, entry]) =>
-      entry.data?.userId === uid
+      entry?.userId === uid
         ? deleteEntry_(col, entry)
         : responses.unauthorized()
     )
@@ -117,7 +117,7 @@ const createEntry = async ([userId, body, collection]) => {
 
       await orThrow(db.create_(reviewCollection, {
         text: review,
-        entryRef: created.ref.id,
+        entryRef: created._id,
       }, session))
 
       return created
@@ -133,22 +133,22 @@ const createEntry = async ([userId, body, collection]) => {
 
 /** @type {(col: ValidCollection, entry: any) => Promise<Response>} */
 const deleteEntry_ = async (col, entry) => {
-  const response = await db.deleteByRef(col, entry.ref.id)
+  const response = await db.deleteByRef(col, entry._id)
 
   // The history and the draft only describe an entry that no longer exists.
-  await discardHistory(entry.ref.id)
+  await discardHistory(entry._id)
 
   // The review is only ever found by `entryRef`, so leaving it behind doesn't
   // hide it — it stores a note the user asked to be rid of, unreachable by
   // every code path. Its failure is swallowed for the same reason the
   // history's is: a cleanup must not fail the delete the user asked for.
-  await db.deleteAllByField_(toReviewCollection(col), 'entryRef', entry.ref.id).unwrapOr(undefined)
+  await db.deleteAllByField_(toReviewCollection(col), 'entryRef', entry._id).unwrapOr(undefined)
 
   return response
 }
 
 const updateEntry_ = async (uid, body, col, entry) => {
-  if (entry.data.userId !== uid) return responses.unauthorized()
+  if (entry?.userId !== uid) return responses.unauthorized()
 
   const { review, ...rest } = body
   // `review` is only absent when the request genuinely omitted it (e.g. a save
@@ -168,8 +168,8 @@ const updateEntry_ = async (uid, body, col, entry) => {
   const reviewCollection = toReviewCollection(col)
 
   const existingReview = await db
-    .findOneByField_(reviewCollection, 'entryRef', entry.ref.id)
-    .unwrapOr({})
+    .findOneByField_(reviewCollection, 'entryRef', entry._id)
+    .unwrapOr(null)
 
   // Recorded before anything is written, so the version this save replaces —
   // the long note included — can be read back and restored from the UI.
@@ -183,10 +183,10 @@ const updateEntry_ = async (uid, body, col, entry) => {
   await recordRevision({
     entryType: toEntryType(col),
     entry,
-    previousReview: existingReview?.data?.text,
+    previousReview: existingReview?.text,
     nextSnapshot: toSnapshot(
-      { ...entry.data, ...entryWithoutReview },
-      reviewProvided ? review : existingReview?.data?.text
+      { ...entry, ...entryWithoutReview },
+      reviewProvided ? review : existingReview?.text
     ),
   })
 
@@ -207,18 +207,18 @@ const updateEntry_ = async (uid, body, col, entry) => {
       // `entryWithoutReview` and not `body`: the note is written to the
       // reviews collection just below, and a second copy of it on the entry is
       // what put 1.9 MB of duplicated note into production. #171, #176.
-      const updated = await orThrow(db.updateByRef_(col, entry.ref.id, {
+      const updated = await orThrow(db.updateByRef_(col, entry._id, {
         ...entryWithoutReview,
         updatedDate: Date.now(),
       }, session))
 
       if (reviewProvided) {
-        await orThrow(existingReview?.ref
-          ? db.updateByRef_(reviewCollection, existingReview.ref.id, { text: review }, session)
+        await orThrow(existingReview
+          ? db.updateByRef_(reviewCollection, existingReview._id, { text: review }, session)
           // Shouldn't be needed, but just in case.
           : db.create_(reviewCollection, {
               text: review,
-              entryRef: entry.ref.id,
+              entryRef: entry._id,
             }, session))
       }
 
@@ -229,7 +229,7 @@ const updateEntry_ = async (uid, body, col, entry) => {
     // recover. Outside the transaction, and after it: a draft left behind by
     // a save that rolled back still describes edits the user has not managed
     // to store, which is exactly what a draft is for.
-    await discardDraft(entry.ref.id, uid)
+    await discardDraft(entry._id, uid)
 
     return responses.ok(written)
   } catch (error) {

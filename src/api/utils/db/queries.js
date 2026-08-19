@@ -47,9 +47,9 @@ const toUserEntriesPipeline = ({ userId, workCollection, limit }) => [
   // is actually opened; `userId` is an auth0 id repeated once per entry for
   // anyone who asks for the list; and `commonMetadata` is a stale copy of the
   // work that the `$lookup` above has just fetched the live version of — the
-  // caller overwrites it with `work.data` on the way out, so every byte of it
-  // crossed the wire to be thrown away. 1.2 MB of that on a four-list profile
-  // load. See #176.
+  // caller overwrites it with the joined work on the way out, so every byte
+  // of it crossed the wire to be thrown away. 1.2 MB of that on a four-list
+  // profile load. See #176.
   { $project: { review: 0, userId: 0, commonMetadata: 0 } },
 ]
 
@@ -104,12 +104,10 @@ module.exports = {
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Every document handed out of this module is wrapped by
- * `toSameFormatAsFaunaDb`, which reads `_id` to build the `ref.id` that
- * callers update and delete by. A projection that dropped it would hand back
- * rows nothing can act on, and only as a missing field rather than as an
- * error. An inclusion projection keeps `_id` on its own, so this has only to
- * undo an explicit exclusion.
+ * `_id` is what a caller updates and deletes by, so a projection that dropped
+ * it would hand back rows nothing can act on — and only as a missing field
+ * rather than as an error. An inclusion projection keeps `_id` on its own, so
+ * this has only to undo an explicit exclusion.
  */
 const keepingId = (projection) =>
   projection._id === 0 || projection._id === false

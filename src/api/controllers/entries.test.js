@@ -240,16 +240,39 @@ test('creating an entry answers with the entry, not with its note', options, asy
   assert.equal(store.filmEntries.length, 1)
 
   // The id of what was just created, which is the thing the caller cannot
-  // work out for itself and had no way to read before.
-  assert.equal(body.ref.id, store.filmEntries[0]._id)
-  assert.equal(body.data.status, 'Completed')
-  assert.equal(body.data.score, 9)
-  assert.equal(body.data.userId, 'u1')
+  // work out for itself and had no way to read before. It is `_id`, the
+  // document's own field, rather than a `ref.id` copied beside it.
+  assert.equal(body._id, store.filmEntries[0]._id)
+  assert.equal(body.status, 'Completed')
+  assert.equal(body.score, 9)
+  assert.equal(body.userId, 'u1')
+  assert.equal('data' in body, false)
+  assert.equal('ref' in body, false)
 
   // The note is written beside it rather than returned in its place.
   assert.equal(store.filmReviews[0].text, 'a first note')
-  assert.equal(body.data.text, undefined)
-  assert.equal(body.data.entryRef, undefined)
+  assert.equal(body.text, undefined)
+  assert.equal(body.entryRef, undefined)
+})
+
+/**
+ * `updateEntry_` read the owner off the entry without checking there was one,
+ * so a PATCH naming an id that isn't there threw on the miss the db module
+ * reported — a rejected promise out of the handler, and a 502. The revisions
+ * routes have always answered 401 here rather than 404, so that they cannot
+ * be used to probe for ids; this now agrees with them.
+ */
+test('a save naming an entry that is not there is a 401, not a crash', options, async () => {
+  seedSavedEntry()
+
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/nosuchentry', {
+    as: 'u1',
+    body: form(),
+  })
+
+  assert.equal(statusCode, 401)
+  assert.equal(store.filmEntries.length, 1)
+  assert.equal(store.filmEntries[0].status, 'InProgress')
 })
 
 test('an entry whose note will not write is not left behind', options, async () => {

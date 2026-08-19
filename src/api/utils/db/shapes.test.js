@@ -1,7 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 
-const { toSameFormatAsFaunaDb, toEntryWithMetadata } = require('./shapes')
+const { toEntryWithMetadata } = require('./shapes')
 
 /**
  * One row of the list aggregate: the entry document, with `$lookup`'s array of
@@ -23,13 +23,6 @@ const ghostKiller = {
   englishTranslatedTitle: 'Ghost Killer',
   releaseYear: 2025,
 }
-
-test('a document is wrapped with its id where a fauna ref used to be', () => {
-  assert.deepEqual(toSameFormatAsFaunaDb({ _id: 'e1', score: 6 }), {
-    data: { _id: 'e1', score: 6 },
-    ref: { id: 'e1' },
-  })
-})
 
 test('the joined work comes back beside the entry, not on it', () => {
   const { entry, work } = toEntryWithMetadata(row('e1', [ghostKiller]), 'Film')

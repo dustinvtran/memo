@@ -10,16 +10,6 @@
  */
 
 /**
- * @info This function exists because we migrated from FaunaDB to MongoDB.
- * @typedef {{ data: any, ref: { id: string }}} FaunaShaped
- * @type {(dcmt: any) => FaunaShaped}
- */
-const toSameFormatAsFaunaDb = (dcmt) => ({
-  data: dcmt,
-  ref: { id: dcmt._id },
-})
-
-/**
  * One row of a list query: the entry, and beside it the work it points at.
  *
  * `work` comes off the entry rather than travelling with it. The caller
@@ -40,6 +30,5 @@ const toEntryWithMetadata = ({ work, ...entry }, entryType) => ({
 })
 
 module.exports = {
-  toSameFormatAsFaunaDb,
   toEntryWithMetadata,
 }

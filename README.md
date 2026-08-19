@@ -70,7 +70,9 @@ You might need to run `npx netlify login` inside the project.
 - FaunaDB. A leftover: we moved to MongoDB Atlas on 2022-10-10 and nothing
   in this repo speaks FQL any more. The integration may still be attached to
   the Netlify account, but the database the site reads is the one under **DB**
-  below.
+  below. The last trace of Fauna in the code was the `{ data, ref: { id } }`
+  every document was wrapped in; #178 removed it, and the db module hands
+  back documents with `null` for a miss.
 
 **DB**
 

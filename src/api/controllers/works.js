@@ -66,10 +66,10 @@ const retrieveWork = (event) => {
         // after different works.
         parseRef(type, event).asyncAndThen((apiRefId) =>
           findCachedWork(typeToCollection(type), names.map((name) => `${name}__${apiRefId}`))
-            .andThen(({ data, ref }) => data
+            .andThen((work) => work
               ? okAsync(({
-                ...data,
-                internalRef: ref.id
+                ...work,
+                internalRef: work._id
               }))
               : createWork(event, apiRefId)
             )
@@ -89,17 +89,18 @@ module.exports = {
 const typeToCollection = (type) => workTypes.byType(type)?.works
 
 /**
- * Tries each apiRef in turn and stops at the first cached work.
- * @type {(collection: any, apiRefs: string[]) => ResultAsync<any, Error>}
+ * Tries each apiRef in turn and stops at the first cached work, or `null` if
+ * none of them names one we have.
+ * @type {(collection: any, apiRefs: string[]) => ResultAsync<any | null, Error>}
  */
 const findCachedWork = (collection, apiRefs) =>
   apiRefs.reduce(
-    (found, apiRef) => found.andThen((result) =>
-      result?.data
-        ? okAsync(result)
+    (found, apiRef) => found.andThen((work) =>
+      work
+        ? okAsync(work)
         : db.findOneByField_(collection, 'apiRefs', apiRef)
     ),
-    okAsync({})
+    okAsync(null)
   )
 
 
@@ -160,9 +161,9 @@ const createWork = (event, apiRefId) =>
     .andThen((data) =>
       db.create_(typeToCollection(getUrlSegments(event)[1]), data)
     )
-    .map(({ data, ref }) => ({
-      ...data,
-      internalRef: ref.id,
+    .map((work) => ({
+      ...work,
+      internalRef: work._id,
     }))
 
 
