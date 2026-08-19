@@ -15,49 +15,15 @@
   # https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
   NODE_VERSION = "22"
 
-# Both of these urls carry a digest of their own contents in the filename —
-# `/js/bundle.<hash>.js` and `/css/main.<hash>.css`, built in
-# `src/frontend/_data/assets.js`. That is the precondition for `immutable`, and
-# it is not optional: the promise being made here is that the bytes at a given
-# url will never change, and a browser that believes it will not ask again for
-# a year. On an unhashed name that promise is a lie and the site is stuck.
-#
-# Without these, Netlify's default for a file with no rule is `public,
-# max-age=0, must-revalidate`, so every navigation on a client-side-routed site
-# spent a conditional request on each of the two before it could draw. They came
-# back `304` with no body, so it was two round trips rather than two payloads —
-# and still two round trips.
-#
-# The HTML that names these urls keeps that default and should: it is what
-# tells a browser the hash has changed.
-#
-# These rules did nothing at all when they first shipped, and nothing said so.
-# Netlify does not apply a custom header to a response it produced by
-# rewriting, and the catch-all in `_redirects` was forced (`200!`), which
-# rewrites a url even when it exists as a file — so every response on this site
-# was a rewrite and every rule here was dead. Production went on answering the
-# hashed bundle `public,max-age=0,must-revalidate` with these declared, exactly
-# as it had before they existed.
-#
-# Unforcing the catch-all is what turned them on; `_redirects` carries the
-# reasoning. The dependency runs the other way to how it reads: this block is
-# inert unless a file is served as a file, so a forced rule reintroduced above
-# the catch-all would switch it off again silently. A test pins that.
-#
-# Worth knowing that a deploy preview cannot be used to check any of this. A
-# preview answers every url with `max-age=0, must-revalidate` and carries no
-# custom header at all, not even one written for a single exact path, so the
-# only way to see whether a change here worked is `curl -sI` against
-# production after it merges.
-[[headers]]
-  for = "/js/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-[[headers]]
-  for = "/css/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+# There is deliberately no `[[headers]]` block here. #157 declared
+# `Cache-Control` for `/js/*` and `/css/*` this way and it never applied:
+# production kept answering the hashed bundle `public,max-age=0,
+# must-revalidate`, and Netlify's deploy summary reported "Header rules" as
+# `skipping` every time, while "Redirect rules" reported `pass`. The rules live
+# in `_headers`, a file in the publish directory the way `_redirects` is, and
+# declared there they arrive: both assets come back `immutable` and that check
+# passes. Moving them back here would switch the caching off silently, without
+# failing a build or a test.
 
 [functions]
   directory = "src/api/routes"
