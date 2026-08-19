@@ -3,19 +3,40 @@
 /** @typedef {import('../utils/external_api_adapters/types').Adapter} Adapter */
 /** @typedef {import('../utils/errors').Error} Error */
 const { toPromise } = require('../utils/general')
-const { getUrlSegments } = require('./utils')
-const { Result, ok, err, ResultAsync, okAsync } = require('neverthrow')
+const { getUrlSegments, getUserId } = require('./utils')
+const { Result, ok, err, ResultAsync, okAsync, errAsync } = require('neverthrow')
 const errors = require('../utils/errors')
 const responses = require('../utils/responses')
 const adapters = require('../utils/external_api_adapters')
 const db = require('../utils/db')
 const workTypes = require('../utils/work_types')
 
-/** @type {(event: Event) => Promise<Response>} */
-const searchForWork = (event) =>
-  withAdapter('search', event)
+/**
+ * GET /api/works/search/:type/:query
+ *
+ * Behind a token, alone among the reads on this site along with `retrieve`
+ * below — the lists are public and stay public. This one is not a read of our
+ * data: the adapter it reaches attaches `TMDB_API_KEY`,
+ * `TWITCH_CLIENT_ID`/`TWITCH_CLIENT_SECRET` or `GOOGLE_API_KEY` server-side,
+ * so open it is a free proxy to three metered third-party APIs with nobody to
+ * attribute a request to and nothing standing between a caller and IGDB's
+ * four-requests-a-second ceiling. Every real caller is a logged-in user
+ * filling in the entry form; what scripts and language models are meant to
+ * read is `/api/export`, which touches none of this. See #174.
+ * @type {(event: Event) => Promise<Response>}
+ */
+const searchForWork = (event) => toPromise(
+  getUserId(event)
+    .andThen(() => withAdapter_('search', event))
+    .map(responses.ok)
+    .mapErr(responses.fromError)
+)
 
-/** @type {(event: Event) => Promise<Response>} */
+/**
+ * GET /api/works/retrieve/:type/:ref
+ *
+ * @type {(event: Event) => Promise<Response>}
+ */
 const retrieveWork = (event) => {
   const type = getUrlSegments(event)[1]
   const apiRefId = getUrlSegments(event)[2]
@@ -26,10 +47,19 @@ const retrieveWork = (event) => {
   // some book documents are stored under that name, and both mean the ISBN.
   const apiNames = workTypes.byType(type)?.identityPrefixes
 
-  if (!apiNames) return Promise.resolve(responses.notFound())
-
   return toPromise(
-    findCachedWork(typeToCollection(type), apiNames.map((name) => `${name}__${apiRefId}`))
+    // The token is checked before the type segment is, so that an anonymous
+    // caller is told the same thing whatever it asks for. This route spends
+    // the credentials `search` does — a game costs up to three IGDB round
+    // trips — and it also *writes*: a miss here creates the work document.
+    // Walking an API's ids anonymously therefore filled `films`, `tvShows`,
+    // `games` and `books` with works no entry points at, which is the junk
+    // `scripts/audit_database.js` reports and `dedupe_works.js` cleans up.
+    getUserId(event)
+      .andThen(() => apiNames ? okAsync(apiNames) : errAsync(errors.notFound()))
+      .andThen((names) =>
+        findCachedWork(typeToCollection(type), names.map((name) => `${name}__${apiRefId}`))
+      )
       .andThen(({ data, ref }) => data
         ? okAsync(({
           ...data,
@@ -66,13 +96,6 @@ const findCachedWork = (collection, apiRefs) =>
     okAsync({})
   )
 
-
-/** @type {(action: keyof Adapter, event: Event) => Promise<Response>} */
-const withAdapter = (action, event) => toPromise(
-  withAdapter_(action, event)
-    .map(responses.ok)
-    .mapErr(responses.fromError)
-)
 
 /** @type {(action: keyof Adapter, event: Event) => ResultAsync<any, any>} */
 const withAdapter_ = (action, event) =>
