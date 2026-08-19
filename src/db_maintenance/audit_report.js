@@ -1,0 +1,145 @@
+/**
+ * @file What the audit's summary says, and which of its findings are actually
+ * problems.
+ *
+ * Pure and dependency-free, so the classification is unit tested rather than
+ * argued about in front of a terminal — see audit_report.test.js. The database
+ * reads live in scripts/audit_database.js.
+ *
+ * The split exists because the summary used to print ten counts in one flat
+ * list, and two of the lines next to each other were:
+ *
+ *     5  entries with no workRef
+ *     0  entries with a dangling workRef
+ *
+ * Only the second is a broken reference. The first is a supported state — an
+ * entry the user typed in rather than picked from a search result carries its
+ * own metadata in `overrides` and never had a work to point at. Formatted
+ * identically and one line apart, the two were read as one finding, and the 23
+ * user-authored entries in the database were reported as 23 corrupted ones.
+ */
+
+/**
+ * Every line of the summary, in the order it is printed.
+ *
+ * `kind` is `"problem"` for something that wants fixing and `"note"` for a
+ * count that is worth knowing and is not damage. A note is not a milder
+ * problem: nothing in the database is wrong because of it, and no script
+ * should be written to make it go away.
+ *
+ * `label` takes the collection descriptor because one of them names the
+ * apiRef prefix the type is refreshed by.
+ *
+ * @type {Array<{
+ *   key: string,
+ *   kind: "problem" | "note",
+ *   label: (collection: any) => string,
+ *   only?: string,
+ * }>}
+ */
+const FINDINGS = [
+  // First, because it is the one that means a user's row renders empty.
+  {
+    key: "entriesWithDanglingWorkRef",
+    kind: "problem",
+    label: () => "entries whose workRef names a work that is gone",
+  },
+  {
+    key: "noApiRef",
+    kind: "problem",
+    label: (c) => `no ${c.retrievePrefix}__ ref (cannot be refreshed)`,
+  },
+  {
+    key: "legacyObjectApiRefs",
+    kind: "problem",
+    label: () => "apiRefs still stored as objects",
+  },
+  {
+    key: "missingFields",
+    kind: "problem",
+    label: () => "missing metadata fields",
+  },
+  {
+    key: "corruptFields",
+    kind: "problem",
+    label: () => "corrupt field values",
+  },
+  {
+    key: "gamesMissingPlaytimeLink",
+    kind: "problem",
+    label: () => "playtime with nothing to link it to",
+    only: "games",
+  },
+  {
+    key: "duplicateWorks",
+    kind: "problem",
+    label: () => "duplicate works sharing an apiRef",
+  },
+  {
+    key: "orphanReviews",
+    kind: "problem",
+    label: () => "reviews whose entry is gone (unreachable)",
+  },
+  // Notes. Neither is damage; see the header comment.
+  {
+    key: "entriesWithoutWorkRef",
+    kind: "note",
+    label: () => "entries with no linked work (user-authored, expected)",
+  },
+  {
+    key: "orphanWorks",
+    kind: "note",
+    label: () => "cached works no entry points at",
+  },
+];
+
+/**
+ * The summary lines for one collection, already split.
+ *
+ * A finding whose `only` doesn't match the type is left out entirely rather
+ * than printed as a zero, which is how the playtime line has always behaved.
+ * A key the result doesn't carry counts as zero rather than throwing: the
+ * report is a diagnostic, and half of one still beats a stack trace.
+ *
+ * @type {(collection: any, result: object) => {
+ *   problems: Array<{ key: string, label: string, count: number }>,
+ *   notes: Array<{ key: string, label: string, count: number }>,
+ * }}
+ */
+const toSummary = (collection, result) => {
+  const lines = FINDINGS.filter(
+    (finding) => finding.only === undefined || finding.only === collection.type
+  ).map((finding) => ({
+    key: finding.key,
+    kind: finding.kind,
+    label: finding.label(collection),
+    count: (result?.[finding.key] ?? []).length,
+  }));
+
+  return {
+    problems: lines.filter((line) => line.kind === "problem").map(withoutKind),
+    notes: lines.filter((line) => line.kind === "note").map(withoutKind),
+  };
+};
+
+/** How many findings across a whole report are worth someone's attention. */
+const countProblems = (collections, report) =>
+  collections.reduce(
+    (total, collection) =>
+      total +
+      toSummary(collection, report[collection.type]).problems.reduce(
+        (n, line) => n + line.count,
+        0
+      ),
+    0
+  );
+
+module.exports = {
+  FINDINGS,
+  toSummary,
+  countProblems,
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+const withoutKind = ({ kind: _kind, ...line }) => line;
