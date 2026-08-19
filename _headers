@@ -40,3 +40,75 @@
 
 /css/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Everything below is site-wide, and none of it was being sent at all: no CSP,
+# no `nosniff`, no referrer policy, no HSTS (#173). The reason to care is
+# `nf_jwt` — a 14-day HS256 token that is the whole session, and that
+# `Http.getToken` reads out of `document.cookie` because the API takes it as a
+# bearer header. Any script that runs on this page can read it and keep it for
+# a fortnight, so the cheapest real mitigation is to stop a script that isn't
+# ours from running in the first place.
+#
+# The policy is not trusting the two CDN hosts it names: every third-party url
+# in `layouts/base.njk` is pinned to an exact version and carries an
+# `integrity` hash, so what an origin allowlist adds is a rule about where a
+# script may come from at all, on top of bytes that are already checked.
+#
+# Report-only first, deliberately. Nothing here has ever run under a CSP, so
+# this policy is a hypothesis about what the page loads, and an enforcing
+# header would turn a wrong guess into a blank site. In this mode a violation
+# is a console message and nothing else, which is what makes it safe to read a
+# real page load — logged in, on a list, on the profile charts and in the
+# entry form — before switching the header name to `Content-Security-Policy`.
+#
+# `style-src` needs `'unsafe-inline'`: `components/index.js` appends a
+# `<style id="component-styles">` and every component writes its rules into it
+# at runtime, and litepicker and apexcharts inject their own on top of that.
+# `script-src` does not get it, which is the whole point of the exercise — the
+# scripts are eight pinned CDN files and one hashed same-origin bundle, every
+# one of them loaded by `src`. The known exception is the `onclick` that
+# `utils/columns.js` writes into each row's edit icon: an inline handler is a
+# `script-src` violation, so an owner viewing their own list is what
+# report-only is here to measure.
+#
+# `font-src` names cdnjs because Bootstrap's glyphicons and Font Awesome's
+# webfonts are fetched by those stylesheets relative to themselves; under
+# `default-src 'self'` alone they would be the first thing to break.
+#
+# `img-src` is the loose one: cover art urls are stored on the work documents
+# and come from whatever TMDB, IGDB or Google Books handed back, so an
+# allowlist would be a list of every provider the metadata scripts have ever
+# used. `https:` is honest about that, still rules out `http:`, and an image
+# is not what a token thief needs.
+#
+# There is no `report-uri`/`report-to`: nothing here collects them, and a
+# violation in the console is what this is for. Adding a collector means
+# sending someone else every url this site loads, which is its own decision.
+#
+# What a `/*` rule does not reach is `/api/*`. A deploy preview answers
+# `/api/export/films/nil` with none of these — the rules are applied to pages
+# and static assets, and a function's response headers are the function's own.
+# So `nosniff` covers the site and not the export endpoint, which is the one
+# place here that answers two content types off one path. Putting it there too
+# means `utils/responses.js`, and that is a separate change.
+#
+# `Strict-Transport-Security` is the one header a preview cannot confirm:
+# `*.netlify.app` carries Netlify's own `max-age=31536000; includeSubDomains;
+# preload` whatever this file says, so what comes back there is theirs rather
+# than ours. On nil.moe the default is a bare `max-age=31536000`, and this rule
+# replaces it the way the cache rules above replace theirs — worth a look at
+# production after the merge, since it is the only place it shows.
+#
+# These rules sit in this file rather than `netlify.toml` for the same reason
+# the cache rules above do — see that note. Netlify applies every rule whose
+# path matches, so `/js/*` keeps its `immutable` and gains these as well; a
+# deploy preview is the place to confirm both, since neither a build nor a
+# test can. Comments are kept out of the rule block below for the same
+# reflex: this file's whole history is header rules silently not applying, and
+# an indented `#` is one more thing that would have to be right.
+
+/*
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' https: data:; font-src 'self' https://cdnjs.cloudflare.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
