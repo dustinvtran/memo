@@ -11,9 +11,11 @@
  * ascending field named after the field one of those calls is given. `_id` is
  * already indexed by MongoDB itself.
  *
- * The exception is the entry list, which sorts as well as matches, and wants a
- * compound index so that the sort can be *served* rather than performed. See
- * the `updatedDate` entry below.
+ * Two exceptions want a compound index. The entry list sorts as well as
+ * matches, and a compound index lets the sort be *served* rather than
+ * performed — see the `updatedDate` entry below. `findDraft` matches on three
+ * fields rather than one, and a compound index takes it from a seek plus an
+ * in-memory filter to a single seek — see the `entryRevisions` entries.
  *
  * The collection names come from ../api/utils/work_types.js, which is pure
  * too, so this file stays testable without an install.
@@ -89,20 +91,66 @@ const DESIRED_INDEXES = [
     key: { userId: 1, updatedDate: -1, _id: 1 },
     why: "the sort and limit in toUserEntriesPipeline — every list load and every profile load",
   })),
+  // These four are declared without a query behind them, which is the opposite
+  // of what this file asks for, so here is the whole of it.
+  //
+  // They were justified by "the local side of the $lookup in
+  // _findAllUserEntriesWithMetadata", and a `$lookup` uses an index on the
+  // *foreign* side: `toUserEntriesPipeline` joins `localField: 'workRef'` to
+  // `foreignField: '_id'` on the works collection, so the index that serves it
+  // is `works._id`, which MongoDB maintains itself. The local field is read off
+  // documents the `$match` and the `$sort` have already chosen; there is
+  // nothing left for an index on it to do.
+  //
+  // Nor does anything else ask for one. `workRef` appears in exactly three
+  // places outside the pipeline, and none of them is a filter on it:
+  // dedupe_works.js repoints entries at a survivor with
+  // `updateMany({ _id: { $in: ids } }, ...)`, having grouped them by `workRef`
+  // in Node from a full `find()` (see work_dedupe_plan.js); audit_database.js
+  // and backfill_game_playtimes.js do the same reading in memory.
+  //
+  // So the trade as it stands is four indexes maintained on every entry write,
+  // and nothing reads them. That is an index to drop by the rule at the top of
+  // this file — but dropping one is a human's call (CLAUDE.md) and nothing here
+  // drops anything anyway: deleting the entry would only leave the indexes live
+  // and no longer declared, which is worse than either. So they stay declared,
+  // honestly, until someone decides. See #180.
   ...ENTRY_COLLECTIONS.map((collection) => ({
     collection,
     key: { workRef: 1 },
-    why: "the local side of the $lookup in _findAllUserEntriesWithMetadata",
+    why: "no query — the $lookup that named these joins on works._id, and dedupe_works.js repoints by _id; see the comment above and #180",
   })),
   ...REVIEW_COLLECTIONS.map((collection) => ({
     collection,
     key: { entryRef: 1 },
     why: "getReview on every expanded row, findReviews in the export",
   })),
+  // Kept beside the compound index below for the reason the plain `userId` one
+  // is kept beside its compound: the compound serves this index's prefix, so
+  // this answers nothing that one cannot, but undeclaring it would leave it
+  // live in the database and no longer explained. It is also the narrower
+  // index, and discardHistory's delete on `entryRef` alone reads no other
+  // field, so it walks fewer bytes through this one.
   {
     collection: "entryRevisions",
     key: { entryRef: 1 },
-    why: "every history read, every draft read, every save; findDraft runs on every autosave, once every 2.5s while an edit form is open",
+    why: "every history read, every draft read, every save, and discardHistory when an entry is deleted",
+  },
+  // `findDraft` asks `{ entryRef, kind: 'draft', userId }` and is the hottest
+  // read in this collection — once every 2.5 seconds per open edit form. On the
+  // single-field index above, the seek lands on the entry and the server then
+  // filters the rest in memory: up to MAX_REVISIONS_PER_ENTRY (50) documents
+  // read to keep one, each carrying a whole snapshot including the note. With
+  // all three fields in the index it is one seek to the one document.
+  //
+  // `findRevisions` matches `{ entryRef, kind: 'revision' }`, which is this
+  // index's prefix, so it is served by the same index — and `kind` being second
+  // rather than last is what makes that true. `userId` is last because it is
+  // the field only findDraft adds.
+  {
+    collection: "entryRevisions",
+    key: { entryRef: 1, kind: 1, userId: 1 },
+    why: "findDraft on every autosave, once every 2.5s while an edit form is open; findRevisions on every history read is served by its prefix",
   },
   // `apiRefs` is an array, so this is a **multikey** index — one index entry
   // per element. That is correct and is not something to "fix": findCachedWork

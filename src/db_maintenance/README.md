@@ -94,11 +94,15 @@ over the snapshot `snapshot-2026-08-18T03-19-34-608Z`, and the winning plan
 for the list query went from a blocking `SORT` to
 `IXSCAN -> FETCH -> LIMIT` on all four entry collections.
 
-A dry run today therefore prints `23 index(es) already exist, 0 would be
-created, 0 conflict`, and that is what "applied" looks like from the outside.
-If it ever reports something to create, either `index_plan.js` has grown an
-entry or an index was dropped behind its back — both worth knowing before you
-reach for `--apply`.
+`index_plan.js` has since grown a twenty-fourth,
+`entryRevisions.entryRef_1_kind_1_userId_1` (#180), which has **not** been
+applied. A dry run today therefore prints `23 index(es) already exist, 1 would
+be created, 0 conflict`, and creating it is a second `--apply` for a human to
+approve. Once that happens this paragraph should say 24 and 0.
+
+If a dry run ever reports something to create that isn't that one, either
+`index_plan.js` has grown another entry or an index was dropped behind its
+back — both worth knowing before you reach for `--apply`.
 
 Which indexes, and why each one, is declared in `index_plan.js` — every entry
 names the queries that want it, because an index nobody can name a query for
@@ -123,6 +127,20 @@ equality match on one field, and `_id` is indexed by MongoDB already.
   blocking one in front of the `$limit`. The plain `{ userId: 1 }` index is
   kept beside it even though a compound index serves its own prefix — see the
   comment in `index_plan.js`.
+- **`entryRevisions` has a compound index too**, `{ entryRef: 1, kind: 1,
+  userId: 1 }`, because `findDraft` matches on all three — and it is the
+  hottest read here, running once every 2.5 seconds while an edit form is
+  open. On `{ entryRef: 1 }` alone the seek lands on the entry and the server
+  filters the rest in memory, up to 50 documents each carrying a whole
+  snapshot. `findRevisions` matches `{ entryRef, kind }`, this index's prefix,
+  so the one index serves both.
+- **The four `*Entries.workRef_1` indexes have no query behind them.** They
+  were declared for the `$lookup` in the list query, which uses the index on
+  the *foreign* side of the join (`works._id`), and nothing else filters on
+  `workRef` — the maintenance scripts that care about it group in Node from a
+  full read. They are declared honestly rather than dropped, because dropping
+  an index is a human's call and undeclaring one would only leave it live and
+  unexplained. See the comment in `index_plan.js` and #180.
 - **`apiRefs` is an array**, so its index is a *multikey* index. That is
   correct, not something to fix: `findCachedWork` asks
   `{ apiRefs: "igdb__1234" }`, an equality match against one element, which
