@@ -37,7 +37,7 @@ const workTypes = require('../work_types')
 const _findOne = (collection, filter, options) =>
   findFirst(collection, filter, options)
 
-/** @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => Promise<object>} */
+/** @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => Promise<any[]>} */
 const _findMany = (collection, filter, options) =>
   find(collection, filter, options)
 
@@ -53,7 +53,7 @@ const _findOneByRef = (collection, ref) =>
  * One query for many values of the same field, rather than one query per
  * value. A whole list's reviews are 400-odd `entryRef`s, and 400 round trips
  * is the difference between a response and a function timeout.
- * @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => Promise<object>}
+ * @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => Promise<any[]>}
  */
 const _findAllByFieldIn = (collection, field, values, options) =>
   values.length === 0
@@ -165,7 +165,6 @@ const find = (collection, filter, options) =>
     .collection(collection)
     .find(filter, toFindOptions(options))
     .toArray()
-    .then((arr) => arr.map(toSameFormatAsFaunaDb))
   )
 
 /** @type {(collection: ValidCollection, data: any, session?: ClientSession) => Promise<object>} */

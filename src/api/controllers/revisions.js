@@ -218,12 +218,10 @@ const VERSION_FIELDS = { createdDate: 1, supersededDate: 1, snapshot: 1 }
 const PRUNE_FIELDS = { createdDate: 1 }
 
 /** @type {(entryRef: string, projection?: object) => Promise<any[]>} */
-const findRevisions = async (entryRef, projection = VERSION_FIELDS) =>
-  (
-    await db
-      .findMany_(COLLECTION, { entryRef, kind: 'revision' }, { projection })
-      .unwrapOr([])
-  ).map(({ data }) => data)
+const findRevisions = (entryRef, projection = VERSION_FIELDS) =>
+  db
+    .findMany_(COLLECTION, { entryRef, kind: 'revision' }, { projection })
+    .unwrapOr([])
 
 /**
  * There is one draft per entry per user, which is two fields to ask on. Asking

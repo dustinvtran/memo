@@ -120,7 +120,6 @@ const findReviews = async (collection, entryRefs) => {
 
   return new Map(
     (found ?? [])
-      .map(({ data }) => data)
       .filter((review) => review?.entryRef && review?.text)
       .map((review) => [review.entryRef, review.text])
   )

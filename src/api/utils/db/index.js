@@ -69,7 +69,7 @@ const findOneByFieldOrFail_ = (collection, field, value) =>
  */
 const findOne_ = compose(toResult, _findOne)
 
-/** @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => ResultAsync<any[], Error>} */
 const findMany_ = compose(toResult, _findMany)
 
 /**
@@ -80,7 +80,7 @@ const findMany_ = compose(toResult, _findMany)
  */
 const countScoresByValue_ = compose(toResult, _countScoresByValue)
 
-/** @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => ResultAsync<any[], Error>} */
 const findAllByFieldIn_ = compose(toResult, _findAllByFieldIn)
 
 /** @type {(collection: ValidCollection, userId: string, limit?: number) => ResultAsync<{ entry: any, work: any }[], Error>} */
