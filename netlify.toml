@@ -7,10 +7,14 @@
   # branch deploy alike. The per-context blocks this replaces covered the first
   # two and left a branch deploy on whatever default Netlify happened to ship.
   #
-  # This also picks the functions runtime, which Netlify derives from the
-  # build's Node version. AWS_LAMBDA_JS_RUNTIME overrides that, but only when
-  # set from the Netlify UI, CLI or API: Netlify does not read it from this
-  # file, so the nodejs18.x lines that used to sit here never applied.
+  # This does NOT pick the functions runtime. AWS_LAMBDA_JS_RUNTIME does, and
+  # it is read only when set from the Netlify UI, CLI or API — Netlify does
+  # not read it from this file, so the nodejs18.x lines that used to sit here
+  # never applied. What they did do is leave the impression that the setting
+  # no longer mattered, while an override made outside the repo went on
+  # pinning the API to nodejs18.x: deprecated by AWS in September 2025, and
+  # four majors behind the line above. #185 found it by deploying a function
+  # that reported process.version, which is the only way to find it.
   # https://docs.netlify.com/build/functions/optional-configuration/
   # https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
   NODE_VERSION = "22"
