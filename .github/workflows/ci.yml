@@ -52,33 +52,24 @@ jobs:
 
       - run: npm ci
 
-      # The functions are CommonJS, and the runtime they get cannot `require`
-      # an ES module. Node 22 can — `require(esm)` works from 22.12 — so the
-      # suite above, this job's install and the build all load such a module
-      # happily, and the first sign of one is every route answering 502 on the
-      # deployed site. That is #162: a `uuid` bump to a version that ships ESM
+      # The functions runtime is started with `--no-experimental-require-module`
+      # — #185 read it off `process.execArgv` on the deployed runtime, the same
+      # on `nodejs22.x` and `nodejs26.x` — so `require` of an ES module throws
+      # while the module is being read, before a handler runs, and every route
+      # 502s at once. That is #162: a `uuid` bump to a version shipping ESM
       # only, green here and broken the moment it shipped.
       #
-      # `--no-experimental-require-module` turns that support off, which is
-      # what makes the Node here behave like the one in production. Loading is
-      # the whole test: the failure being guarded throws while the module is
-      # being read, before the handler is ever called.
-      #
-      # The values are placeholders — loading a route reads them into strings
-      # and nothing connects to anything, but `db.js` throws on a missing
-      # `MONGODB_URL`, which would fail this for the wrong reason.
-      - name: Every function must load without require(esm)
-        env:
-          MONGODB_URL: mongodb://localhost:27017/memo
-          TWITCH_CLIENT_ID: placeholder
-          TWITCH_CLIENT_SECRET: placeholder
-          TMDB_API_KEY: placeholder
-          GOOGLE_API_KEY: placeholder
-        run: |
-          for f in $(git ls-files 'src/api/routes/*.js'); do
-            node --no-experimental-require-module -e "require('./$f')"
-            echo "ok: $f"
-          done
+      # `netlify.toml` now bundles with esbuild, which inlines dependencies at
+      # build time so nothing reaches the runtime as a module. This step used
+      # to load each route under the flag; that check has outlived its
+      # question, because the source still says `require('jose')` while the
+      # artefact has jose inlined, so an ESM-only dependency would fail it and
+      # ship perfectly. What is still true is that bundling has to be on, and
+      # that anything in `external_node_modules` bypasses it — those are what
+      # the script checks, and it reads both out of `netlify.toml` rather than
+      # keeping its own copy to drift.
+      - name: The API's dependencies must survive the functions runtime
+        run: node scripts/check_function_dependencies.js
 
       - run: npm run build
 
