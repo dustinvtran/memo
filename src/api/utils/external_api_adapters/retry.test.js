@@ -5,6 +5,7 @@ const {
   ATTEMPTS,
   MAX_DELAY_MS,
   backoffMs,
+  codeOf,
   describeFailure,
   isTransient,
   publicFailure,
@@ -12,9 +13,15 @@ const {
   statusOf,
 } = require('./retry')
 
-/** A 503 exactly as axios throws it — the Google Books failure in issue #80. */
+/**
+ * A failure exactly as axios throws it — the Google Books 503 in issue #80.
+ *
+ * 1.x adds a `code` of its own that 0.x did not: `ERR_BAD_REQUEST` for a 4xx
+ * and `ERR_BAD_RESPONSE` for a 5xx, alongside the status it restates.
+ */
 const axiosError = (status) =>
   Object.assign(new Error(`Request failed with status code ${status}`), {
+    code: status >= 500 ? 'ERR_BAD_RESPONSE' : 'ERR_BAD_REQUEST',
     response: { status },
   })
 
@@ -171,6 +178,26 @@ test('nothing a client library wrote in prose reaches the caller', () => {
   assert.equal(said, 'igdb failed (HTTP 500 ECONNREFUSED)')
   assert.equal(said.includes('api.igdb.com'), false)
   assert.equal(said.includes('abc123'), false)
+})
+
+test("axios's restatement of the status is not a second thing to say", () => {
+  // 1.x puts `ERR_BAD_RESPONSE` on every 5xx and `ERR_BAD_REQUEST` on every
+  // 4xx. Both are shaped like an errno and both mean only what the status
+  // already means, so they are dropped rather than printed beside it.
+  assert.equal(codeOf(axiosError(503)), undefined)
+  assert.equal(codeOf(axiosError(404)), undefined)
+  assert.equal(codeOf(networkError('ECONNRESET')), 'ECONNRESET')
+
+  assert.equal(publicFailure('google', axiosError(503)), 'google failed (HTTP 503)')
+  assert.equal(publicFailure('google', axiosError(404)), 'google failed (HTTP 404)')
+  assert.equal(
+    describeFailure(axiosError(404)),
+    'HTTP 404 Request failed with status code 404',
+  )
+
+  // Dropping the code does not change what gets retried: the status decides.
+  assert.equal(isTransient(axiosError(503)), true)
+  assert.equal(isTransient(axiosError(404)), false)
 })
 
 test('a code that is not an errno is not passed on either', () => {
