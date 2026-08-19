@@ -153,3 +153,17 @@ jobs:
         run: |
           bundle=$(grep -o '/js/bundle\.[0-9a-f]*\.js' dist/index.html | head -1)
           node --check "dist$bundle"
+
+      # Nothing in CI read an advisory before this. It runs last on purpose: a
+      # bundle that will not parse is more urgent news than a dependency that
+      # wants upgrading, and the first step to fail stops the ones after it.
+      #
+      # `npm audit` exits non-zero whenever it finds anything at all, which
+      # here is always, so its status is dropped and `check_audit.js` decides
+      # what is worth failing over. The reasoning — why `--omit=dev`, and why
+      # this is not the one-line `npm audit --audit-level=high` — is at the top
+      # of that file, next to the list it is checking against.
+      - name: No new advisory against anything that ships
+        run: |
+          npm audit --omit=dev --json > "$RUNNER_TEMP/audit.json" || true
+          node .github/scripts/check_audit.js < "$RUNNER_TEMP/audit.json"
