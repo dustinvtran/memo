@@ -70,7 +70,19 @@ test('the join names the work collection it was given', () => {
 })
 
 test('a list carries neither the notes nor the owner it does not render', () => {
-  assert.deepEqual(stage(filmsOf('u1'), '$project'), { review: 0, userId: 0 })
+  assert.deepEqual(stage(filmsOf('u1'), '$project'), {
+    review: 0,
+    userId: 0,
+    commonMetadata: 0,
+  })
+})
+
+test('the stale copy of the work is dropped, not sent alongside the fresh one', () => {
+  // `commonMetadata` on the document is a pre-migration snapshot of the work
+  // the `$lookup` has just fetched, and the caller overwrites it with
+  // `work.data`. Unprojected it was 1.2 MB read out of Atlas per profile load
+  // to be thrown away in Node. See #176.
+  assert.equal(stage(filmsOf('u1'), '$project').commonMetadata, 0)
 })
 
 test('the pipeline is built fresh, so a caller cannot mutate the next one', () => {
