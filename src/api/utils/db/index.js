@@ -26,30 +26,25 @@ const { _findOne, _findMany, _countScoresByValue, _findOneByField, _findOneByRef
 const { compose } = require('ramda')
 const { withTransaction } = require('./db')
 const { toResponse, toResult } = require('./into_safe_values')
-const { isFound } = require('./found')
 const errors = require('../errors')
 
 /** @typedef {import('./queries').QueryOptions} QueryOptions */
 /** @typedef {import('mongodb').ClientSession} ClientSession */
 
-/** @type {(collection: ValidCollection, ref: string) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, ref: string) => ResultAsync<any | null, Error>} */
 const findOneByRef_ = compose(toResult, _findOneByRef)
 
-/** @type {(collection: ValidCollection, field: string, value: any) => Promise<Response>} */
-const findOneByField = compose(toResponse, _findOneByField)
-
-/** @type {(collection: ValidCollection, field: string, value: any) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, field: string, value: any) => ResultAsync<any | null, Error>} */
 const findOneByField_ = compose(toResult, _findOneByField)
 
 /**
  * The same read, for a caller that cannot carry on without the document.
  *
- * `findOneByField_` reports "no such document" as `{}`, which is the right
- * answer for the callers that test it — see ./found.js — and a trap for the
- * ones that destructure it. Absence becomes an err here instead, so the rest
- * of the chain simply does not run and the `mapErr` every controller already
- * ends with turns it into a 404. Two endpoints answered 502 for want of this;
- * see #139.
+ * `findOneByField_` answers a miss with `null`, which the callers that treat
+ * absence as a normal answer test for. Absence becomes an err here instead,
+ * so the rest of the chain simply does not run and the `mapErr` every
+ * controller already ends with turns it into a 404. Two endpoints answered
+ * 502 for want of this; see #139.
  *
  * The err carries no `detail`. A name nobody has taken is a normal answer to a
  * public, unauthenticated route rather than a fault, and `responses.fromError`
@@ -59,31 +54,31 @@ const findOneByField_ = compose(toResult, _findOneByField)
  */
 const findOneByFieldOrFail_ = (collection, field, value) =>
   findOneByField_(collection, field, value)
-    .andThen((found) => isFound(found) ? okAsync(found) : errAsync(errors.notFound()))
+    .andThen((document) => document ? okAsync(document) : errAsync(errors.notFound()))
 
 /**
  * The general form of the two above: a filter of as many fields as the caller
  * needs, and `{ projection, sort, limit }` for the parts of the work the
  * database can do and the caller shouldn't.
- * @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => ResultAsync<any, Error>}
+ * @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => ResultAsync<any | null, Error>}
  */
 const findOne_ = compose(toResult, _findOne)
 
-/** @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, filter: object, options?: QueryOptions) => ResultAsync<any[], Error>} */
 const findMany_ = compose(toResult, _findMany)
 
 /**
  * A count per distinct score, rather than the documents to count. Rows of
- * `{ _id, count }` and not documents, so unlike everything else here they
- * carry no `ref`.
+ * `{ _id, count }` and not documents, so `_id` here is a score rather than
+ * the id of anything.
  * @type {(collection: ValidCollection, userId: string) => ResultAsync<{ _id: any, count: number }[], Error>}
  */
 const countScoresByValue_ = compose(toResult, _countScoresByValue)
 
-/** @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => ResultAsync<any[], Error>} */
 const findAllByFieldIn_ = compose(toResult, _findAllByFieldIn)
 
-/** @type {(collection: ValidCollection, userId: string, limit?: number) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, userId: string, limit?: number) => ResultAsync<{ entry: any, work: any }[], Error>} */
 const findAllUserEntriesWithMetadata_ = compose(toResult, _findAllUserEntriesWithMetadata)
 
 /** @type {(collection: ValidCollection, ref: string, update: any, session?: ClientSession) => Promise<Response>} */
@@ -109,13 +104,11 @@ const create_ = compose(toResult, _create)
 
 module.exports = {
   withTransaction,
-  isFound,
   findOneByRef_,
   findOne_,
   findMany_,
   countScoresByValue_,
   findAllByFieldIn_,
-  findOneByField,
   findOneByField_,
   findOneByFieldOrFail_,
   findAllUserEntriesWithMetadata_,

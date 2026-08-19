@@ -79,8 +79,8 @@ test('a list carries neither the notes nor the owner it does not render', () => 
 
 test('the stale copy of the work is dropped, not sent alongside the fresh one', () => {
   // `commonMetadata` on the document is a pre-migration snapshot of the work
-  // the `$lookup` has just fetched, and the caller overwrites it with
-  // `work.data`. Unprojected it was 1.2 MB read out of Atlas per profile load
+  // the `$lookup` has just fetched, and the caller overwrites it with the
+  // joined one. Unprojected it was 1.2 MB read out of Atlas per profile load
   // to be thrown away in Node. See #176.
   assert.equal(stage(filmsOf('u1'), '$project').commonMetadata, 0)
 })
@@ -148,9 +148,9 @@ test('a session is passed through, so a read can join a transaction', () => {
   })
 })
 
-test('a projection cannot drop the _id that becomes ref.id', () => {
-  // Without `_id` the wrapper hands back `ref: { id: undefined }`, and a row
-  // nothing can update or delete looks exactly like one that can.
+test('a projection cannot drop the _id a caller acts on', () => {
+  // `_id` is what an update or a delete names. Without it a row nothing can
+  // act on looks exactly like one that can — a missing field, not an error.
   assert.deepEqual(toFindOptions({ projection: { _id: 0, score: 1 } }), {
     projection: { score: 1 },
   })

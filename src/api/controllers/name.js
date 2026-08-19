@@ -14,8 +14,8 @@ const { username: parseUsername } = require('../utils/parsers/users')
 const findOwnName = (event) => toPromise(
   getUserId(event)
     .andThen((userId) => findOneByField_('users', 'userId', userId))
-    .map(({ data }) => data
-      ? responses.ok({ username: data.username })
+    .map((user) => user
+      ? responses.ok({ username: user.username })
       : responses.ok(feErrors.noUsernameSet())
     )
     .mapErr(() => responses.ok({}))
@@ -28,11 +28,15 @@ const findOwnName = (event) => toPromise(
  * before it draws a list and only looks at whether an answer came back — the
  * whole user document, `userId` included, used to come back with it. See
  * #105, and user.js for the same projection on the profile route.
+ *
+ * The `data` wrapper is this route's wire contract, spelled out here because
+ * it is no longer the shape the db module hands over: a bundle cached before
+ * this change still reads `resp.data`.
  * @type {(event: Event) => Promise<Response>}
  */
 const getUserIdFromName = (event) => toPromise(
   findOneByField_('users', 'username', getSegment(0, event))
-    .map(({ data }) => data ? { data: { username: data.username } } : {})
+    .map((user) => user ? { data: { username: user.username } } : {})
     .map(responses.ok)
     .mapErr(responses.fromError)
 )
@@ -77,7 +81,7 @@ const assignNameIfNotTaken = ([userId, { newName }]) =>
   toAsync(parseUsername(newName))
     .andThen((name) =>
       findOneByField_('users', 'username', name)
-        .andThen(({ data }) => data
+        .andThen((taken) => taken
             ? okAsync(responses.ok(feErrors.nameTaken(name)))
             : assignName(userId, name).map(() => responses.ok())
         )
@@ -86,7 +90,7 @@ const assignNameIfNotTaken = ([userId, { newName }]) =>
 /** @type {(userId: string, newName: string) => ResultAsync<any, Error>} */
 const assignName = (userId, newName) =>
   findOneByField_('users', 'userId', userId)
-    .andThen(({ ref }) => ref
-      ? updateByRef_('users', ref.id, { username: newName })
+    .andThen((user) => user
+      ? updateByRef_('users', user._id, { username: newName })
       : create_('users', { userId, username: newName })
     )

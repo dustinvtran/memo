@@ -45,15 +45,15 @@ const COLLECTION = 'entryRevisions'
  */
 const getVersions = (event) =>
   withOwnedEntry(event, async ({ collection, entry }) => {
-    const review = await findReview(collection, entry.ref.id)
-    const revisions = await findRevisions(entry.ref.id)
+    const review = await findReview(collection, entry._id)
+    const revisions = await findRevisions(entry._id)
 
     return responses.ok({
       versions: toVersionList(
         {
           id: 'current',
-          createdDate: entry.data.updatedDate ?? null,
-          snapshot: toSnapshot(entry.data, review?.text),
+          createdDate: entry.updatedDate ?? null,
+          snapshot: toSnapshot(entry, review?.text),
         },
         revisions.map((revision) => ({
           id: revision._id,
@@ -68,11 +68,11 @@ const getVersions = (event) =>
 /** @type {(event: Event) => Promise<Response>} */
 const getDraft = (event) =>
   withOwnedEntry(event, async ({ userId, entry }) => {
-    const draft = await findDraft(entry.ref.id, userId)
+    const draft = await findDraft(entry._id, userId)
 
     return responses.ok({
       draft: draft
-        ? { createdDate: draft.data.createdDate, snapshot: draft.data.snapshot }
+        ? { createdDate: draft.createdDate, snapshot: draft.snapshot }
         : null,
     })
   })
@@ -87,7 +87,7 @@ const saveDraft = (event) =>
     // the update path (which doesn't go through a parser) can't store
     // whatever the client felt like sending.
     const draft = parsers[COLLECTION]({
-      entryRef: entry.ref.id,
+      entryRef: entry._id,
       entryType,
       userId,
       kind: 'draft',
@@ -96,20 +96,20 @@ const saveDraft = (event) =>
     })
     if (draft.isErr()) return responses.fromError(draft.error)
 
-    const existing = await findDraft(entry.ref.id, userId)
+    const existing = await findDraft(entry._id, userId)
 
     return existing
-      ? db.updateByRef(COLLECTION, existing.ref.id, draft.value)
+      ? db.updateByRef(COLLECTION, existing._id, draft.value)
       : db.create(COLLECTION, draft.value)
   })
 
 /** @type {(event: Event) => Promise<Response>} */
 const deleteDraft = (event) =>
   withOwnedEntry(event, async ({ userId, entry }) => {
-    const draft = await findDraft(entry.ref.id, userId)
+    const draft = await findDraft(entry._id, userId)
 
     return draft
-      ? db.deleteByRef(COLLECTION, draft.ref.id)
+      ? db.deleteByRef(COLLECTION, draft._id)
       : responses.ok({ deleted: 0 })
   })
 
@@ -130,36 +130,36 @@ const recordRevision = async ({
   nextSnapshot,
 }) => {
   try {
-    const previous = toSnapshot(entry.data, previousReview)
+    const previous = toSnapshot(entry, previousReview)
     if (!hasChanges(previous, nextSnapshot)) return
 
     const now = Date.now()
     const created = await db.create_(COLLECTION, {
-      entryRef: entry.ref.id,
+      entryRef: entry._id,
       entryType,
-      userId: entry.data.userId,
+      userId: entry.userId,
       kind: 'revision',
       // An entry without an `updatedDate` has no known save time, and "as of
       // the moment it was replaced" is the closest honest answer.
-      createdDate: entry.data.updatedDate ?? now,
+      createdDate: entry.updatedDate ?? now,
       supersededDate: now,
       snapshot: previous,
     })
     if (created.isErr()) {
-      warn(`Could not record a revision for ${entry.ref.id}: ${created.error}`)
+      warn(`Could not record a revision for ${entry._id}: ${created.error}`)
       return
     }
 
-    await pruneRevisions(entry.ref.id)
+    await pruneRevisions(entry._id)
   } catch (error) {
-    warn(`Could not record a revision for ${entry?.ref?.id}: ${error}`)
+    warn(`Could not record a revision for ${entry?._id}: ${error}`)
   }
 }
 
 /** @type {(entryRef: string, userId: string) => Promise<void>} */
 const discardDraft = async (entryRef, userId) => {
   const draft = await findDraft(entryRef, userId)
-  if (draft) await db.deleteByRef_(COLLECTION, draft.ref.id).unwrapOr(undefined)
+  if (draft) await db.deleteByRef_(COLLECTION, draft._id).unwrapOr(undefined)
 }
 
 /** Called when an entry is deleted: its history has nothing left to describe. */
@@ -195,7 +195,7 @@ const withOwnedEntry = (event, respond) => toPromise(
       ]))
     )
     .map(([userId, collection, entry]) =>
-      entry?.data?.userId === userId
+      entry?.userId === userId
         ? respond({
             userId,
             entryType: toEntryType(collection),
@@ -218,36 +218,27 @@ const VERSION_FIELDS = { createdDate: 1, supersededDate: 1, snapshot: 1 }
 const PRUNE_FIELDS = { createdDate: 1 }
 
 /** @type {(entryRef: string, projection?: object) => Promise<any[]>} */
-const findRevisions = async (entryRef, projection = VERSION_FIELDS) =>
-  (
-    await db
-      .findMany_(COLLECTION, { entryRef, kind: 'revision' }, { projection })
-      .unwrapOr([])
-  ).map(({ data }) => data)
+const findRevisions = (entryRef, projection = VERSION_FIELDS) =>
+  db
+    .findMany_(COLLECTION, { entryRef, kind: 'revision' }, { projection })
+    .unwrapOr([])
 
 /**
  * There is one draft per entry per user, which is two fields to ask on. Asking
  * on `entryRef` alone meant reading every revision of the entry — up to 50
  * snapshots, each carrying a full copy of the note — to keep one document.
- * @type {(entryRef: string, userId: string) => Promise<any | undefined>}
+ * @type {(entryRef: string, userId: string) => Promise<any | null>}
  */
-const findDraft = async (entryRef, userId) => {
-  const found = await db
+const findDraft = (entryRef, userId) =>
+  db
     .findOne_(COLLECTION, { entryRef, userId, kind: 'draft' })
-    .unwrapOr({})
+    .unwrapOr(null)
 
-  // A miss is `{}` from the db module, and every caller here tests the draft
-  // for truthiness before reaching into it.
-  return db.isFound(found) ? found : undefined
-}
-
-/** @type {(collection: ValidCollection, entryRef: string) => Promise<any | undefined>} */
-const findReview = async (collection, entryRef) =>
-  (
-    await db
-      .findOneByField_(toReviewCollection(collection), 'entryRef', entryRef)
-      .unwrapOr({})
-  )?.data
+/** @type {(collection: ValidCollection, entryRef: string) => Promise<any | null>} */
+const findReview = (collection, entryRef) =>
+  db
+    .findOneByField_(toReviewCollection(collection), 'entryRef', entryRef)
+    .unwrapOr(null)
 
 const pruneRevisions = async (entryRef) => {
   const revisions = await findRevisions(entryRef, PRUNE_FIELDS)

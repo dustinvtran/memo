@@ -22,12 +22,16 @@ const { getSegment } = require('./utils')
  *
  * A name nobody has taken still answers 200 with an empty body, which is what
  * the profile page turns into its own 404.
+ *
+ * The `data` wrapper is the wire contract rather than a shape the db module
+ * hands over — the profile page reads `resp.data`, and a bundle cached before
+ * this change still does. See name.js for the same on the other probe.
  * @type {(event: Event) => Promise<Response>}
  */
 const getUserFromName = (event) => toPromise(
   findOneByField_('users', 'username', getSegment(0, event))
-    .map(({ data }) => data
-      ? { data: { username: data.username, biography: data.biography } }
+    .map((user) => user
+      ? { data: { username: user.username, biography: user.biography } }
       : {}
     )
     .map(responses.ok)

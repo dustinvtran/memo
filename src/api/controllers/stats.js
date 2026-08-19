@@ -28,12 +28,12 @@ const { toScoreTally, toStats } = require('../utils/score_tallies')
  */
 const getUserStats = (event) => toPromise(
   db.findOneByFieldOrFail_('users', 'username', getSegment(0, event))
-    .andThen(result => {
+    .andThen(user => {
       // The stored tallies stand for 48 hours; past that they are recomputed.
-      const stats = result?.data?.stats
+      const stats = user?.stats
       const lastUpdated = stats?.updatedDate
       if (!lastUpdated || isMoreThan48HoursAgo(lastUpdated)) {
-        return refreshStats(result)
+        return refreshStats(user)
       } else {
         return okAsync(responses.ok(toStats(stats.scores, lastUpdated)))
       }
@@ -69,7 +69,7 @@ const refreshStats = (userDocument) =>
   combine(
     entryCollections.map((collection) =>
       db
-        .countScoresByValue_(collection, userDocument.data.userId)
+        .countScoresByValue_(collection, userDocument.userId)
         // A `$group` returns a row only for a score somebody used, and the
         // stored shape needs all eleven buckets or `users` fails validation.
         .map(toScoreTally)
@@ -82,7 +82,7 @@ const refreshStats = (userDocument) =>
     // computing it a second time for the caller would have dated the numbers
     // to a moment other than the one recorded beside them.
     .andThen((stats) =>
-      db.updateByRef_('users', userDocument.ref.id, { stats })
+      db.updateByRef_('users', userDocument._id, { stats })
         .map(() => responses.ok(stats))
     )
 

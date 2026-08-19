@@ -65,7 +65,7 @@ const getReqBody = Result.fromThrowable(
 /** @type {(name: string) => ResultAsync<string, Error>} */
 const findIdOfName = (name) =>
   db.findOneByField_('users', 'username', name)
-    .map(result => result?.data?.userId)
+    .map((user) => user?.userId)
 
 /**
  * The `:type` URL segment every entry-scoped route starts with. A segment

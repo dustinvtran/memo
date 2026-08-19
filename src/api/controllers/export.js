@@ -89,20 +89,19 @@ module.exports = {
  * @type {(collection: ValidCollection, userId: string, limit?: number) => Promise<object[]>}
  */
 const findListEntries = async (collection, userId, limit) => {
-  const found = await db
+  const rows = await db
     .findAllUserEntriesWithMetadata_(collection, userId, limit)
-    .unwrapOr({ data: [] })
+    .unwrapOr([])
 
-  const rows = found?.data ?? []
   const reviews = await findReviews(
     toReviewCollection(collection),
-    rows.map(({ entry }) => entry?.ref?.id).filter(Boolean)
+    rows.map(({ entry }) => entry?._id).filter(Boolean)
   )
 
   return rows.map(({ entry, work }) => ({
-    entry: entry?.data ?? {},
-    work: work?.data ?? {},
-    review: reviews.get(entry?.ref?.id),
+    entry: entry ?? {},
+    work: work ?? {},
+    review: reviews.get(entry?._id),
   }))
 }
 
@@ -121,7 +120,6 @@ const findReviews = async (collection, entryRefs) => {
 
   return new Map(
     (found ?? [])
-      .map(({ data }) => data)
       .filter((review) => review?.entryRef && review?.text)
       .map((review) => [review.entryRef, review.text])
   )
