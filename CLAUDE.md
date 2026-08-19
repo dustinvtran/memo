@@ -93,6 +93,24 @@ the API is simply fine — verified on a preview, where `require` of an
 ESM-only package returns cleanly on a runtime still reporting
 `features.require_module: false`.
 
+**`jose` is the first dependency to actually rely on that.** #144 held it
+back for years as the hard one, #170 took it as far as 4.x and recorded
+that `SignJWT` and `jwtVerify` there are already the API 5 and 6 want, and
+#168 tried 6 and was reverted for exactly the reason above. Nothing about
+the package has changed since: `node --no-experimental-require-module -e
+"require('jose')"` still throws `ERR_REQUIRE_ESM` on 6.x. Only the bundler
+underneath it changed, and #170's reading held, so the upgrade was
+packaging rather than a rewrite.
+
+What is worth knowing is that the tree is no longer single-version.
+`openid-client` 5 asks for `jose` ^4, so npm nests a copy under it and
+esbuild inlines both: the session token is signed and verified on 6, while
+login and callback go on reaching 4 through `openid-client`. That is fine
+— separate call graphs, and neither hands the other a key — and `npm ls
+jose` is where it shows up. It stops being true when `openid-client`
+reaches 6, which is a rewrite of that library's API and its own job
+(#182).
+
 **What still bites.** `external_node_modules` bypasses the bundler by
 design, so anything in that list is copied rather than inlined and the
 original rule applies to it unchanged. `mongodb` is there because it reaches
