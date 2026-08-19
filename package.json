@@ -22,7 +22,7 @@
     "dotenv": "^17.2.3",
     "html-minifier": "^4.0.0",
     "igdb-api-node": "^5.0.1",
-    "jose": "^2.0.2",
+    "jose": "^4.15.9",
     "mongodb": "^6.20.0",
     "neverthrow": "^4.3.1",
     "node-themoviedb": "^0.2.8",

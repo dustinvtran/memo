@@ -4,7 +4,7 @@
 /** @typedef {import('../utils/errors').Error} Error */
 const { combine, okAsync, ResultAsync } = require('neverthrow')
 const { findOneByField_, updateByRef_, create_ } = require('../utils/db')
-const { pair, toPromise } = require('../utils/general')
+const { pair, toAsync, toPromise } = require('../utils/general')
 const responses = require('../utils/responses')
 const { getUserId, getReqBody, getSegment } = require('./utils')
 const feErrors = require('../utils/frontend_errors')
@@ -12,7 +12,7 @@ const feErrors = require('../utils/frontend_errors')
 /** @type {(event: Event) => Promise<Response>} */
 const findOwnName = (event) => toPromise(
   getUserId(event)
-    .asyncAndThen((userId) => findOneByField_('users', 'userId', userId))
+    .andThen((userId) => findOneByField_('users', 'userId', userId))
     .map(({ data }) => data
       ? responses.ok({ username: data.username })
       : responses.ok(feErrors.noUsernameSet())
@@ -40,9 +40,9 @@ const getUserIdFromName = (event) => toPromise(
 const setOwnName = (event) => toPromise(
   combine(pair([
     getUserId(event),
-    getReqBody(event)
+    toAsync(getReqBody(event))
   ]))
-    .asyncAndThen(assignNameIfNotTaken)
+    .andThen(assignNameIfNotTaken)
     .mapErr(responses.fromError)
 )
 

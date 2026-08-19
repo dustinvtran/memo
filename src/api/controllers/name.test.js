@@ -117,7 +117,11 @@ class MongoClient {
 const loadModule = Module._load
 Module._load = function (request, ...args) {
   if (request === 'mongodb') return { MongoClient, ServerApiVersion: { v1: '1' } }
-  if (request === 'jose') return { JWT: { verify: (token) => ({ sub: token }) } }
+  // jose verifies asynchronously from v4 on, and answers with the payload
+  // wrapped rather than the payload itself. A test's token is its user id.
+  if (request === 'jose') {
+    return { jwtVerify: async (token) => ({ payload: { sub: token } }) }
+  }
   return loadModule.call(this, request, ...args)
 }
 

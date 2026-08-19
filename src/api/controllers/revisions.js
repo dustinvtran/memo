@@ -28,7 +28,7 @@ const {
   toEntryType,
   toReviewCollection,
 } = require('./utils')
-const { triplet, toAsync, toPromise, warn } = require('../utils/general')
+const { triplet, toPromise, warn } = require('../utils/general')
 const {
   toSnapshot,
   hasChanges,
@@ -189,7 +189,7 @@ const withOwnedEntry = (event, respond) => toPromise(
   toEntryCollection(getSegment(0, event))
     .asyncAndThen((collection) =>
       combine(triplet([
-        toAsync(getUserId(event)),
+        getUserId(event),
         okAsync(collection),
         db.findOneByRef_(collection, getSegment(1, event)),
       ]))

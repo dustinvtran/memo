@@ -37,10 +37,10 @@ const getAllEntriesForUser = (event) => toPromise(
 const createNewUserListEntry = (event) => toPromise(
   combine(triplet([
     getUserId(event),
-    getReqBody(event),
-    toEntryCollection(getSegment(0, event)),
+    toAsync(getReqBody(event)),
+    toAsync(toEntryCollection(getSegment(0, event))),
   ]))
-    .asyncMap(createEntry)
+    .map(createEntry)
     .mapErr(responses.fromError)
 )
 
@@ -49,7 +49,7 @@ const updateEntry = (event) => toPromise(
   toEntryCollection(getSegment(0, event))
     .asyncAndThen((col) =>
       combine(quad([
-        toAsync(getUserId(event)),
+        getUserId(event),
         toAsync(getReqBody(event)),
         okAsync(col),
         db.findOneByRef_(col, getSegment(1, event)),
@@ -64,7 +64,7 @@ const deleteEntry = (event) => toPromise(
   toEntryCollection(getSegment(0, event))
     .asyncAndThen((col) =>
       combine(triplet([
-        toAsync(getUserId(event)),
+        getUserId(event),
         okAsync(col),
         db.findOneByRef_(col, getSegment(1, event)),
       ]))
