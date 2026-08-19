@@ -91,10 +91,10 @@ module.exports = {
 /** @type {([uid, col, limit]: [string, ValidCollection, string | undefined]) => Promise<any>} */
 const getUserEntries = ([uid, col, limit]) => toResponse(toPromise(
   db.findAllUserEntriesWithMetadata_(col, uid, parseInt(limit ?? '') || undefined)
-    .map(({ data }) => data.map(({ entry, work }) => ({
-      ...entry.data,
-      commonMetadata: work.data,
-      dbRef: entry.ref.id
+    .map((rows) => rows.map(({ entry, work }) => ({
+      ...entry,
+      commonMetadata: work,
+      dbRef: entry._id
     })))
 ))
 

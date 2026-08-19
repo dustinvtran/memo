@@ -83,7 +83,7 @@ const countScoresByValue_ = compose(toResult, _countScoresByValue)
 /** @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => ResultAsync<any, Error>} */
 const findAllByFieldIn_ = compose(toResult, _findAllByFieldIn)
 
-/** @type {(collection: ValidCollection, userId: string, limit?: number) => ResultAsync<any, Error>} */
+/** @type {(collection: ValidCollection, userId: string, limit?: number) => ResultAsync<{ entry: any, work: any }[], Error>} */
 const findAllUserEntriesWithMetadata_ = compose(toResult, _findAllUserEntriesWithMetadata)
 
 /** @type {(collection: ValidCollection, ref: string, update: any, session?: ClientSession) => Promise<Response>} */

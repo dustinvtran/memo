@@ -93,20 +93,18 @@ const _create = (collection, data, session) =>
  * job rather than this function's, so a limited request joins the metadata
  * onto the entries it is going to return instead of onto all of them.
  *
- * @type {(collection: 'filmEntries' | 'gameEntries' | 'tvShowEntries' | 'bookEntries', userId: string, limit?: number) => Promise<object>}
+ * @type {(collection: 'filmEntries' | 'gameEntries' | 'tvShowEntries' | 'bookEntries', userId: string, limit?: number) => Promise<{ entry: any, work: any }[]>}
  */
-const _findAllUserEntriesWithMetadata = async (collection, userId, limit) => {
+const _findAllUserEntriesWithMetadata = (collection, userId, limit) => {
   const { works: workCollection, entryType } =
     workTypes.byEntryCollection(collection) ?? {}
 
-  const results = await mongo((db) => db
+  return mongo((db) => db
     .collection(collection)
     .aggregate(toUserEntriesPipeline({ userId, workCollection, limit }))
     .toArray()
     .then((arr) => arr.map((row) => toEntryWithMetadata(row, entryType)))
   )
-
-  return { data: results }
 }
 
 /**
