@@ -31,6 +31,15 @@ const RETRYABLE_CODES = new Set([
   'ERR_NETWORK',
 ])
 
+/**
+ * Codes that only restate a status the error already carries. axios 1.x puts
+ * `ERR_BAD_REQUEST` on any 4xx and `ERR_BAD_RESPONSE` on any 5xx; 0.x left
+ * `code` unset for those. They are shaped exactly like an errno, so taken at
+ * face value they turn "HTTP 503" into "HTTP 503 ERR_BAD_RESPONSE" in the
+ * logs and in what the caller is told, for no added information.
+ */
+const RESTATED_STATUS_CODES = new Set(['ERR_BAD_REQUEST', 'ERR_BAD_RESPONSE'])
+
 /** Attempts in total, not retries after the first. */
 const ATTEMPTS = 3
 
@@ -50,10 +59,18 @@ const statusOf = (err) =>
   ?? err?.errorCode
   ?? err?.status
 
+/**
+ * The code the client of the day put on the error, minus the ones that say
+ * nothing `statusOf` has not already said.
+ * @type {(err: any) => any}
+ */
+const codeOf = (err) =>
+  RESTATED_STATUS_CODES.has(err?.code) ? undefined : err?.code
+
 /** @type {(err: any) => boolean} */
 const isTransient = (err) =>
   RETRYABLE_STATUSES.has(/** @type any */ (statusOf(err)))
-  || RETRYABLE_CODES.has(err?.code)
+  || RETRYABLE_CODES.has(codeOf(err))
 
 /**
  * Exponential, capped so three attempts stay well inside a function's
@@ -72,9 +89,11 @@ const backoffMs = (attempt) =>
 const describeFailure = (err) => {
   const status = statusOf(err)
 
+  const code = codeOf(err)
+
   return [
     status === undefined ? undefined : `HTTP ${status}`,
-    typeof err?.code === 'string' ? err.code : undefined,
+    typeof code === 'string' ? code : undefined,
     err?.message,
   ]
     .filter((part) => part)
@@ -103,9 +122,10 @@ const ERRNO_CODE = /^[A-Z][A-Z0-9_]*$/
  */
 const publicFailure = (who, err) => {
   const status = statusOf(err)
+  const code = codeOf(err)
   const failure = [
     status === undefined ? undefined : `HTTP ${status}`,
-    ERRNO_CODE.test(err?.code) ? err.code : undefined,
+    ERRNO_CODE.test(code) ? code : undefined,
   ]
     .filter((part) => part)
     .join(' ')
@@ -146,7 +166,9 @@ module.exports = {
   MAX_DELAY_MS,
   RETRYABLE_CODES,
   RETRYABLE_STATUSES,
+  RESTATED_STATUS_CODES,
   backoffMs,
+  codeOf,
   describeFailure,
   isTransient,
   publicFailure,

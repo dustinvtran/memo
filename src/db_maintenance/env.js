@@ -31,6 +31,9 @@ const path = require("path");
 /** The .env this process will read, whether or not it exists. */
 const envFile = process.env.MEMO_ENV_FILE ?? path.join(__dirname, ".env");
 
-require("dotenv").config({ path: envFile });
+// `quiet` because dotenv 17 otherwise announces itself on stdout on every
+// load — a banner with the path to the credentials file in it, in the
+// middle of a maintenance script's output.
+require("dotenv").config({ path: envFile, quiet: true });
 
 module.exports = { envFile };
