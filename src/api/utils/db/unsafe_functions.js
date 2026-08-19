@@ -13,7 +13,11 @@
 /** @typedef {import('mongodb').ObjectId} ObjectId */
 /** @typedef {import('mongodb').ClientSession} ClientSession */
 const { mongo } = require('./db')
-const { v4: uuidv4 } = require('uuid')
+// The platform generates the v4 string, rather than the `uuid` package: these
+// functions are CommonJS and the deployed functions runtime cannot `require` an
+// ES module, which is what uuid became at v13 — every route 502'd on load. Node
+// has had `randomUUID` since 14.17 and it produces the same kind of _id.
+const { randomUUID } = require('node:crypto')
 const { throwIt } = require('../general')
 const parsers = require('../parsers/')
 const { toSameFormatAsFaunaDb, toEntryWithMetadata } = require('./shapes')
@@ -176,7 +180,7 @@ const unsafeCreateDoc = (collection, data, session) =>
   mongo((db) => db
     .collection(collection)
     .insertOne({
-      _id: uuidv4(),
+      _id: randomUUID(),
       ...data,
     }, { session })
     // Read back through the same session: an insert made inside a transaction
