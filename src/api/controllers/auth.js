@@ -101,6 +101,25 @@ const generateNetlifyCookie = (netlifyToken) =>
     secure: !isRunningLocally,
     path: "/",
     maxAge: NETLIFY_JWT_EXPIRATION_SECONDS,
+    // Unlike the login cookie above, this one is only ever sent to us by our
+    // own pages: the API is same-origin and the frontend reads the cookie and
+    // repeats it as a bearer header anyway. So the widest thing SameSite has
+    // to allow is a top-level navigation back to the site, and Lax allows
+    // exactly that. It does not get in the way of the Auth0 callback either —
+    // SameSite decides when a cookie is *sent*, and setting one on that
+    // cross-site form_post is unaffected; the redirect that follows it is a
+    // same-site GET.
+    //
+    // Chrome already treats an unset SameSite as Lax, so on that browser this
+    // changes nothing and is written down instead of assumed. Elsewhere the
+    // default is still None, which is where it was worth something.
+    //
+    // Not `httpOnly`, which is the change this cookie actually wants and
+    // cannot have yet: `Http.getToken` reads it from `document.cookie` and
+    // `refreshTokenIfNecessary` parses its `exp` there, so hiding it means
+    // moving the API to the cookie `getNetlifyJWTFromEvent` already accepts.
+    // Its own issue, not this one (#173).
+    sameSite: "lax",
   })
 
 const generateNetlifyCookieFromAuth0Token = async (tokenData) =>
