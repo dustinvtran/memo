@@ -70,7 +70,7 @@ const fromError = (error) => {
  * `fromError` is how a failure becomes a response. The bare constructors take
  * whatever body they are given and send it, which is fine for a body written
  * on purpose and is how an error object came to be serialised into a 500 —
- * `internalError` has no callers left for that reason.
+ * so there is no bare 500 here to reach for.
  */
 module.exports = {
   JSON_CONTENT_TYPE,
@@ -80,7 +80,6 @@ module.exports = {
   unauthorized: response(401),
   notFound: response(404),
   payloadTooLarge: response(413),
-  internalError: response(500),
   fromError,
 }
 

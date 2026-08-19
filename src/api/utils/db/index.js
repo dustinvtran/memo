@@ -22,7 +22,7 @@
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../errors').Error} Error */
 const { ResultAsync, okAsync, errAsync } = require('neverthrow')
-const { _findOne, _findMany, _countScoresByValue, _findOneByField, _findOneByRef, _findAllByFieldIn, _findAllInCollection, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
+const { _findOne, _findMany, _countScoresByValue, _findOneByField, _findOneByRef, _findAllByFieldIn, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
 const { compose } = require('ramda')
 const { withTransaction } = require('./db')
 const { toResponse, toResult } = require('./into_safe_values')
@@ -31,9 +31,6 @@ const errors = require('../errors')
 
 /** @typedef {import('./queries').QueryOptions} QueryOptions */
 /** @typedef {import('mongodb').ClientSession} ClientSession */
-
-/** @type {(collection: ValidCollection, ref: string) => Promise<Response>} */
-const findOneByRef = compose(toResponse, _findOneByRef)
 
 /** @type {(collection: ValidCollection, ref: string) => ResultAsync<any, Error>} */
 const findOneByRef_ = compose(toResult, _findOneByRef)
@@ -89,9 +86,6 @@ const findAllByFieldIn_ = compose(toResult, _findAllByFieldIn)
 /** @type {(collection: ValidCollection, userId: string, limit?: number) => ResultAsync<any, Error>} */
 const findAllUserEntriesWithMetadata_ = compose(toResult, _findAllUserEntriesWithMetadata)
 
-/** @type {(collection: ValidCollection) => Promise<Response>} */
-const findAll = compose(toResponse, _findAllInCollection)
-
 /** @type {(collection: ValidCollection, ref: string, update: any, session?: ClientSession) => Promise<Response>} */
 const updateByRef = compose(toResponse, _updateOneByRef)
 
@@ -116,9 +110,7 @@ const create_ = compose(toResult, _create)
 module.exports = {
   withTransaction,
   isFound,
-  findOneByRef,
   findOneByRef_,
-  findAll,
   findOne_,
   findMany_,
   countScoresByValue_,
