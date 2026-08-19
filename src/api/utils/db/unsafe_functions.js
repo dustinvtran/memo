@@ -49,10 +49,6 @@ const _findOneByField = (collection, field, value) =>
 const _findOneByRef = (collection, ref) =>
   findFirst(collection, { _id: ref })
 
-/** @type {(collection: ValidCollection) => Promise<object>} */
-const _findAllInCollection = (collection) =>
-  find(collection, {})
-
 /**
  * One query for many values of the same field, rather than one query per
  * value. A whole list's reviews are 400-odd `entryRef`s, and 400 round trips
@@ -136,7 +132,6 @@ module.exports = {
   _countScoresByValue,
   _findOneByField,
   _findOneByRef,
-  _findAllInCollection,
   _findAllByFieldIn,
   _findAllUserEntriesWithMetadata,
   _updateOneByRef,
