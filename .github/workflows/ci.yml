@@ -67,21 +67,52 @@ jobs:
       # writing the names here again would be a third place for them to drift.
       - name: The shipped assets must exist and be non-empty
         run: |
-          # Anchored on the opening quote so this matches a root-relative url
-          # and not the `/css/` inside a CDN one — Font Awesome's is
-          # `…/font-awesome/6.7.2/css/all.min.css`, which is not ours to check.
-          urls=$(grep -o '"/\(js\|css\)/[^"]*"' dist/index.html | tr -d '"' | sort -u)
+          # The bundle and the stylesheet are read too, not just `index.html`.
+          # `/img/mawaru.png` is the fallback cover on every row without one
+          # and `/img/memo_logo.png` is the header, and both are named only
+          # from JavaScript, so scanning the page alone never saw them.
+          # Reading what shipped rather than listing it here also covers an
+          # asset added later without anyone remembering to come back.
+          #
+          # The url has to be preceded by something that cannot be part of a
+          # path - a quote, a `(` - so that a CDN url is not mistaken for one
+          # of ours: Font Awesome's ends `/6.7.2/css/all.min.css`, and the
+          # character before its `/css/` is a digit.
+          urls=$(cat dist/index.html dist/js/bundle.*.js dist/css/main.*.css \
+                 | grep -o '[^A-Za-z0-9._-]/\(js\|css\|img\)/[A-Za-z0-9._-]*' \
+                 | cut -c2- | sort -u)
           if [ -z "$urls" ]; then
-            echo "index.html references no local js or css at all"
+            echo "the build references no local js, css or img at all"
             exit 1
           fi
           for url in $urls; do
             if [ ! -s "dist$url" ]; then
-              echo "index.html references $url, which the build did not write" \
-                   "— every url that asks for it is served the homepage's HTML"
+              echo "the site references $url, which the build did not write" \
+                   "and every url that asks for it is served the homepage's HTML"
               exit 1
             fi
             echo "ok: dist$url"
+          done
+
+      # Neither of these is referenced by anything, so the scan above cannot
+      # reach them, and both are read by Netlify from the publish directory
+      # rather than from the repo. They arrive by passthrough copy, which is
+      # exactly the kind of thing that stops matching quietly.
+      #
+      # `_redirects` is the one whose absence breaks pages that are otherwise
+      # fine: without it Netlify answers `/films/nil` with a 404 instead of
+      # the app. `_headers` fails more quietly still — the site works, and
+      # every hashed asset is re-fetched on every navigation, which is the
+      # whole point of #142 undone with nothing to show for it.
+      - name: The routing and header files must ship
+        run: |
+          for file in _redirects _headers; do
+            test -s "dist/$file" || {
+              echo "dist/$file is missing or empty, and Netlify reads it from" \
+                   "the publish directory — nothing else will notice"
+              exit 1
+            }
+            echo "ok: dist/$file"
           done
 
       # Today `npm run build` is what actually goes red on a bundle that will
