@@ -60,6 +60,57 @@ Same trick for regenerating `package-lock.json`: run
 `npm install --package-lock-only` on the local copy and copy the lockfile
 back.
 
+## The API cannot depend on an ES-module-only package
+
+**Anything `src/api/routes/**` can reach has to be requireable from
+CommonJS.** The deployed functions runtime cannot `require` an ES module.
+The failure is not a bad response from one route — the throw happens while
+the module is being read, before a handler runs, so every route 502s at
+once: entries, stats, export, auth, the lot. `uuid` 13 did that to
+production (#162, fixed by #169) and `jose` 6 would have done it again
+(#168).
+
+**Nothing local will tell you.** `require(esm)` works from Node 22.12, so
+the suite, the CI install and the build all load an ESM-only package
+perfectly happily — and this repo builds on Node 22 deliberately, so that
+agreement looks like confirmation. The functions runtime is the only place
+the difference shows, and you cannot get to it from here.
+
+So after bumping anything the API imports, ask the loader rather than
+reading the package's own metadata — an `exports` map without a `require`
+condition means ESM-only, but plenty of requireable packages have no
+`exports` map at all, and `mongodb` is one of them:
+
+```
+node --no-experimental-require-module -e "require('<pkg>')"
+```
+
+That flag turns off the `require(esm)` support the runtime does not have,
+which is the whole trick. `.github/workflows/ci.yml` runs the same check
+over every route:
+
+```
+node --no-experimental-require-module -e "require('./src/api/routes/entries.js')"
+```
+
+It is there because this has now cost one outage and nearly a second, and
+it is the only thing in CI that behaves the way production does.
+
+**When a package goes ESM-only, the fix is on our side, not theirs.** Take
+the last version that still ships CommonJS — `jose` stays on 4 for exactly
+this, and the code it wants is the code 5 and 6 want, so the eventual move
+is packaging and not a rewrite — or drop the dependency for a platform
+built-in, which is what `crypto.randomUUID` did for `uuid`.
+
+Two ways out exist if that ever stops being enough, neither of them small:
+`node_bundler = "esbuild"` in `netlify.toml` inlines ESM at build time so
+the runtime never sees it (`mongodb` is the one to watch there — optional
+native dependencies and dynamic requires are what `external_node_modules`
+is for); or the functions become ES modules themselves, which is what
+Netlify now recommends, but the controller tests mock their dependencies by
+monkey-patching `Module._load`, so that is a test-harness rewrite before it
+is anything else.
+
 ## Credentials
 
 `src/db_maintenance/.env` holds `MONGODB_URL`, `TWITCH_CLIENT_ID`,
