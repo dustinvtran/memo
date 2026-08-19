@@ -48,7 +48,10 @@ exports.handler = async (event, context) => ({
   headers: { 'Content-Type': 'application/json; charset=utf-8' },
   body: JSON.stringify({
     version: process.version,
-    'features.require_module': process.features.require_module,
+    // Stringified: on a Node that predates `require(esm)` entirely this is
+    // `undefined`, and `JSON.stringify` drops an undefined value rather than
+    // reporting it — which reads as a missing field instead of an answer.
+    'features.require_module': String(process.features.require_module),
     execArgv: process.execArgv,
     NODE_OPTIONS: process.env.NODE_OPTIONS ?? null,
     AWS_EXECUTION_ENV: process.env.AWS_EXECUTION_ENV ?? null,
