@@ -1,4 +1,4 @@
-const { html, css } = Utils
+const { html, css, escapeHtml } = Utils
 const { col, initTable, detailFormatter, allColumns, statuses, entryTypeToFullColumns, editColumn, filmStatuses } = Tables
 const { typeToTitle, statusToTitle } = Conversions
 const { initComponent, WithRemoteData, appendContent, Nothing } = Components
@@ -114,7 +114,7 @@ Components.List.List = List
 const ListPageHeader = (title, username) => initComponent({
   content: () => html`
     <div class="row">
-      <h1><a href="/profile/${username}"><i class="fa fa-home"></i></a> ${title}</h1>
+      <h1><a href="/profile/${escapeHtml(encodeURIComponent(username))}"><i class="fa fa-home"></i></a> ${escapeHtml(title)}</h1>
     </div>
     <hr>
   `

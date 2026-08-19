@@ -6,7 +6,7 @@
 const { workParser } = require('./works')
 const { validate } = require('./utils')
 const { z } = require('zod')
-const { entryParser } = require('./entries')
+const { entryParser, entryUpdateParser } = require('./entries')
 
 const bookParser = workParser.extend({
   entryType: z.literal('Book'),
@@ -23,10 +23,17 @@ const bookEntryParser = entryParser(bookParser)
 /** @type Validator<BookEntry> */
 const bookEntries = (x) => validate(bookEntryParser, x)
 
+const bookEntryUpdateParser = entryUpdateParser(bookParser)
+
+/** The fields a PATCH may set; see `entryUpdateParser`. */
+/** @type Validator<Partial<BookEntry>> */
+const bookEntryUpdates = (x) => validate(bookEntryUpdateParser, x)
+
 /** @type Validator<Book> */
 const books = (x) => validate(bookParser, x)
 
 module.exports = {
   bookEntries,
+  bookEntryUpdates,
   books,
 }

@@ -6,7 +6,7 @@
 const { workParser } = require('./works')
 const { validate } = require('./utils')
 const { z } = require('zod')
-const { entryParser } = require('./entries')
+const { entryParser, entryUpdateParser } = require('./entries')
 
 const gameParser = workParser.extend({
   entryType: z.literal('Game'),
@@ -24,10 +24,17 @@ const gameEntryParser = entryParser(gameParser)
 /** @type Validator<GameEntry> */
 const gameEntries = (x) => validate(gameEntryParser, x)
 
+const gameEntryUpdateParser = entryUpdateParser(gameParser)
+
+/** The fields a PATCH may set; see `entryUpdateParser`. */
+/** @type Validator<Partial<GameEntry>> */
+const gameEntryUpdates = (x) => validate(gameEntryUpdateParser, x)
+
 /** @type Validator<Game> */
 const games = (x) => validate(gameParser, x)
 
 module.exports = {
   gameEntries,
+  gameEntryUpdates,
   games,
 }

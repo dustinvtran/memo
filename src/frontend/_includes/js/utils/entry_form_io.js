@@ -26,7 +26,11 @@ const OVERRIDE_FIELDS = [
 
 /** @type {(data: any, type: string) => any} */
 const readForm = (data, type) => ({
-  commonMetadata: null, // The work is referenced by workRef, not carried here
+  // No `commonMetadata`: the work is referenced by `workRef` and joined on the
+  // way out. Sending it as `null` was a way of saying so, but the update path
+  // stored whatever it was sent, so what it actually said was "set this entry's
+  // commonMetadata to null" — 3267 entries carry the field for that reason.
+  // The create path never did, because `_create` parses and zod drops it. #171.
   workRef: data?.commonMetadata?.internalRef,
   overrides: getOverrides(data?.apiData, type),
   status: $('#status').val(),

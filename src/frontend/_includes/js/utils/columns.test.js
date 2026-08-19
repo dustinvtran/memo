@@ -241,5 +241,24 @@ test("a quote in a dbRef stays inside the string the attribute holds", () => {
   const rendered = Columns.edit()
     .formatter(null, { status: "Completed", dbRef: `a"b'c` }, 0)
     .trim();
-  assert.ok(rendered.includes(`onclick="window.editEntry(&quot;a\\&quot;b'c&quot;)"`));
+  assert.ok(rendered.includes(`onclick="window.editEntry(&quot;a\\&quot;b&#39;c&quot;)"`));
+});
+
+test("what the browser parses out of the edit attribute is the dbRef itself", () => {
+  const dbRef = `a"b'c`;
+  const rendered = Columns.edit()
+    .formatter(null, { status: "Completed", dbRef }, 0)
+    .trim();
+
+  // A browser HTML-decodes an attribute value and then hands the result to the
+  // JS parser, so that is the order to undo it in. Asserting on the escaped
+  // text alone cannot tell a correct escape from one that merely looks busy.
+  const decoded = rendered
+    .match(/onclick="([^"]*)"/)[1]
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&");
+
+  const argument = decoded.slice("window.editEntry(".length, -1);
+  assert.equal(JSON.parse(argument), dbRef);
 });

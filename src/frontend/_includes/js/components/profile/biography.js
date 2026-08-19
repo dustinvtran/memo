@@ -1,15 +1,15 @@
 const { getUserName, setBio } = Netlify
-const { html, css } = Utils
+const { html, css, escapeHtml } = Utils
 const { initComponent, setContent } = Components
 const { Button, showNotification } = Components.UI
 
 const Biography = (userdata) => initComponent({
   content: ({ include }) => html`
-    <h2 id="biography-heading">About ${userdata.username}</h2>
+    <h2 id="biography-heading">About ${escapeHtml(userdata.username)}</h2>
     <div id="biography-content">
       ${DOMPurify.sanitize(
         marked.parse(
-          userdata.biography ?? `*${userdata.username} has not written anything yet!*`
+          userdata.biography ?? `*${escapeHtml(userdata.username)} has not written anything yet!*`
         )
       )}
     </div>
@@ -42,7 +42,7 @@ Components.Profile.Biography = Biography
 
 const BiographyInput = (currentBio) => initComponent({
   content: ({ include }) => html`
-    <textarea id="biography-input">${currentBio ?? ''}</textarea><br>
+    <textarea id="biography-input">${escapeHtml(currentBio ?? '')}</textarea><br>
     ${include(Button({
       label: "Save",
       // TODO: the style is duplicated with add entry button, deduplicate
