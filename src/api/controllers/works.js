@@ -23,13 +23,15 @@ const workTypes = require('../utils/work_types')
  * four-requests-a-second ceiling. Every real caller is a logged-in user
  * filling in the entry form; what scripts and language models are meant to
  * read is `/api/export`, which touches none of this. See #174.
+ *
+ * The search term is whatever the user typed, so there is no shape to hold it
+ * to — only the decoding to survive.
  * @type {(event: Event) => Promise<Response>}
  */
-const searchForWork = (event) => toPromise(
+const searchForWork = (event) => respond(
   getUserId(event)
-    .andThen(() => withAdapter_('search', event))
-    .map(responses.ok)
-    .mapErr(responses.fromError)
+    .andThen(() => decodeSegment(getUrlSegments(event)[2]))
+    .andThen((query) => withAdapter_('search', event, query))
 )
 
 /**
@@ -39,7 +41,6 @@ const searchForWork = (event) => toPromise(
  */
 const retrieveWork = (event) => {
   const type = getUrlSegments(event)[1]
-  const apiRefId = getUrlSegments(event)[2]
 
   // Every prefix that names this work, tried in turn — not every prefix it
   // may carry, since the id in the url belongs to one API. The Google Books
@@ -47,28 +48,33 @@ const retrieveWork = (event) => {
   // some book documents are stored under that name, and both mean the ISBN.
   const apiNames = workTypes.byType(type)?.identityPrefixes
 
-  return toPromise(
-    // The token is checked before the type segment is, so that an anonymous
-    // caller is told the same thing whatever it asks for. This route spends
-    // the credentials `search` does — a game costs up to three IGDB round
-    // trips — and it also *writes*: a miss here creates the work document.
-    // Walking an API's ids anonymously therefore filled `films`, `tvShows`,
-    // `games` and `books` with works no entry points at, which is the junk
-    // `scripts/audit_database.js` reports and `dedupe_works.js` cleans up.
+  return respond(
+    // The token is checked before the url is, so that an anonymous caller is
+    // told the same thing whatever it asks for — the ref included. This route
+    // spends the credentials `search` does — a game costs up to three IGDB
+    // round trips — and it also *writes*: a miss here creates the work
+    // document. Walking an API's ids anonymously therefore filled `films`,
+    // `tvShows`, `games` and `books` with works no entry points at, which is
+    // the junk `scripts/audit_database.js` reports and `dedupe_works.js`
+    // cleans up.
     getUserId(event)
       .andThen(() => apiNames ? okAsync(apiNames) : errAsync(errors.notFound()))
       .andThen((names) =>
-        findCachedWork(typeToCollection(type), names.map((name) => `${name}__${apiRefId}`))
+        // Read once, and the one value used for both the lookup and the
+        // retrieve. The cache was searched for the raw segment while the
+        // adapter was handed the decoded one, so the two could be asking
+        // after different works.
+        parseRef(type, event).asyncAndThen((apiRefId) =>
+          findCachedWork(typeToCollection(type), names.map((name) => `${name}__${apiRefId}`))
+            .andThen(({ data, ref }) => data
+              ? okAsync(({
+                ...data,
+                internalRef: ref.id
+              }))
+              : createWork(event, apiRefId)
+            )
+        )
       )
-      .andThen(({ data, ref }) => data
-        ? okAsync(({
-          ...data,
-          internalRef: ref.id
-        }))
-        : createWork(event)
-      )
-      .map(responses.ok)
-      .mapErr(responses.fromError)
   )
 }
 
@@ -97,14 +103,60 @@ const findCachedWork = (collection, apiRefs) =>
   )
 
 
-/** @type {(action: keyof Adapter, event: Event) => ResultAsync<any, any>} */
-const withAdapter_ = (action, event) =>
+/** @type {(result: ResultAsync<any, Error>) => Promise<Response>} */
+const respond = (result) => toPromise(
+  result
+    .map(responses.ok)
+    .mapErr(responses.fromError)
+)
+
+/**
+ * The url segment, percent-decoded.
+ *
+ * `decodeURI` throws on a malformed escape — `decodeURI('%')` is a URIError —
+ * and neverthrow does not catch: `Ok.prototype.asyncAndThen` is `f(this.value)`
+ * with no try/catch anywhere in it. So the throw left this module
+ * synchronously, past every `mapErr(responses.fromError)` above, out of the
+ * handler, and Netlify answered `GET /api/works/search/films/%` with an empty
+ * 502. The same shape of bug as the `jwtVerify` one `getUserId` in ./utils.js
+ * describes, and it has the same fix: catch it where it is thrown. #175.
+ * @type {(segment: string) => Result<string, Error>}
+ */
+const decodeSegment = Result.fromThrowable(
+  decodeURI,
+  (err) => errors.req(err, 'that url could not be read'),
+)
+
+/**
+ * The ref a retrieve url names: decoded, and of the shape a ref of this type
+ * has. Anything else names no work we hold and none the API could give us, so
+ * it is a 404 rather than a query written half by the caller — the games
+ * adapter interpolates this into an apicalypse `where`, and the books adapter
+ * into a url carrying GOOGLE_API_KEY. See work_types.js. #175.
+ * @type {(type: string, event: Event) => Result<string, Error>}
+ */
+const parseRef = (type, event) =>
+  decodeSegment(getUrlSegments(event)[2])
+    .andThen((segment) => {
+      const ref = workTypes.parseRef(type, segment)
+      // The segment goes to the log and not into the body: publishing the
+      // caller's own text back to them is how it gets read as ours. #105.
+      return ref ? ok(ref) : err(errors.notFound(`not a ${type} ref: ${segment}`))
+    })
+
+/**
+ * The argument is passed in rather than read from the event here, because the
+ * two actions take different things — a search takes whatever was typed, a
+ * retrieve takes a ref that has been checked against its type.
+ * @type {(action: keyof Adapter, event: Event, argument: string) => ResultAsync<any, any>}
+ */
+const withAdapter_ = (action, event, argument) =>
   getAdapter(event)
     // TODO: make typechecker happy
-    .asyncAndThen((adapter) => adapter[action](decodeURI(getUrlSegments(event)[2])))
+    .asyncAndThen((adapter) => adapter[action](argument))
 
-const createWork = (event) =>
-  withAdapter_('retrieve', event)
+const createWork = (event, apiRefId) =>
+  withAdapter_('retrieve', event, apiRefId)
     .andThen((data) =>
       db.create_(typeToCollection(getUrlSegments(event)[1]), data)
     )
