@@ -42,6 +42,7 @@ const options = {
 const { okAsync } = dependenciesInstalled ? require('neverthrow') : {}
 
 process.env.MONGODB_URL = process.env.MONGODB_URL ?? 'mongodb://in-memory'
+process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
 
 ///////////////////////////////////////////////////////////////////////////////
 // A Mongo small enough to keep in a variable, an auth check that takes the
