@@ -7,7 +7,9 @@
 const { ResultAsync } = require('neverthrow')
 const errors = require('../../errors')
 const axios = require('axios').default
+const { throwIt } = require('../../general')
 const { retrying, describeFailure, publicFailure, statusOf } = require('../retry')
+const { BASE_URL, searchUrls, toSearchResults } = require('./google_search')
 
 const { GOOGLE_API_KEY } = process.env
 
@@ -17,23 +19,14 @@ const urlKey =
     ? `&key=${GOOGLE_API_KEY}`
     : ''
 
-/** @type SearchFunction */
+/**
+ * A search is several requests now — see ./google_search.js for which, and
+ * why one of them wasn't enough.
+ * @type SearchFunction
+ */
 const search = (titleSearch) => ResultAsync.fromPromise(
-  retrying(() => axios({
-    method: 'get',
-    url: `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(titleSearch)}&maxResults=40${urlKey}`
-  }))
-    .then(({ data }) => volumesOf(data)
-      .filter(({ volumeInfo }) =>
-        volumeInfo?.industryIdentifiers?.some((i) => i.type?.includes('ISBN'))
-      )
-      .map(({ volumeInfo }) => ({
-        title: `${volumeInfo?.title} [${volumeInfo?.authors?.join(', ')}]`,
-        year: volumeInfo?.publishedDate?.substring(0, 4),
-        ref: volumeInfo?.industryIdentifiers?.find((i) => i.type?.includes('ISBN'))?.identifier,
-        imageUrl: volumeInfo?.imageLinks?.thumbnail,
-      }))
-    ),
+  searchPages(searchUrls(titleSearch, urlKey))
+    .then((pages) => toSearchResults(titleSearch, pages)),
   toError('searching for books')
 )
 
@@ -41,7 +34,7 @@ const search = (titleSearch) => ResultAsync.fromPromise(
 const retrieve = (ref) => ResultAsync.fromPromise(
   retrying(() => axios({
     method: 'get',
-    url: `https://www.googleapis.com/books/v1/volumes?q=isbn:${ref}${urlKey}`
+    url: `${BASE_URL}?q=isbn:${ref}${urlKey}`
   }))
     .then(({ data }) => volumesOf(data).map(({ volumeInfo }) => ({
       entryType: 'Book',
@@ -74,6 +67,31 @@ module.exports = {
  * @type {(data: any) => any[]}
  */
 const volumesOf = (data) => data?.items ?? []
+
+/**
+ * The volumes on each of `urls`, requested together.
+ *
+ * A page Google wouldn't answer comes back empty rather than failing the
+ * search: it answers something like one search in eight with a 503 (see
+ * ../retry.js), and four requests where there used to be one is four chances
+ * of that. Fewer results is a better answer than none, and `retrying` has
+ * already given the page its three attempts by the time we get here.
+ *
+ * If *every* page failed there is nothing to show, so the first failure goes
+ * on to `toError` the way a single failed request always did.
+ * @type {(urls: string[]) => Promise<any[][]>}
+ */
+const searchPages = (urls) => Promise.all(
+  urls.map((url) =>
+    retrying(() => axios({ method: 'get', url }))
+      .then(({ data }) => ({ volumes: volumesOf(data) }))
+      .catch((err) => ({ err }))
+  )
+).then((pages) =>
+  pages.some((page) => page.volumes)
+    ? pages.map((page) => page.volumes ?? [])
+    : throwIt(pages[0].err)
+)
 
 /** @type {(ref: string) => never} */
 const throwNoSuchVolume = (ref) => {
