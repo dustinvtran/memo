@@ -120,15 +120,39 @@ artefact has jose inlined, so an ESM-only dependency would fail it and ship
 perfectly well. A check that cries wolf gets deleted, and the real rule
 would have gone with it.
 
-**The runtime is pinned outside the repo.** `AWS_LAMBDA_JS_RUNTIME` is set
-from the Netlify UI, and Netlify does not read it from `netlify.toml`. That
-is not a footnote: the API ran on `nodejs18.x` — deprecated by AWS in
-September 2025, Node 18 itself end-of-life since April 2025 — for years,
-while `netlify.toml` pinned `NODE_VERSION = "22"`, CI pinned Node 22, and
-this file said the repo builds on Node 22 deliberately. All true, all about
-the build, none of it about the runtime that serves requests. If you want to
-know what the functions actually run on, deploy something that reports
-`process.version` and read it; nothing in the repo can tell you.
+**The runtime is pinned outside the repo, and #198 made the repo say so.**
+`AWS_LAMBDA_JS_RUNTIME` picks it, and Netlify reads that variable only from
+its UI, CLI or API — never from `netlify.toml`. That is not a footnote: the
+API ran on `nodejs18.x` — deprecated by AWS in September 2025, Node 18
+itself end-of-life since April 2025 — for years, while `netlify.toml` pinned
+`NODE_VERSION = "22"`, CI pinned Node 22, and this file said the repo builds
+on Node 22 deliberately. All true, all about the build, none of it about the
+runtime that serves requests, and nothing short of deploying a function that
+reported `process.version` could have found it.
+
+What changed is that the value is written down and checked, not that it
+moved. `netlify.toml` declares `EXPECTED_AWS_LAMBDA_JS_RUNTIME =
+"nodejs26.x"` under a name Netlify will never act on, so it stays a
+declaration rather than becoming a second place to configure the same thing.
+What gives a declaration teeth is a measurement: the Netlify build *is*
+handed the real `AWS_LAMBDA_JS_RUNTIME`, read off a preview in #198 rather
+than assumed, so `scripts/check_function_dependencies.js` can compare the two
+— and `netlify.toml` runs it before Eleventy, so a runtime changed in the UI
+without the repo fails the deploy instead of shipping. Every build now prints
+what the functions will run on next to what the build itself ran on.
+
+So changing the runtime is two edits, the Netlify UI and that line, and doing
+only the first stops deploys until the second lands. That is the intended
+noise. And `nodejs26.x` is an AWS **public preview** runtime — no SLA, no
+support, breaking changes possible and auto-applied — which is a deliberate
+choice for a hobby project rather than an oversight; declaring it makes the
+choice visible, not safe.
+
+The build's Node is still a different number, and always was: the same
+preview reported `v22.23.2` from the build and `v26.1.0` from a function in
+the same deploy. It is pinned in `netlify.toml` and in both CI jobs, and the
+same script now checks those two against each other — `ci.yml` had only ever
+*said* it matched.
 
 **The remaining way out, if esbuild ever stops being enough**, is ES modules
 for the functions themselves, which is what Netlify now recommends. That is

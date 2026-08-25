@@ -94,7 +94,17 @@ jobs:
       # that anything in `external_node_modules` bypasses it — those are what
       # the script checks, and it reads both out of `netlify.toml` rather than
       # keeping its own copy to drift.
-      - name: The API's dependencies must survive the functions runtime
+      #
+      # The same script asserts what the functions run *on*, which is set
+      # outside the repo entirely (#185, #198) — but only the half of it that
+      # a checkout can see: that `netlify.toml` declares a runtime, that it
+      # does not pretend to set the real one, and that the Node version below
+      # matches the one `netlify.toml` builds with. Comparing the declaration
+      # against what Netlify actually deploys needs the variable Netlify only
+      # hands to its own build, so `netlify.toml` runs this script too, ahead
+      # of Eleventy. Failing here is cheaper; failing there is the one that
+      # cannot be skipped.
+      - name: The functions runtime and the API's dependencies must be what the repo says
         run: node scripts/check_function_dependencies.js
 
       - run: npm run build

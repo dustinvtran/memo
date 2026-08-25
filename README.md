@@ -46,8 +46,11 @@ We use:
   that one, it is read only when set from the Netlify UI, and it is ignored in
   `netlify.toml`. It went unnoticed for years that it was pinning the API to
   `nodejs18.x` while everything in the repo said Node 22 — see #185 and the
-  ES modules section of `CLAUDE.md`. Nothing in the repo can tell you what the
-  functions run on; only a deploy can.
+  ES modules section of `CLAUDE.md`. `netlify.toml` now declares the expected
+  value as `EXPECTED_AWS_LAMBDA_JS_RUNTIME`, a name Netlify will never act on,
+  and the build refuses to ship when what Netlify hands it disagrees — so
+  changing the runtime is two edits, the UI and that line, and doing only the
+  first stops deploys until the second lands (#198).
 - [Eleventy](https://11ty.io) for static site generation
 - A tiny JS pipeline with a [component-based architecture](https://medium.com/@dan.shapiro1210/understanding-component-based-architecture-3ff48ec0c238)
   — no module system, just globals. `src/frontend/js/bundle.njk` lists every
