@@ -18,16 +18,16 @@ const scoreParser = z.union([
 /** @param {ZodObject} specificWorkParser */
 const entryParser = (specificWorkParser) => z.object({
   // commonMetadata: specificWorkParser,
-  workRef: z.string().nullable().or(z.undefined()),
-  overrides: specificWorkParser.partial().or(z.undefined()),
+  workRef: z.string().nullable().optional(),
+  overrides: specificWorkParser.partial().optional(),
   userId: z.string(),
   status: statusParser,
-  score: scoreParser.nullable().or(z.undefined()),
-  startedDate: z.number().nullable().or(z.undefined()),
-  completedDate: z.number().nullable().or(z.undefined()),
-  review: z.string().or(z.undefined()),
-  progress: z.number().nullable().or(z.undefined()),
-  updatedDate: z.number().or(z.undefined()),
+  score: scoreParser.nullable().optional(),
+  startedDate: z.number().nullable().optional(),
+  completedDate: z.number().nullable().optional(),
+  review: z.string().optional(),
+  progress: z.number().nullable().optional(),
+  updatedDate: z.number().optional(),
 })
 
 /**

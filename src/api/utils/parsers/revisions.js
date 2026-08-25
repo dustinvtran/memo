@@ -12,14 +12,17 @@ const { validate } = require('./utils')
  * grow the history documents.
  */
 const snapshotParser = z.object({
-  status: z.string().or(z.undefined()),
-  score: z.number().nullable().or(z.undefined()),
-  startedDate: z.number().nullable().or(z.undefined()),
-  completedDate: z.number().nullable().or(z.undefined()),
-  progress: z.number().nullable().or(z.undefined()),
-  workRef: z.string().nullable().or(z.undefined()),
-  overrides: z.record(z.any()).nullable().or(z.undefined()),
-  review: z.string().or(z.undefined()),
+  status: z.string().optional(),
+  score: z.number().nullable().optional(),
+  startedDate: z.number().nullable().optional(),
+  completedDate: z.number().nullable().optional(),
+  progress: z.number().nullable().optional(),
+  workRef: z.string().nullable().optional(),
+  // Both halves named, because zod 4 reads a lone argument as the *key*
+  // schema rather than the value's. `z.record(z.any())` still builds and
+  // still accepts an object — it just stops checking anything, quietly.
+  overrides: z.record(z.string(), z.any()).nullable().optional(),
+  review: z.string().optional(),
 })
 
 const entryRevisionParser = z.object({
@@ -30,7 +33,7 @@ const entryRevisionParser = z.object({
   /** When this version was saved (for a draft: when it was last autosaved). */
   createdDate: z.number(),
   /** When a later save replaced it. Absent on drafts. */
-  supersededDate: z.number().or(z.undefined()),
+  supersededDate: z.number().optional(),
   snapshot: snapshotParser,
 })
 

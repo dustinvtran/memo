@@ -39,7 +39,6 @@ const ACCEPTED = {
   got: 'node-themoviedb pins got ^11.8.2. #182.',
   uuid: 'Under better-queue, under node-themoviedb. #182.',
   validator: 'Direct, and a routine bump — 13.7.0 to 13.15.x. #182.',
-  zod: 'Direct, and a routine bump — 3.2.0 to the end of the 3.x line. #182.',
 }
 
 /** Severities that stop the build. Matches `--audit-level=high`. */
