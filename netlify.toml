@@ -1,9 +1,8 @@
 [build]
-  # The check runs before Eleventy because it is the only place the real
-  # AWS_LAMBDA_JS_RUNTIME can be compared with what the repo says it should be
-  # — see [build.environment] below. The trailing probe_build_env.js is
-  # TEMPORARY and goes with the probes before this PR leaves draft (#185).
-  command = "node scripts/check_function_dependencies.js && npm run build && node scripts/probe_build_env.js"
+  # The check runs before Eleventy because a Netlify build is the only place
+  # the real AWS_LAMBDA_JS_RUNTIME can be compared with what the repo says it
+  # should be — see [build.environment] below.
+  command = "node scripts/check_function_dependencies.js && npm run build"
   publish = "dist"
 
 [build.environment]

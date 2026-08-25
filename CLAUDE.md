@@ -154,6 +154,20 @@ the same deploy. It is pinned in `netlify.toml` and in both CI jobs, and the
 same script now checks those two against each other — `ci.yml` had only ever
 *said* it matched.
 
+**One thing #198 deliberately did not measure**: whether Netlify derives the
+runtime from the build's Node when `AWS_LAMBDA_JS_RUNTIME` is unset. Its docs
+say the default "is based on the Node.js version used for the build", with a
+fallback to Node 24 when that version is not a Lambda runtime in good
+standing — so unsetting the variable would probably move the API to
+`nodejs22.x`, and could silently land it on `nodejs24.x` instead. Measuring
+it means deleting the variable in the UI for one preview, and it could not
+have kept `nodejs26.x` anyway: expressing a public-preview runtime that way
+would mean `NODE_VERSION = "26"`, dragging the build and both CI jobs along
+and betting they land on the number you asked for. So the check treats an
+unset variable as a failure with an explanation rather than as a
+configuration — an unset variable is the invisible pinning it exists to end.
+If you ever do measure it, that is the branch to rewrite.
+
 **The remaining way out, if esbuild ever stops being enough**, is ES modules
 for the functions themselves, which is what Netlify now recommends. That is
 #185's route 3 and it is a project: 77 files, and the controller tests mock
