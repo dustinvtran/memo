@@ -10,7 +10,6 @@
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const Module = require('module')
 
 const dependenciesInstalled = (() => {
   try {
@@ -117,16 +116,14 @@ class MongoClient {
   }
 }
 
-const loadModule = Module._load
-Module._load = function (request, ...args) {
-  if (request === 'mongodb') return { MongoClient, ServerApiVersion: { v1: '1' } }
-  // jose verifies asynchronously from v4 on, and answers with the payload
-  // wrapped rather than the payload itself. A test's token is its user id.
-  if (request === 'jose') {
-    return { jwtVerify: async (token) => ({ payload: { sub: token } }) }
-  }
-  return loadModule.call(this, request, ...args)
-}
+/* The in-memory Mongo goes in through the seam `db.js` leaves for it, rather
+   than by intercepting `require('mongodb')`. ES modules have no `Module._load`,
+   and that patch was the only thing keeping this tree on CommonJS — see
+   `docs/module_system.md`. The tokens are real for the same reason. */
+const { useClient } = dependenciesInstalled ? require('../utils/db/db') : {}
+const { tokenFor } = dependenciesInstalled ? require('./test_tokens') : {}
+
+if (dependenciesInstalled) useClient(new MongoClient())
 
 const entries = dependenciesInstalled ? require('../routes/entries') : undefined
 const revisions = dependenciesInstalled ? require('../routes/revisions') : undefined
@@ -139,7 +136,7 @@ const call = async (route, method, url, { as, body } = {}) => {
     {
       httpMethod: method,
       path: `/.netlify/functions/${url}`,
-      headers: as ? { authorization: `Bearer ${as}` } : {},
+      headers: as ? { authorization: `Bearer ${await tokenFor(as)}` } : {},
       body: body === undefined ? null : JSON.stringify(body),
     },
     {}

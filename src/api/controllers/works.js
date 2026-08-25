@@ -7,7 +7,7 @@ const { getUrlSegments, getUserId } = require('./utils')
 const { Result, ok, err, ResultAsync, okAsync, errAsync } = require('neverthrow')
 const errors = require('../utils/errors')
 const responses = require('../utils/responses')
-const adapters = require('../utils/external_api_adapters')
+const { adapters } = require('../utils/external_api_adapters')
 const db = require('../utils/db')
 const workTypes = require('../utils/work_types')
 

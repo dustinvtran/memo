@@ -57,36 +57,30 @@ const auth0Claims = {
   'https://memo.test/roles': ['user'],
 }
 
-/* What is replaced is `utils/openid_client`, not `'openid-client'` itself.
-   Since v6 the package is ESM-only and can only be loaded with `import()`,
-   which does not go through `Module._load` — so patching it here by the
-   package's own name is quietly ignored, and `handleCallback` goes out to the
-   real Auth0. That is a DNS error rather than a failed assertion, which is a
-   long way to travel to learn that the stub never applied. The seam is a
-   CommonJS module for exactly this reason and says so.
+/* The stub goes in through `utils/openid_client`'s own seam. That module
+   exists because `openid-client` is ESM-only from v6 and can only be loaded
+   with `import()`, which no amount of `Module._load` patching reaches; the
+   seam used to be replaced by patching this module's path instead, which
+   worked and tied the suite to a hook ES modules do not have. See
+   `docs/module_system.md`.
 
    The shape is v6's: `discovery` answers a `Configuration` that the flow only
    passes back in, and `implicitAuthentication` answers the ID Token claims set
    directly, where v5's `callback()` answered a TokenSet with a `.claims()`. */
+const { useLoader } = dependenciesInstalled
+  ? require('../utils/openid_client')
+  : {}
+
 if (dependenciesInstalled) {
-  const Module = require('module')
-  const loadModule = Module._load
-  Module._load = function (request, ...args) {
-    if (!request.endsWith('utils/openid_client')) {
-      return loadModule.apply(this, [request, ...args])
-    }
-    return {
-      load: async () => ({
-        discovery: async () => ({}),
-        useIdTokenResponseType: () => {},
-        None: () => ({}),
-        randomNonce: () => 'a-nonce',
-        randomState: () => 'a-state',
-        buildAuthorizationUrl: () => new URL('https://auth0.test/authorize'),
-        implicitAuthentication: async () => auth0Claims,
-      }),
-    }
-  }
+  useLoader(async () => ({
+    discovery: async () => ({}),
+    useIdTokenResponseType: () => {},
+    None: () => ({}),
+    randomNonce: () => 'a-nonce',
+    randomState: () => 'a-state',
+    buildAuthorizationUrl: () => new URL('https://auth0.test/authorize'),
+    implicitAuthentication: async () => auth0Claims,
+  }))
 }
 
 const jose = dependenciesInstalled ? require('jose') : undefined

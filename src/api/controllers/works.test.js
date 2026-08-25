@@ -20,7 +20,6 @@
  */
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const Module = require('module')
 
 const dependenciesInstalled = (() => {
   try {
@@ -101,26 +100,24 @@ const stubAdapter = {
   },
 }
 
-const loadModule = Module._load
-Module._load = function (request, ...args) {
-  if (request === 'mongodb') return { MongoClient, ServerApiVersion: { v1: '1' } }
-  // jose verifies asynchronously from v4 on, and answers with the payload
-  // wrapped rather than the payload itself. A test's token is its user id,
-  // except `expired`: a token that fails verification rejects rather than
-  // throws, and this route has to answer 401 to that too. See #168.
-  if (request === 'jose') {
-    return {
-      jwtVerify: async (token) => token === 'expired'
-        ? Promise.reject(new Error('token expired'))
-        : { payload: { sub: token } },
-    }
-  }
-  // The real index builds a TMDB, an IGDB and a Google Books client at
-  // require time, each from a key this suite deliberately does not have.
-  if (request === '../utils/external_api_adapters') {
-    return { films: stubAdapter, tv: stubAdapter, games: stubAdapter, books: stubAdapter }
-  }
-  return loadModule.call(this, request, ...args)
+/* The in-memory Mongo goes in through the seam `db.js` leaves for it, rather
+   than by intercepting `require('mongodb')`. ES modules have no `Module._load`,
+   and that patch was the only thing keeping this tree on CommonJS — see
+   `docs/module_system.md`. The tokens are real for the same reason. */
+const { useClient } = dependenciesInstalled ? require('../utils/db/db') : {}
+const { useAdapters } = dependenciesInstalled
+  ? require('../utils/external_api_adapters')
+  : {}
+const { tokenFor } = dependenciesInstalled ? require('./test_tokens') : {}
+
+if (dependenciesInstalled) {
+  useClient(new MongoClient())
+  /* The three real adapters want a TMDB, an IGDB and a Google Books key that
+     this suite deliberately does not have. They no longer ask for one until a
+     request does, so these simply replace them. */
+  useAdapters({
+    films: stubAdapter, tv: stubAdapter, games: stubAdapter, books: stubAdapter,
+  })
 }
 
 const works = dependenciesInstalled ? require('../routes/works') : undefined
@@ -132,7 +129,7 @@ const call = async (url, { as } = {}) => {
     {
       httpMethod: 'GET',
       path: `/.netlify/functions/${url}`,
-      headers: as ? { authorization: `Bearer ${as}` } : {},
+      headers: as ? { authorization: `Bearer ${await tokenFor(as)}` } : {},
       body: null,
     },
     {}
