@@ -64,6 +64,16 @@ const FINDINGS = [
     kind: "problem",
     label: () => "corrupt field values",
   },
+  // Separate from `corruptFields` because the two ask different questions.
+  // That one asks whether a value has the right *shape*; a duration of
+  // 2939328000000000 is a perfectly good number and passed it for years while
+  // the playtime column rendered 5.6 billion hours. See
+  // ../duration_plausibility.js.
+  {
+    key: "implausibleDurations",
+    kind: "problem",
+    label: () => "durations that cannot be true",
+  },
   {
     key: "gamesMissingPlaytimeLink",
     kind: "problem",
