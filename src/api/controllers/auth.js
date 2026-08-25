@@ -3,6 +3,7 @@
 const { SignJWT, jwtVerify } = require("jose")
 const cookie = require("cookie")
 const openidClient = require("../utils/openid_client")
+const responses = require("../utils/responses")
 const {
   VERIFY_OPTIONS,
   isWithinAbsoluteLifetime,
@@ -35,6 +36,25 @@ const LOGIN_COOKIE_MAX_AGE = 30 * 60
 const AUTH0_LOGIN_COOKIE_NAME = "auth0_login_cookie"
 const NETLIFY_COOKIE_NAME = "nf_jwt"
 const isRunningLocally = process.env.NETLIFY_DEV === "true"
+
+/* These two handlers used to `throw` at a request they couldn't read, and an
+   uncaught throw out of a Netlify function is a 502. That was wrong twice
+   over: the rest of the API answers a structured error through
+   `utils/responses` rather than crashing, and a 502 from one route is
+   indistinguishable from the failure #162 and #185 are about — an ESM-only
+   dependency throwing while the module is read, which 502s *every* route at
+   once. `curl -X POST https://nil.moe/api/auth/callback` with no cookie was a
+   standing false positive for the one check anyone runs after a dependency
+   bump.
+
+   The body is the shape `responses.fromError` gives a `RequestError`, since
+   that is what the rest of the API puts on the wire for a 400. It is spelled
+   out rather than routed through `fromError` because `fromError`'s other job
+   is logging an error's `detail`, and there is no exception here to have one:
+   the request simply wasn't a request. Which is also why the caller is told
+   the class of failure and not one word more. */
+const badRequest = (message) =>
+  responses.badRequest({ error: "RequestError", message })
 
 /* The registered redirect_uri. It moved out of the client metadata in v6 and
    into the authorization request, so it is written down once here rather than
@@ -144,6 +164,34 @@ const generateEncodedStateString = (route, entropy) => {
   return stateBuffer.toString("base64")
 }
 
+/* The other end of the two above: everything `handleCallback` needs out of the
+   request, or `undefined` when there is no login in progress to finish.
+
+   Absent, expired, not ours and malformed all arrive here as the same thing,
+   and all of them mean the same thing — the browser has no half-finished login
+   to hand back — so they get one answer rather than four. `JSON.parse` of a
+   cookie that isn't the JSON we wrote throws, and so does `JSON.parse` of
+   `undefined`, which is what a cookie header without our cookie in it gets
+   you.
+
+   The state is decoded here rather than after the response check, so that the
+   whole cookie is either good or refused in one place. It is our own base64
+   JSON, but the route inside it starts life as a `Referer` header, so it is
+   still a stranger's string with a trip through the browser in the middle. */
+const readLoginCookie = (cookieHeader) => {
+  if (typeof cookieHeader !== "string") return undefined
+  const value = cookie.parse(cookieHeader)[AUTH0_LOGIN_COOKIE_NAME]
+  if (typeof value !== "string") return undefined
+  try {
+    const { nonce, state } = JSON.parse(value)
+    if (typeof nonce !== "string" || typeof state !== "string") return undefined
+    const { route } = JSON.parse(Buffer.from(state, "base64").toString("utf8"))
+    return typeof route === "string" ? { nonce, state, route } : undefined
+  } catch (error) {
+    return undefined
+  }
+}
+
 /* Both of these clear a cookie, which is `Max-Age=0`. They said `new Date(0)`
    before, and reached the same header only because `serialize` coerces what it
    is handed to a number and the epoch is 0 — `maxAge` is a count of seconds,
@@ -218,7 +266,7 @@ const generateAuth0LogoutUrl = () => {
 
 const handleLogin = async (event) => {
   if (!event || !event.headers) {
-    throw new Error("Malformed event")
+    return badRequest("malformed request")
   }
   const { buildAuthorizationUrl, randomNonce, randomState } =
     await openidClient.load()
@@ -250,16 +298,18 @@ const handleLogin = async (event) => {
 }
 
 const handleCallback = async (event) => {
-  if (!event || !event.headers || !event.headers.cookie) {
-    throw new Error("Invalid request")
+  /* Read before `discovery` is asked anything, so that a request which was
+     never going to complete is turned away without a network round trip to
+     Auth0 first; it used to be the other way round. No cookie header at all
+     lands here too, which is what a bare `curl -X POST` sends. */
+  const login = readLoginCookie(event?.headers?.cookie)
+  if (!login) {
+    return badRequest("no login in progress")
   }
+  const { nonce, state } = login
+
   const { implicitAuthentication } = await openidClient.load()
   const configuration = await getOpenIDConfiguration()
-
-  const loginCookie = cookie.parse(event.headers.cookie)[
-    AUTH0_LOGIN_COOKIE_NAME
-  ]
-  const { nonce, state } = JSON.parse(loginCookie)
 
   /* v5 pulled the response out of a request-shaped object with
      `client.callbackParams(req)` and then checked it with `client.callback()`.
@@ -290,13 +340,11 @@ const handleCallback = async (event) => {
 
   const auth0LoginCookie = generateAuth0LoginResetCookie()
 
-  //Get the redirect URL from the decoded state
-  const buff = Buffer.from(state, "base64")
-  const decodedState = JSON.parse(buff.toString("utf8"))
   return {
     statusCode: 302,
     headers: {
-      Location: decodedState.route,
+      // Where the login started, carried through Auth0 in the state.
+      Location: login.route,
       "Cache-Control": "no-cache",
     },
     multiValueHeaders: {
@@ -390,9 +438,12 @@ module.exports = {
   handleCallback,
   handleLogout,
   handleRenew,
-  /* Exported for their tests. The flow reaches both through the handlers, and
-     they are the two pieces of the v6 migration that can be checked without an
-     Auth0 tenant on the other end of the wire. */
+  /* Exported for their tests. The flow reaches all three through the
+     handlers, and they are the pieces of it that can be checked without an
+     Auth0 tenant on the other end of the wire — the first two because the v6
+     migration rewrote them, the third because it is the whole of what
+     `handleCallback` decides before it goes near the network. */
   asFormPostResponseUrl,
   generateEncodedStateString,
+  readLoginCookie,
 }
