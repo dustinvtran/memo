@@ -8,10 +8,14 @@ const title = () =>
     sortable: true,
   })
 
+// `searchable: false` here and on `edit` below: neither column holds any of
+// the entry, so a row that matched on one would have matched on its row number
+// or on the hex of its id.
 const index = () =>
   col('#', '#', {
     formatter: indexFormatter,
     visible: false,
+    searchable: false,
     cellStyle: () => ({ css: { 'width': '15px' } })
   })
 
@@ -81,6 +85,7 @@ const genre = () =>
 
 const edit = () =>
   col('<i class="fas fa-edit"></i>', 'editCol', {
+    searchable: false,
     formatter: (_, row, i) => {
       // We use `onclick` and a global (window.xx) function instead of binding
       // an event, because bootstrap-table destroys the node and rebuilds it
