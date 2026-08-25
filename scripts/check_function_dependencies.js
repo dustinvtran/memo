@@ -1,6 +1,33 @@
 /**
- * @file What CI checks about the API's dependencies now that esbuild bundles
- * the functions. Dependency-free on purpose, like the rest of the suite.
+ * @file What CI and the Netlify build check about the deployed functions:
+ * what runs them, and what they are allowed to require. Dependency-free on
+ * purpose, like the rest of the suite.
+ *
+ * The two halves have the same shape. Each is a fact about production that
+ * only one line of configuration decides, that nothing in the repo used to
+ * assert, and that fails silently or catastrophically rather than loudly.
+ *
+ * ## What runs them
+ *
+ * Netlify derives the functions runtime from the Node version the build used,
+ * so `NODE_VERSION` in `netlify.toml` is the whole configuration and there is
+ * exactly one version number in the repo. What this guards is that it stays
+ * that way.
+ *
+ * It has not always been that way. `AWS_LAMBDA_JS_RUNTIME` breaks the link,
+ * and Netlify reads it only from its UI, CLI or API — never from
+ * `netlify.toml`. Set outside the repo it kept the API on `nodejs18.x` for
+ * years, deprecated by AWS in September 2025, while `netlify.toml` said Node
+ * 22, CI said Node 22 and CLAUDE.md explained why Node 22 was deliberate. All
+ * true, all about the build, none of it about the runtime serving requests,
+ * and no way to find out short of deploying a function that reported
+ * `process.version` — which is what #185 eventually did.
+ *
+ * So an override is a failure here rather than a configuration, and a Netlify
+ * build is the only place that can see one: it is handed the variable if it
+ * exists. `netlify.toml` runs this before the site is built.
+ *
+ * ## What they may require
  *
  * The functions runtime is started with `--no-experimental-require-module` —
  * #185 read it straight off `process.execArgv` on the deployed runtime, on
@@ -39,6 +66,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const CONFIG = 'netlify.toml'
+const CI_WORKFLOW = '.github/workflows/ci.yml'
 
 /**
  * Read out of `netlify.toml` rather than written down again here, so this
@@ -55,7 +83,10 @@ const readConfig = () => {
   const externals = [...(externalsBlock?.[1] ?? '').matchAll(/"([^"]+)"/g)]
     .map(([, name]) => name)
 
-  return { directory, bundler, externals }
+  const nodeVersion = toml.match(/^\s*NODE_VERSION\s*=\s*"([^"]+)"/m)?.[1]
+  const setsRuntime = /^\s*AWS_LAMBDA_JS_RUNTIME\s*=/m.test(toml)
+
+  return { directory, bundler, externals, nodeVersion, setsRuntime }
 }
 
 /** @type {(args: string[], what: string) => string | null} The error, or null. */
@@ -87,7 +118,98 @@ const fail = (explanation, detail) => {
   process.exitCode = 1
 }
 
-const { directory, bundler, externals } = readConfig()
+const { directory, bundler, externals, nodeVersion, setsRuntime } = readConfig()
+
+/* The majors Netlify will actually derive a functions runtime from, which is
+   narrower than the majors AWS ships and narrower still than the versions nvm
+   can install for the build. AWS has no nodejs25.x and never will — managed
+   runtimes appear only for Node majors on the LTS track — and #198 measured
+   that a public preview does not count either: a deploy built on Node 26,
+   asked for and honoured, put its functions on nodejs24.x. Netlify
+   substitutes rather than failing, and it substitutes after the build, so
+   nothing on the build side can notice. Hence a list, checked before a deploy
+   rather than discovered after one.
+   https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
+   https://docs.netlify.com/build/functions/optional-configuration/ */
+const LAMBDA_NODE_MAJORS = ['22', '24']
+
+/* Read from this file it does nothing, which is worse than harmless: the
+   nodejs18.x lines that used to sit in netlify.toml are why nobody looked at
+   the UI for years (#185). */
+if (setsRuntime) {
+  fail(
+    `${CONFIG} assigns AWS_LAMBDA_JS_RUNTIME, which Netlify reads only from ` +
+    'its UI, CLI or API.\nSet here it does nothing at all except look like it ' +
+    'does, which is how the API spent\nyears on nodejs18.x while every file in ' +
+    'the repo said Node 22 (#185).\nThe functions follow NODE_VERSION on their ' +
+    'own; delete this line.')
+}
+
+if (!nodeVersion) {
+  fail(`${CONFIG} must set NODE_VERSION, and it is what the functions run on ` +
+       'as well as the build.')
+} else if (!LAMBDA_NODE_MAJORS.includes(nodeVersion.split('.')[0])) {
+  fail(
+    `${CONFIG} builds on Node ${nodeVersion}, which Netlify will not turn ` +
+    'into a functions runtime.\nIt substitutes Node 24 for a build version it ' +
+    'cannot map, silently and after the\nbuild, so the API would end up on a ' +
+    'version nothing here mentions and nothing here\ncould see. Netlify ' +
+    `derives ${LAMBDA_NODE_MAJORS.join(' and ')}; pick one, or widen the list ` +
+    'once a preview runtime\nreaches general availability (#198).')
+} else {
+  console.log(`ok: ${CONFIG} builds on Node ${nodeVersion}, which Netlify ` +
+              'derives a functions runtime from')
+}
+
+/* The same number is pinned in two files, and the workflow has only ever
+   *said* it matches this one. */
+const pins = [...fs.readFileSync(CI_WORKFLOW, 'utf8')
+  .matchAll(/^\s*node-version:\s*['"]?([^'"\s#]+)/gm)].map(([, version]) => version)
+
+if (pins.length === 0) {
+  fail(`${CI_WORKFLOW} does not pin node-version in the shape this expects.`)
+} else if (nodeVersion && pins.some((version) => version !== nodeVersion)) {
+  fail(
+    `${CONFIG} builds on Node ${nodeVersion} and ${CI_WORKFLOW} pins ` +
+    `${[...new Set(pins)].join(', ')}.\nThe point of building in CI is to ` +
+    'build the way Netlify does, so a green run says nothing\nabout the ' +
+    'deploy once the two differ — and this number now decides the functions ' +
+    'runtime\ntoo, not just the build.')
+} else if (nodeVersion) {
+  console.log(`ok: ${CI_WORKFLOW} pins the same Node ${nodeVersion}`)
+}
+
+/* Only a Netlify build can see either of these. On a laptop or in GitHub
+   Actions there is nothing to look at, and inventing something would make this
+   pass for reasons unrelated to production. */
+if (process.env.NETLIFY !== 'true') {
+  console.log('skipped: only a Netlify build can see what is overriding the ' +
+              'runtime, or what Node it got')
+} else {
+  if (process.env.AWS_LAMBDA_JS_RUNTIME) {
+    fail(
+      'AWS_LAMBDA_JS_RUNTIME is set to ' +
+      `${process.env.AWS_LAMBDA_JS_RUNTIME} for this build, outside the repo.\n` +
+      'It overrides NODE_VERSION for the functions and can only be set from ' +
+      "the Netlify UI, CLI\nor API, so nothing in a checkout can see it or " +
+      'contradict it. That is exactly how the API\nran on nodejs18.x for years ' +
+      `while the repo said Node 22 (#185).\nDelete it in the Netlify UI; ` +
+      `NODE_VERSION = "${nodeVersion}" is meant to be the only place.`)
+  }
+
+  /* Netlify honouring NODE_VERSION is what the functions inherit, so a build
+     that quietly got something else is the runtime quietly getting it too. */
+  const buildMajor = process.version.replace(/^v/, '').split('.')[0]
+  if (nodeVersion && buildMajor !== nodeVersion.split('.')[0]) {
+    fail(
+      `${CONFIG} asks for Node ${nodeVersion} and Netlify built this on ` +
+      `${process.version}.\nThe functions inherit the build's version, so ` +
+      'they are about to run something the repo\nnever asked for.')
+  } else {
+    console.log(`ok: Netlify built this on ${process.version}, which is what ` +
+                'the functions inherit')
+  }
+}
 
 if (bundler !== 'esbuild') {
   fail(
@@ -132,6 +254,6 @@ if (!directory || !fs.existsSync(directory)) {
 }
 
 if (process.exitCode) {
-  console.error('See the "API cannot depend on an ES-module-only package" ' +
-                'section of CLAUDE.md.')
+  console.error('See the "ES modules, the functions runtime, and why the API ' +
+                'is bundled" section of CLAUDE.md.')
 }

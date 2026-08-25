@@ -40,14 +40,14 @@ We use:
 
 - [Netlify](https://www.netlify.com) for web hosting and deployment
 - [Node and NPM](https://nodejs.org) for runtime environment and package management
-  — `NODE_VERSION` in `netlify.toml` pins the build to Node 22 across every
-  deploy context, and CI runs the same version. **The functions runtime is a
-  separate setting and does not follow it.** `AWS_LAMBDA_JS_RUNTIME` decides
-  that one, it is read only when set from the Netlify UI, and it is ignored in
-  `netlify.toml`. It went unnoticed for years that it was pinning the API to
-  `nodejs18.x` while everything in the repo said Node 22 — see #185 and the
-  ES modules section of `CLAUDE.md`. Nothing in the repo can tell you what the
-  functions run on; only a deploy can.
+  — `NODE_VERSION` in `netlify.toml` is the only place a Node version is
+  chosen, and it decides two things: the build, and the runtime the deployed
+  functions get, which Netlify derives from the build. CI pins the same
+  number and a check asserts it. **`AWS_LAMBDA_JS_RUNTIME` overrides the
+  second one and can only be set from the Netlify UI**, where it silently kept
+  the API on `nodejs18.x` for years while everything in the repo said Node 22
+  — see #185. It is deleted now, and the build fails if it ever comes back
+  (#198).
 - [Eleventy](https://11ty.io) for static site generation
 - A tiny JS pipeline with a [component-based architecture](https://medium.com/@dan.shapiro1210/understanding-component-based-architecture-3ff48ec0c238)
   — no module system, just globals. `src/frontend/js/bundle.njk` lists every

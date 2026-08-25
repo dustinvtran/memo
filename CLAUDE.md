@@ -77,9 +77,9 @@ again (#168).
 **The mechanism, which #185 finally read rather than guessed.** A throwaway
 function on a deploy preview reported `process.execArgv`, and AWS starts the
 runtime with `--no-experimental-require-module` on the command line, by
-name, next to `--no-experimental-detect-module`. Identical on `nodejs22.x`
-and on `nodejs26.x` — a Node where `require(esm)` has been stable and on by
-default for two releases. So this is AWS policy, not version drift: a newer
+name, next to `--no-experimental-detect-module`. Identical on `nodejs22.x`,
+`nodejs24.x` and `nodejs26.x` — Nodes where `require(esm)` has been stable
+and on by default for two releases or more. So this is AWS policy, not version drift: a newer
 runtime will not grow out of it, and `NODE_OPTIONS` cannot undo it, because
 a command-line flag beats `NODE_OPTIONS`. `process.features.require_module`
 is `false` on the deployed runtime for that reason and no other.
@@ -138,15 +138,47 @@ artefact has jose inlined, so an ESM-only dependency would fail it and ship
 perfectly well. A check that cries wolf gets deleted, and the real rule
 would have gone with it.
 
-**The runtime is pinned outside the repo.** `AWS_LAMBDA_JS_RUNTIME` is set
-from the Netlify UI, and Netlify does not read it from `netlify.toml`. That
-is not a footnote: the API ran on `nodejs18.x` — deprecated by AWS in
-September 2025, Node 18 itself end-of-life since April 2025 — for years,
-while `netlify.toml` pinned `NODE_VERSION = "22"`, CI pinned Node 22, and
-this file said the repo builds on Node 22 deliberately. All true, all about
-the build, none of it about the runtime that serves requests. If you want to
-know what the functions actually run on, deploy something that reports
-`process.version` and read it; nothing in the repo can tell you.
+**The runtime used to be pinned outside the repo, and #198 removed the pin
+rather than mirroring it.** `AWS_LAMBDA_JS_RUNTIME` overrides the runtime and
+Netlify reads it only from its UI, CLI or API — never from `netlify.toml`.
+Set there, it kept the API on `nodejs18.x` for years — deprecated by AWS in
+September 2025, Node 18 itself end-of-life since April 2025 — while
+`netlify.toml` pinned `NODE_VERSION = "22"`, CI pinned Node 22, and this file
+said the repo builds on Node 22 deliberately. All true, all about the build,
+none of it about the runtime that serves requests, and nothing short of
+deploying a function that reported `process.version` could have found it.
+
+Netlify has derived the functions runtime from the build's Node since May
+2023, and documents that variable as the way to *break* that link when the
+two need to differ. They do not need to differ here. So the variable is gone
+from the UI, `NODE_VERSION` in `netlify.toml` is the whole configuration —
+one number, in the repo, for the build and the API alike — and
+`scripts/check_function_dependencies.js` fails the deploy if a Netlify build
+is ever handed that variable again. An override is now a failure rather than
+a value to keep in sync, which is a much easier thing to get right than two
+places that must agree.
+
+**Why 24 and not something newer**, since #198 measured it and the number
+looks arbitrary otherwise. AWS ships a managed Lambda runtime only for Node
+majors on the LTS track, so there is no `nodejs25.x` and never will be.
+`nodejs26.x` does exist, as a **public preview** — no SLA, no support,
+breaking changes auto-applied, GA targeted for November 2026 — and Netlify
+will not derive a runtime from it: a preview deploy built on Node 26,
+`NODE_VERSION = "26"` asked for and honoured at `v26.1.0`, put its functions
+on `nodejs24.x` anyway. Netlify substitutes rather than failing, and it
+substitutes *after* the build, so nothing on the build side can see it
+happen. Node 26 is therefore the one value this file cannot tell the truth
+about, which makes it the #185 bug again with a different number. 24 is the
+newest that stays true, and is generally available on Amazon Linux 2023 with
+AWS support to April 2028. When 26 goes GA, this is a one-line change plus
+the allowlist in the script.
+
+The script keeps that allowlist — the majors Netlify will actually derive,
+not the ones AWS ships — so a version that would be quietly substituted fails
+before a deploy rather than being discovered after one. It also checks
+`netlify.toml` against both CI pins, which `ci.yml` had only ever *said* it
+matched, and on Netlify checks that the build really got the Node it asked
+for, since that is what the functions inherit.
 
 That setting is now load-bearing twice over. `mongodb` 7 requires Node
 20.19.0 or newer and targets ES2023, and the driver is the one dependency

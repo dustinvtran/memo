@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       # The unit-tested modules are deliberately dependency-free, so the
       # suite runs without an install. Nothing here needs a database or an
@@ -58,11 +58,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Matches `netlify.toml`'s `[build.environment]`. The point of building
-      # here is to build the way Netlify does, so the two versions stay equal.
+      # Matches `netlify.toml`'s `NODE_VERSION`, and the script below asserts
+      # it rather than leaving this comment to be believed. The point of
+      # building here is to build the way Netlify does — and since Netlify
+      # derives the functions runtime from the build, this number is also what
+      # the deployed API runs on (#198).
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       # `--omit=dev` because the devDependencies are almost the whole install:
@@ -94,7 +97,20 @@ jobs:
       # that anything in `external_node_modules` bypasses it — those are what
       # the script checks, and it reads both out of `netlify.toml` rather than
       # keeping its own copy to drift.
-      - name: The API's dependencies must survive the functions runtime
+      #
+      # The same script asserts what the functions run *on*. That used to be
+      # set outside the repo entirely and invisibly (#185); it is now
+      # `NODE_VERSION`, which the functions inherit from the build. A checkout
+      # can see most of that: that `netlify.toml` does not pretend to set
+      # `AWS_LAMBDA_JS_RUNTIME`, that its Node major is one Netlify will
+      # actually derive a runtime from — it substitutes Node 24 for one it
+      # cannot map, after the build, silently — and that the pin above
+      # matches it. What it cannot
+      # see is an override set in the Netlify UI, or which Node Netlify really
+      # used — so `netlify.toml` runs this script too, ahead of Eleventy.
+      # Failing here is cheaper; failing there is the one that cannot be
+      # skipped.
+      - name: The functions runtime and the API's dependencies must be what the repo says
         run: node scripts/check_function_dependencies.js
 
       - run: npm run build
