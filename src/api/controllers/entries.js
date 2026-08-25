@@ -6,7 +6,7 @@
 const responses = require('../utils/responses')
 const errors = require('../utils/errors')
 const { identity } = require('ramda')
-const { combine, okAsync } = require('neverthrow')
+const { ResultAsync, okAsync } = require('neverthrow')
 const {
   getUserId,
   getSegment,
@@ -25,7 +25,7 @@ const { toSnapshot } = require('../utils/revision_history')
 
 /** @type {(event: Event) => Promise<Response>} */
 const getAllEntriesForUser = (event) => toPromise(
-  combine(triplet([
+  ResultAsync.combine(triplet([
     findIdOfName(getSegment(1, event)),
     toAsync(toEntryCollection(getSegment(0, event))),
     okAsync(getSegment(2, event))
@@ -36,7 +36,7 @@ const getAllEntriesForUser = (event) => toPromise(
 
 /** @type {(event: Event, context: Context) => Promise<Response>} */
 const createNewUserListEntry = (event) => toPromise(
-  combine(triplet([
+  ResultAsync.combine(triplet([
     getUserId(event),
     toAsync(getReqBody(event)),
     toAsync(toEntryCollection(getSegment(0, event))),
@@ -49,7 +49,7 @@ const createNewUserListEntry = (event) => toPromise(
 const updateEntry = (event) => toPromise(
   toEntryCollection(getSegment(0, event))
     .asyncAndThen((col) =>
-      combine(quad([
+      ResultAsync.combine(quad([
         getUserId(event),
         toAsync(getReqBody(event)),
         okAsync(col),
@@ -64,7 +64,7 @@ const updateEntry = (event) => toPromise(
 const deleteEntry = (event) => toPromise(
   toEntryCollection(getSegment(0, event))
     .asyncAndThen((col) =>
-      combine(triplet([
+      ResultAsync.combine(triplet([
         getUserId(event),
         okAsync(col),
         db.findOneByRef_(col, getSegment(1, event)),

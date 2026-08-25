@@ -16,7 +16,7 @@ const { tokenSecret, VERIFY_OPTIONS } = require('../utils/session_token')
  *
  * `ResultAsync` rather than `Result` because verification is a promise from
  * jose v4 onward. That is the whole reason this returns what it returns, and
- * why every caller reaches it through `combine` on a list of `ResultAsync`.
+ * why every caller reaches it through `ResultAsync.combine` on a list of them.
  *
  * It also fixes something the synchronous version got wrong. `Result.map`
  * does not catch, so a token that failed to verify did not become an `Err` —

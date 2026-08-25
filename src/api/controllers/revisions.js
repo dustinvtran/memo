@@ -16,7 +16,7 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
-const { combine, okAsync } = require('neverthrow')
+const { ResultAsync, okAsync } = require('neverthrow')
 const responses = require('../utils/responses')
 const db = require('../utils/db/')
 const parsers = require('../utils/parsers')
@@ -188,7 +188,7 @@ module.exports = {
 const withOwnedEntry = (event, respond) => toPromise(
   toEntryCollection(getSegment(0, event))
     .asyncAndThen((collection) =>
-      combine(triplet([
+      ResultAsync.combine(triplet([
         getUserId(event),
         okAsync(collection),
         db.findOneByRef_(collection, getSegment(1, event)),

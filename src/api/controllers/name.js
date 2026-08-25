@@ -2,7 +2,7 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/errors').Error} Error */
-const { combine, okAsync, ResultAsync } = require('neverthrow')
+const { okAsync, ResultAsync } = require('neverthrow')
 const { findOneByField_, updateByRef_, create_ } = require('../utils/db')
 const { pair, toAsync, toPromise } = require('../utils/general')
 const responses = require('../utils/responses')
@@ -43,7 +43,7 @@ const getUserIdFromName = (event) => toPromise(
 
 /** @type {(event: Event) => Promise<Response>} */
 const setOwnName = (event) => toPromise(
-  combine(pair([
+  ResultAsync.combine(pair([
     getUserId(event),
     toAsync(getReqBody(event))
   ]))
