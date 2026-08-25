@@ -148,6 +148,15 @@ the build, none of it about the runtime that serves requests. If you want to
 know what the functions actually run on, deploy something that reports
 `process.version` and read it; nothing in the repo can tell you.
 
+That setting is now load-bearing twice over. `mongodb` 7 requires Node
+20.19.0 or newer and targets ES2023, and the driver is the one dependency
+the runtime still meets directly: `external_node_modules` keeps it out of
+the bundle, so nothing inlines or transpiles it on the way. Nothing catches
+a runtime below that floor before the deploy either — `engines` is
+advisory, and CI and Netlify both build on Node 22 whatever the functions
+are given — and it would land as the same every-route-502 as an ESM
+require.
+
 **The remaining way out, if esbuild ever stops being enough**, is ES modules
 for the functions themselves, which is what Netlify now recommends. That is
 #185's route 3 and it is a project: 77 files, and the controller tests mock
