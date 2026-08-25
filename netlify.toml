@@ -2,7 +2,7 @@
   # TEMPORARY, deleted with `scripts/probe_build_env.js` before this PR
   # leaves draft: reports what the build can see of
   # `AWS_LAMBDA_JS_RUNTIME` (#185, #190).
-  command = "npm run build && node scripts/probe_build_env.js"
+  command = "node scripts/check_function_dependencies.js && npm run build && node scripts/probe_build_env.js"
   publish = "dist"
 
 [build.environment]
@@ -10,17 +10,37 @@
   # branch deploy alike. The per-context blocks this replaces covered the first
   # two and left a branch deploy on whatever default Netlify happened to ship.
   #
-  # This does NOT pick the functions runtime. AWS_LAMBDA_JS_RUNTIME does, and
-  # it is read only when set from the Netlify UI, CLI or API — Netlify does
-  # not read it from this file, so the nodejs18.x lines that used to sit here
-  # never applied. What they did do is leave the impression that the setting
-  # no longer mattered, while an override made outside the repo went on
-  # pinning the API to nodejs18.x: deprecated by AWS in September 2025, and
-  # four majors behind the line above. #185 found it by deploying a function
-  # that reported process.version, which is the only way to find it.
+  # This is the build's Node, and only the build's. It is not the number the
+  # functions run on and it is not even close to it: one deploy preview in #198
+  # reported v22.23.2 from the build and v26.1.0 from a function, in the same
+  # deploy. The runtime is the line below.
+  NODE_VERSION = "22"
+
+  # Netlify does not read AWS_LAMBDA_JS_RUNTIME from this file — only from its
+  # UI, CLI or API — so nothing here can set the functions runtime, and the
+  # nodejs18.x lines that used to sit in this block never applied. What they
+  # did do is leave the impression that the setting no longer mattered, while
+  # an override made outside the repo went on pinning the API to nodejs18.x:
+  # deprecated by AWS in September 2025, Node 18 itself end-of-life since
+  # April 2025. Nothing in the repo could have said so. #185 found it by
+  # deploying a function that reported process.version, which was the only way
+  # to find it.
+  #
+  # This line is the repo's copy of that setting. Netlify ignores it, which is
+  # the point: it is a declaration, not a configuration. What gives it teeth is
+  # that the build *is* handed the real AWS_LAMBDA_JS_RUNTIME (#198 read that
+  # off a preview too), so check_function_dependencies.js can compare the two
+  # and fail the deploy when they disagree — and the [build] command above runs
+  # it before the site is built, so a runtime that drifts away from this line
+  # stops shipping rather than going unnoticed for years.
+  #
+  # nodejs26.x is an AWS public-preview runtime: no SLA, no support, breaking
+  # changes possible and applied automatically. For a hobby project that is a
+  # choice rather than an oversight. The point of writing it down is that the
+  # choice is visible, not that it is a safe one.
   # https://docs.netlify.com/build/functions/optional-configuration/
   # https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
-  NODE_VERSION = "22"
+  EXPECTED_AWS_LAMBDA_JS_RUNTIME = "nodejs26.x"
 
   # Netlify installs devDependencies too, so its build was carrying the same
   # 1319 packages of `netlify-cli` that CI was — a deploy preview reinstalling
