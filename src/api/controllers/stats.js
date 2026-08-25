@@ -4,7 +4,7 @@
 /** @typedef {import('../utils/errors').Error} Error */
 /** @typedef {import('../utils/responses').Response} Response */
 const responses = require('../utils/responses')
-const { combine, okAsync, ResultAsync } = require('neverthrow')
+const { okAsync, ResultAsync } = require('neverthrow')
 const { getSegment } = require('./utils')
 const { toPromise } = require('../utils/general')
 const db = require('../utils/db/')
@@ -66,7 +66,7 @@ const entryCollections = ['gameEntries', 'tvShowEntries', 'filmEntries', 'bookEn
  * @type {(userDocument: any) => ResultAsync<Response, Error>}
  */
 const refreshStats = (userDocument) =>
-  combine(
+  ResultAsync.combine(
     entryCollections.map((collection) =>
       db
         .countScoresByValue_(collection, userDocument.userId)

@@ -4,7 +4,7 @@
 /** @typedef {import('../utils/errors').Error} Error */
 /** @typedef {import('../utils/responses').Response} Response */
 const responses = require('../utils/responses')
-const { combine } = require('neverthrow')
+const { ResultAsync } = require('neverthrow')
 const { getUserId, getReqBody } = require('./utils')
 const { pair, toAsync, toPromise } = require('../utils/general')
 const db = require('../utils/db/')
@@ -12,7 +12,7 @@ const { biography: parseBiography } = require('../utils/parsers/users')
 
 /** @type {(event: Event, context: Context) => Promise<Response>} */
 const setBio = (event) => toPromise(
-  combine(pair([
+  ResultAsync.combine(pair([
     getUserId(event),
     toAsync(getReqBody(event))
   ]))

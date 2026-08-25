@@ -13,7 +13,7 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
-const { combine } = require('neverthrow')
+const { Result } = require('neverthrow')
 const responses = require('../utils/responses')
 const errors = require('../utils/errors')
 const db = require('../utils/db/')
@@ -47,7 +47,7 @@ const exportUserLists = async (event) => {
     ? [[getSegment(0, event)], getSegment(1, event)]
     : [ENTRY_TYPES, getSegment(0, event)]
 
-  const collections = combine(entryTypes.map(toEntryCollection))
+  const collections = Result.combine(entryTypes.map(toEntryCollection))
   // Whoever hit this is likely guessing at the url, so say what would have
   // worked rather than only that this didn't.
   if (collections.isErr()) {
