@@ -6,7 +6,7 @@
  * critical is new, and new is the only thing worth stopping a build for.
  *
  * Why not just `npm audit --audit-level=high`, which is one line: it exits 1
- * on the eleven advisories the production tree carries today, so it would be
+ * on the eight advisories the production tree carries today, so it would be
  * red on the commit that added it and red on every commit after, which is the
  * same as having no check at all. The list below is what makes it green now
  * and red the day something arrives.
@@ -31,14 +31,10 @@ const ACCEPTED = {
     'apicalypse pins axios ^0.21.1, and apicalypse is igdb-api-node\'s. ' +
     'The top-level axios is 1.19.0 and clean — every one of these is the ' +
     'nested copy, which no bump to our own dependency can reach. #182.',
-  'html-minifier':
-    'Build-time only, in .eleventy.js; unmaintained since 2019 and there ' +
-    'will be no fix. The move is to html-minifier-terser. #182.',
   'http-cache-semantics': 'Under got, under node-themoviedb. #182.',
   'js-yaml': 'Under gray-matter, which is Eleventy\'s front matter. Build-time only. #182.',
   got: 'node-themoviedb pins got ^11.8.2. #182.',
   uuid: 'Under better-queue, under node-themoviedb. #182.',
-  validator: 'Direct, and a routine bump — 13.7.0 to 13.15.x. #182.',
 }
 
 /** Severities that stop the build. Matches `--audit-level=high`. */

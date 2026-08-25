@@ -16,27 +16,27 @@
   },
   "dependencies": {
     "@11ty/eleventy": "^3.1.2",
-    "@netlify/functions": "^2.5.1",
+    "@netlify/functions": "^6.0.0",
     "axios": "^1.13.1",
     "cookie": "^0.7.2",
     "cross-env": "^7.0.3",
     "dotenv": "^17.2.3",
-    "html-minifier": "^4.0.0",
+    "html-minifier-terser": "^7.2.0",
     "igdb-api-node": "^5.0.1",
     "jose": "^6.2.9",
     "mongodb": "^6.20.0",
     "neverthrow": "^8.2.0",
     "node-themoviedb": "^0.2.8",
     "openid-client": "^5.1.10",
-    "ramda": "^0.27.2",
+    "ramda": "^0.32.0",
     "ts-pattern": "^5.9.0",
-    "uglify-js": "^3.14.5",
-    "validator": "^13.7.0",
+    "uglify-js": "^3.19.3",
+    "validator": "^13.15.35",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/igdb-api-node": "^5.0.0",
     "netlify-cli": "^17.16.1",
-    "typescript": "^4.5.0-dev.20210930"
+    "typescript": "^4.9.5"
   }
 }

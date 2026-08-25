@@ -1,8 +1,14 @@
-const HtmlMinifier = require('html-minifier')
+const HtmlMinifier = require('html-minifier-terser')
 
 module.exports = (config) => {
   // minify the html output
-  config.addTransform('htmlmin', (content, outputPath) => {
+  //
+  // `html-minifier-terser` is the maintained fork of `html-minifier`, which
+  // has had no release since 2019 and carries CVE-2022-37620. The option
+  // names below are unchanged, but `minify` returns a promise where the
+  // original returned a string — the `async` here is the whole of the
+  // difference, and Eleventy has always awaited what a transform returns.
+  config.addTransform('htmlmin', async (content, outputPath) => {
     // A transform runs over every output file, and the bundle and the
     // stylesheet are two of them now. `collapseWhitespace` over JavaScript eats
     // the newline that ends a `//` comment, and the rest of the file goes
