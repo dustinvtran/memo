@@ -108,6 +108,14 @@ Only the API is gone; the pages still exist and the playtime column still
 links to them for the games whose numbers came from there. An IGDB-sourced
 playtime links to its IGDB page instead.
 
+The 210 games holding a HowLongToBeat-era playtime with no `hltb__` ref were
+the exception, and rendered as the only unlinked playtimes on the site (#201).
+Their ids cannot be recovered — that is what "the API is gone" means — so the
+playtime column links them to a HowLongToBeat *search* for the title. It is
+the same site the number came from, which is the property that matters: the
+IGDB page 206 of them also have would put a number 1.36x this one in front of
+a reader trying to check it.
+
 ### How the other sources ruled themselves out, as of 2026-08-11
 
 | source | reachable | coverage of our library | metric | verdict |

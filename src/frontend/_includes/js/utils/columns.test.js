@@ -74,8 +74,42 @@ test("apiRefs still stored as objects are understood", () => {
   );
 });
 
-test("without an hltb ref the playtime is plain text", () => {
+test("without an hltb ref the playtime links to a search instead", () => {
+  // 210 games are in this state: a HowLongToBeat-era playtime with no
+  // `hltb__` ref beside it. They were the only playtimes on the site with no
+  // link at all, and the ids can no longer be fetched to fill in (#201).
+  assert.equal(
+    playtime({
+      duration: 600,
+      englishTranslatedTitle: "Arx Fatalis",
+      apiRefs: ["igdb__1"],
+    }),
+    '<a href="https://howlongtobeat.com/?q=Arx%20Fatalis&amp;t=games">10h</a>'
+  );
+});
+
+test("the search falls back to the original title", () => {
+  assert.equal(
+    playtime({ duration: 600, originalTitle: "赤マント" }),
+    '<a href="https://howlongtobeat.com/?q=%E8%B5%A4%E3%83%9E%E3%83%B3%E3%83%88' +
+      '&amp;t=games">10h</a>'
+  );
+});
+
+test("a playtime on a work with no title at all stays plain text", () => {
+  // Nothing to search for, so there is nowhere honest to point.
   assert.equal(playtime({ duration: 600, apiRefs: ["igdb__1"] }), "10h");
+});
+
+test("a stored hltb page still beats the search", () => {
+  assert.equal(
+    playtime({
+      duration: 600,
+      englishTranslatedTitle: "Arx Fatalis",
+      apiRefs: ["hltb__555"],
+    }),
+    '<a href="https://howlongtobeat.com/game?id=555">10h</a>'
+  );
 });
 
 test("a work with no metadata at all doesn't throw", () => {
@@ -132,15 +166,18 @@ test("an IGDB-sourced playtime with no IGDB url is plain text", () => {
   );
 });
 
-test("a placeholder hltb ref renders no link at all", () => {
+test("a placeholder hltb ref is searched for, not linked to", () => {
   // 27 games in the database carry `hltb__N/A`; linking to
-  // howlongtobeat.com/game?id=N/A would be a dead link on every one of them.
-  assert.equal(playtime({ duration: 600, apiRefs: ["hltb__N/A"] }), "10h");
-  assert.equal(playtime({ duration: 600, apiRefs: ["hltb__"] }), "10h");
-  assert.equal(
-    playtime({ duration: 600, apiRefs: [{ name: "hltb", ref: "N/A" }] }),
-    "10h"
-  );
+  // howlongtobeat.com/game?id=N/A would be a dead link on every one of them,
+  // so the placeholder counts as no id and the title is searched instead.
+  const searched =
+    '<a href="https://howlongtobeat.com/?q=Cultic&amp;t=games">10h</a>';
+  const game = (apiRefs) =>
+    playtime({ duration: 600, englishTranslatedTitle: "Cultic", apiRefs });
+
+  assert.equal(game(["hltb__N/A"]), searched);
+  assert.equal(game(["hltb__"]), searched);
+  assert.equal(game([{ name: "hltb", ref: "N/A" }]), searched);
 });
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -205,6 +242,15 @@ test("a javascript: playtime link is dropped, leaving plain text", () => {
     }),
     "10h"
   );
+});
+
+test("a title cannot break out of its playtime search link", () => {
+  const rendered = playtime({
+    duration: 600,
+    englishTranslatedTitle: '"><script>alert(1)</script>',
+  });
+  assert.ok(!rendered.includes("<script>"));
+  assert.ok(rendered.includes("%22%3E%3Cscript%3E"));
 });
 
 test("a genre cannot break out of its wikipedia link", () => {
