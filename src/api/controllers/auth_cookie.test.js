@@ -29,7 +29,13 @@ const dependenciesInstalled = (() => {
   try {
     require('jose')
     require('cookie')
-    require('openid-client')
+    /* `openid-client` 6 is ESM-only, so `require` of it is not the question
+       this is asking — whether it is installed is, and `require` would answer
+       "no" on any loader that will not take an ES module. That would skip this
+       file rather than fail it, which is the wrong way round for the tests
+       covering the flow with the least coverage. Loading it for real is
+       `auth.js`'s job, through an `import()`. */
+    require.resolve('openid-client/package.json')
     return true
   } catch (error) {
     return false
