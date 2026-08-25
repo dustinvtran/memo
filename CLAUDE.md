@@ -191,9 +191,13 @@ require.
 
 **The remaining way out, if esbuild ever stops being enough**, is ES modules
 for the functions themselves, which is what Netlify now recommends. That is
-#185's route 3 and it is a project: 77 files, and the controller tests mock
-their dependencies by monkey-patching `Module._load`, which `import()` does
-not go through, so it is a test-harness rewrite before it is anything else.
+#185's route 3, and it was looked at properly and declined —
+`docs/module_system.md` is the decision, what it rests on and what would
+reopen it. The heart of it: esbuild flattens an ESM source to a CommonJS
+bundle, so migrating changes nothing about what the runtime loads, while six
+controller tests inject their fakes by monkey-patching `Module._load`, which
+`import()` does not go through. Read that file before reading Netlify's
+recommendation and reaching for this again.
 
 ## Credentials
 
