@@ -296,14 +296,31 @@ const playtimeFormatter = (_, row) => {
  * see what it means. `durationSource` records that; a playtime stored before
  * we recorded it came from HowLongToBeat, which is what the absent case means.
  *
+ * Every playtime gets a link, and every link points into the source that
+ * measured it. Those two rules used to be one rule: a HowLongToBeat playtime
+ * linked to a HowLongToBeat *game page*, and 210 games hold such a playtime
+ * with no `hltb__` ref beside it to build one from, so they were the only
+ * numbers on the site rendering as bare text (#201). A search of the site the
+ * number came from closes that gap without weakening the second rule.
+ *
  * An IGDB-sourced playtime deliberately does *not* fall back to a
- * HowLongToBeat link the game may still carry: the game's page there is a
- * fine link, but it is not where this number came from, and pointing at it
- * would invite exactly the comparison that made the two disagree.
+ * HowLongToBeat link the game may still carry, and the fallback below is a
+ * search rather than the IGDB page 206 of the 210 do have: the other site's
+ * page is a fine link, but it is not where this number came from, and
+ * pointing at it would invite exactly the comparison that made the two
+ * disagree. IGDB's time to beat runs about 1.36x HowLongToBeat's Main Story
+ * and is within 20% of it on under a third of the library
+ * (docs/API_choices.md).
+ *
+ * IGDB needs no such fallback: `duration`, `durationSource` and the `igdb`
+ * externalUrl are written by one adapter call, so a playtime from there
+ * always arrives with its link.
  */
 const toPlaytimeUrl = (row) => {
   const { durationSource } = get(row, ['durationSource'])
-  return durationSource === 'igdb' ? toIgdbUrl(row) : toHltbUrl(row)
+  return durationSource === 'igdb'
+    ? toIgdbUrl(row)
+    : toHltbUrl(row) ?? toHltbSearchUrl(row)
 }
 
 /**
@@ -339,6 +356,29 @@ const toHltbUrl = (row) => {
     ?.find((hltbRef) => /^\d+$/.test(hltbRef ?? ''))
 
   return ref ? `https://howlongtobeat.com/game?id=${ref}` : undefined
+}
+
+/**
+ * A search of HowLongToBeat for the game, for the playtimes with no
+ * HowLongToBeat id to link to directly.
+ *
+ * The missing ids can't be fetched and stored: HowLongToBeat's API is behind
+ * authentication now and every route back into it is closed
+ * (docs/API_choices.md). The gap is permanent, so it is closed here rather
+ * than waiting on a backfill that cannot be written.
+ *
+ * The url is the one the site's own search box produces. A title is metadata
+ * like any other, so it is encoded rather than trusted, exactly as
+ * `toWikipediaUrl` encodes a genre.
+ */
+const toHltbSearchUrl = (row) => {
+  const { englishTranslatedTitle, originalTitle } =
+    get(row, ['englishTranslatedTitle', 'originalTitle'])
+
+  const title = englishTranslatedTitle ?? originalTitle
+  return title
+    ? `https://howlongtobeat.com/?q=${encodeURIComponent(title)}&t=games`
+    : undefined
 }
 
 const relativeTime = (ts) => {
