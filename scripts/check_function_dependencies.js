@@ -120,14 +120,18 @@ const fail = (explanation, detail) => {
 
 const { directory, bundler, externals, nodeVersion, setsRuntime } = readConfig()
 
-/* AWS ships a managed Lambda runtime only for Node majors on the LTS track,
-   so there is no nodejs25.x and never will be. Netlify maps the build's Node
-   to a runtime where it can and silently substitutes Node 24 where it cannot,
-   which would put the API on a version nothing in the repo mentions. The list
-   is short, it changes about once a year, and keeping it here turns an
-   unshippable number into a failure at the moment someone picks it.
-   https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html */
-const LAMBDA_NODE_MAJORS = ['22', '24', '26']
+/* The majors Netlify will actually derive a functions runtime from, which is
+   narrower than the majors AWS ships and narrower still than the versions nvm
+   can install for the build. AWS has no nodejs25.x and never will — managed
+   runtimes appear only for Node majors on the LTS track — and #198 measured
+   that a public preview does not count either: a deploy built on Node 26,
+   asked for and honoured, put its functions on nodejs24.x. Netlify
+   substitutes rather than failing, and it substitutes after the build, so
+   nothing on the build side can notice. Hence a list, checked before a deploy
+   rather than discovered after one.
+   https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
+   https://docs.netlify.com/build/functions/optional-configuration/ */
+const LAMBDA_NODE_MAJORS = ['22', '24']
 
 /* Read from this file it does nothing, which is worse than harmless: the
    nodejs18.x lines that used to sit in netlify.toml are why nobody looked at
@@ -146,15 +150,15 @@ if (!nodeVersion) {
        'as well as the build.')
 } else if (!LAMBDA_NODE_MAJORS.includes(nodeVersion.split('.')[0])) {
   fail(
-    `${CONFIG} builds on Node ${nodeVersion}, which AWS does not ship as a ` +
-    'Lambda runtime.\nNetlify derives the functions runtime from the build, ' +
-    'and substitutes Node 24 for a version\nit cannot map — silently, so the ' +
-    'API would end up on a version nothing here mentions.\nAWS ships ' +
-    `${LAMBDA_NODE_MAJORS.join(', ')}; pick one of those, or update this list ` +
-    'if AWS has shipped another.')
+    `${CONFIG} builds on Node ${nodeVersion}, which Netlify will not turn ` +
+    'into a functions runtime.\nIt substitutes Node 24 for a build version it ' +
+    'cannot map, silently and after the\nbuild, so the API would end up on a ' +
+    'version nothing here mentions and nothing here\ncould see. Netlify ' +
+    `derives ${LAMBDA_NODE_MAJORS.join(' and ')}; pick one, or widen the list ` +
+    'once a preview runtime\nreaches general availability (#198).')
 } else {
-  console.log(`ok: ${CONFIG} builds on Node ${nodeVersion}, which AWS ships ` +
-              'as a Lambda runtime')
+  console.log(`ok: ${CONFIG} builds on Node ${nodeVersion}, which Netlify ` +
+              'derives a functions runtime from')
 }
 
 /* The same number is pinned in two files, and the workflow has only ever
@@ -202,8 +206,8 @@ if (process.env.NETLIFY !== 'true') {
       `${process.version}.\nThe functions inherit the build's version, so ` +
       'they are about to run something the repo\nnever asked for.')
   } else {
-    console.log(`ok: Netlify built this on ${process.version}, with nothing ` +
-                'overriding the functions runtime')
+    console.log(`ok: Netlify built this on ${process.version}, which is what ` +
+                'the functions inherit')
   }
 }
 

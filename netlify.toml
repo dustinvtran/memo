@@ -26,21 +26,29 @@
   # comment: it is having one place, this one, and a check that fails the
   # deploy if anything outside the repo starts overriding it again.
   #
-  # AWS ships a managed Lambda runtime only for Node majors on the LTS track,
-  # so nodejs25.x does not exist and never will, and Netlify substitutes Node
-  # 24 for a build version it cannot map — silently.
-  # check_function_dependencies.js keeps the list of majors that do exist, so
-  # an unshippable number fails the build instead of landing the functions on a
-  # version nothing in the repo mentions.
+  # 24 rather than something newer, and #198 measured why. AWS ships a managed
+  # Lambda runtime only for Node majors on the LTS track, so nodejs25.x does
+  # not exist and never will. nodejs26.x does exist, but as a public preview,
+  # and Netlify will not derive a runtime from one: a preview deploy built on
+  # Node 26 — NODE_VERSION = "26", honoured, v26.1.0 in the build — deployed
+  # its functions on nodejs24.x anyway. Silently, which is the failure mode
+  # this whole file is trying to stop, and invisible to the build, because the
+  # substitution happens after it.
   #
-  # nodejs26.x is an AWS public-preview runtime: no SLA, no support, breaking
-  # changes possible and applied automatically, with general availability
-  # targeted for November 2026, when Node 26 reaches Active LTS. For a hobby
-  # project that is a choice rather than an oversight, and the point is that it
-  # is made here rather than in a dashboard.
+  # So 24 is the newest version where this line stays true, and it is the
+  # better runtime regardless: generally available, Amazon Linux 2023,
+  # supported by AWS until April 2028. check_function_dependencies.js holds the
+  # majors Netlify will actually derive, so asking for one it will not fails
+  # here rather than landing the API on a version nothing in the repo mentions.
+  #
+  # Getting the functions onto nodejs26.x would mean setting
+  # AWS_LAMBDA_JS_RUNTIME in the Netlify UI again, which is the invisible
+  # pinning #185 spent years underneath. A public-preview runtime — no SLA, no
+  # support, breaking changes auto-applied, GA targeted for November 2026 — is
+  # not worth buying that back.
   # https://docs.netlify.com/build/configure-builds/manage-dependencies/
   # https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
-  NODE_VERSION = "26"
+  NODE_VERSION = "24"
 
   # Netlify installs devDependencies too, so its build was carrying the same
   # 1319 packages of `netlify-cli` that CI was — a deploy preview reinstalling

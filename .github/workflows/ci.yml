@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 26
+          node-version: 24
 
       # The unit-tested modules are deliberately dependency-free, so the
       # suite runs without an install. Nothing here needs a database or an
@@ -65,7 +65,7 @@ jobs:
       # the deployed API runs on (#198).
       - uses: actions/setup-node@v4
         with:
-          node-version: 26
+          node-version: 24
           cache: npm
 
       # `--omit=dev` because the devDependencies are almost the whole install:
