@@ -16,6 +16,7 @@ The scripts, and the section below that explains each:
 | `ensure_indexes.js` | Creates the indexes the site's queries need. Re-running is a no-op. | `--apply` |
 | `backfill_work_metadata.js` | Re-runs the API adapters over cached works, filling gaps and refreshing stale metadata. | `--apply` |
 | `backfill_game_playtimes.js` | Fills in games with no playtime, from IGDB's `/game_time_to_beats`. | `--apply` |
+| `repair_durations.js` | Repairs `duration` values that cannot be true — a playtime multiplied by 60 one time too many. Only ever writes a value an entry override corroborates. | `--apply` |
 | `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
 | `strip_dead_entry_fields.js` | Unsets `review` and `commonMetadata` from entry documents — a duplicated note and a stale copy of the work, neither of which any reader uses. | `--apply` |
@@ -298,6 +299,68 @@ a playtime before and after.
   re-reads what it wrote to check the counts before it exits.
 
 Why IGDB and not HowLongToBeat: [../../docs/API_choices.md](../../docs/API_choices.md).
+
+## Durations that cannot be true
+
+`scripts/repair_durations.js` looks for `duration` values that are the right
+*type* and still impossible, and repairs the ones it can prove a value for.
+It is a **dry run unless you pass `--apply`**.
+
+```
+node scripts/repair_durations.js
+node scripts/repair_durations.js --only=games
+node scripts/repair_durations.js --apply
+```
+
+Flags: `--only=a,b`, `--json=path`.
+
+**`duration` is four different units.** Minutes for a film, minutes for *one
+episode* of a show, minutes for a game, and **pages** for a book. So there is
+no single threshold — `../duration_plausibility.js` carries a ceiling per
+type, set to clear the real record holders rather than the typical ones.
+RuneScape really is stored at 127,680 minutes, and a ceiling that flags it is
+a ceiling someone switches off.
+
+**Why the audit missed this for years.** `isCorruptNumber` asks whether a
+value is a number that isn't `NaN`. `2939328000000000` is one. Dying Light
+was stored at 5.6 billion hours and the playtime column rendered it, linked,
+like any other row. `audit_database.js` now reports the plausibility check as
+its own finding, separate from `corrupt field values`, because the two ask
+different questions.
+
+**Where a repaired value comes from.** Not from dividing until the number
+looks reasonable. 2939328000000000 is exactly 1050 × 60^7 — a units
+conversion applied to a value already in the right units, seven times over —
+and undoing those one at a time gives a ladder of candidates. But 63000 is on
+that ladder too, and 63000 minutes is *inside* the games ceiling, so "divide
+until it looks plausible" writes 1,050 hours and passes every check we own. A
+ceiling says which values are impossible; it cannot say which possible one is
+true.
+
+The value comes from `overrides.duration` on the entries instead. Four of the
+six Dying Light entries carry exactly 1050, typed by people who could see the
+column was wrong. When an override lands on a rung of the ladder, two
+independent accounts agree about what happened, and that is the only case
+this script writes in. Everything else is reported with its ladder attached
+for a human to settle — A Killer Paradox is stored at 425 minutes *per
+episode*, which is its whole eight-episode run, and TMDB now returns an empty
+`episode_run_time`, so there is nothing to repair it from.
+
+Overrides are **read** and never written, so the rule that a maintenance
+script touches only the work collections holds. `durationSource` is left
+exactly as it is: the repaired number is the same measurement its source
+gave, with the multiplications undone.
+
+**The run.** Dying Light was repaired from `2939328000000000` to `1050` on
+2026-08-25, against snapshot `snapshot-2026-08-25T07-37-41-272Z` (verified
+first: manifest counts, file counts and live `countDocuments()` agreed across
+all 14 collections, SHA-256s included). Afterwards every collection count was
+unchanged, no entry pointed at a missing work, the six `gameEntries`
+overrides were byte-for-byte what they had been, and the audit reports zero
+implausible durations in `games`. `durationSource` stayed absent, so the
+playtime still links to HowLongToBeat, which is where 17.5 hours came from.
+
+A Killer Paradox was left alone, and still is.
 
 ## Collapsing duplicate works
 

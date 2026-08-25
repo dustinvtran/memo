@@ -27,6 +27,7 @@ const {
   isMissingPlaytimeLink,
 } = require("../work_metadata_merge");
 const { groupWorksByApiRef } = require("../work_dedupe_plan");
+const { implausibleDuration } = require("../duration_plausibility");
 const { toSummary, countProblems } = require("../audit_report");
 
 const args = parseArgs(process.argv);
@@ -90,6 +91,7 @@ const auditCollection = async (db, collection) => {
   const missingFields = [];
   const corruptFields = [];
   const gamesMissingPlaytimeLink = [];
+  const implausibleDurations = [];
   const orphanWorks = [];
 
   for (const work of works) {
@@ -116,6 +118,15 @@ const auditCollection = async (db, collection) => {
 
     if (isMissingPlaytimeLink(collection, work)) {
       gamesMissingPlaytimeLink.push(describe(work));
+    }
+
+    const implausible = implausibleDuration(collection, work);
+    if (implausible) {
+      implausibleDurations.push({
+        ...describe(work),
+        duration: work.duration,
+        reason: implausible,
+      });
     }
 
     if (!referencedWorkIds.has(work._id)) orphanWorks.push(describe(work));
@@ -157,6 +168,7 @@ const auditCollection = async (db, collection) => {
     missingFields,
     corruptFields,
     gamesMissingPlaytimeLink,
+    implausibleDurations,
     duplicateWorks,
     orphanWorks,
     entriesWithoutWorkRef,
@@ -199,6 +211,10 @@ const printSummary = (collection, result) => {
   console.log("  --- not problems, for information ---");
   for (const line of notes) {
     console.log(`  ${String(line.count).padStart(5)}  ${line.label}`);
+  }
+
+  for (const finding of result.implausibleDurations) {
+    console.log(`  e.g. impossible duration: ${finding.title}: ${finding.reason}`);
   }
 
   const examples = result.missingFields.slice(0, 5);
