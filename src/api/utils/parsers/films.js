@@ -3,11 +3,10 @@
  * @template T
  * @typedef {import('./utils').Validator<T>} Validator
  */
-const { workParser } = require('./works')
-const { validate } = require('./utils')
-const { z } = require('zod')
-const { entryParser, entryUpdateParser } = require('./entries')
-
+import { workParser } from './works.js'
+import { validate } from './utils.js'
+import { z } from 'zod'
+import { entryParser, entryUpdateParser } from './entries.js'
 const filmParser = workParser.extend({
   entryType: z.literal('Film'),
   directors: z.array(z.string()).nullable().optional(),
@@ -32,7 +31,7 @@ const filmEntryUpdates = (x) => validate(filmEntryUpdateParser, x)
 /** @type Validator<Film> */
 const films = (x) => validate(filmParser, x)
 
-module.exports = {
+export {
   filmEntries,
   filmEntryUpdates,
   films,

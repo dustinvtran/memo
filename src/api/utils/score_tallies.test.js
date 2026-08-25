@@ -1,13 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const {
-  SCORE_TALLY_KEYS,
-  toScoreTally,
-  emptyScoreTally,
-  toStats,
-} = require('./score_tallies')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { SCORE_TALLY_KEYS, toScoreTally, emptyScoreTally, toStats } from './score_tallies.js'
 /** What `scoreTallyParser` in parsers/users.js accepts, checked here without zod. */
 const isValidTally = (tally) =>
   SCORE_TALLY_KEYS.every((key) => typeof tally[key] === 'number') &&

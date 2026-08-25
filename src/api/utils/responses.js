@@ -3,9 +3,8 @@
  * that also safely convert Response body to JSON string.
  */
 /** @typedef {import('./errors').Error} Error */
-const { match } = require('ts-pattern')
-const { safeJSONStringify, warn } = require('./general')
-
+import { match } from 'ts-pattern'
+import { safeJSONStringify, warn } from './general.js'
 /** @typedef {{ statusCode: number, headers?: Object.<string, string>, body?: any }} Response */
 
 /** @typedef {(body?: any) => Response} ResponseCreator */
@@ -72,14 +71,20 @@ const fromError = (error) => {
  * on purpose and is how an error object came to be serialised into a 500 —
  * so there is no bare 500 here to reach for.
  */
-module.exports = {
+const ok = response(200)
+const badRequest = response(400)
+const unauthorized = response(401)
+const notFound = response(404)
+const payloadTooLarge = response(413)
+
+export {
   JSON_CONTENT_TYPE,
   STOCK_MESSAGES,
-  ok: response(200),
-  badRequest: response(400),
-  unauthorized: response(401),
-  notFound: response(404),
-  payloadTooLarge: response(413),
+  ok,
+  badRequest,
+  unauthorized,
+  notFound,
+  payloadTooLarge,
   fromError,
 }
 

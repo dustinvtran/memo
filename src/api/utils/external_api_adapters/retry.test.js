@@ -1,18 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const {
-  ATTEMPTS,
-  MAX_DELAY_MS,
-  backoffMs,
-  codeOf,
-  describeFailure,
-  isTransient,
-  publicFailure,
-  retrying,
-  statusOf,
-} = require('./retry')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { ATTEMPTS, MAX_DELAY_MS, backoffMs, codeOf, describeFailure, isTransient, publicFailure, retrying, statusOf } from './retry.js'
 /**
  * A failure exactly as axios throws it — the Google Books 503 in issue #80.
  *

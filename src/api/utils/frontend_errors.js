@@ -13,11 +13,10 @@ const noUsernameSet = () => error('NoUsernameSet')
 const nameTaken = (nameRequested) =>
   error('NameTaken', `${nameRequested} is already taken.`)
   
-module.exports = {
+export {
   noUsernameSet,
   nameTaken
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /** @type {(error: FrontendErrorName, context?: string) => FrontendError} */

@@ -182,7 +182,7 @@ const toWork = (mapping, ref, data, credits) => ({
   ...mapping.extraFields?.(data),
 })
 
-module.exports = {
+export {
   SEARCH_IMAGE_URL_PREFIX,
   POSTER_IMAGE_URL_PREFIX,
   MAX_ACTORS,

@@ -15,14 +15,13 @@
 /** @typedef {import('./types').SearchResult} SearchResult */
 /** @typedef {import('./tmdb_mapping').Mapping} Mapping */
 /** @typedef {import('../errors').Error} Error */
-const tmdb = require('node-themoviedb')
-const { ResultAsync } = require('neverthrow')
-const errors = require('../errors')
-const { match } = require('ts-pattern')
-const { throwIt } = require('../general')
-const { retrying, describeFailure, publicFailure, statusOf } = require('./retry')
-const { toSearchResults, toWork } = require('./tmdb_mapping')
-
+import tmdb from 'node-themoviedb'
+import { ResultAsync } from 'neverthrow'
+import * as errors from '../errors.js'
+import { match } from 'ts-pattern'
+import { throwIt } from '../general.js'
+import { retrying, describeFailure, publicFailure, statusOf } from './retry.js'
+import { toSearchResults, toWork } from './tmdb_mapping.js'
 const { TMDB_API_KEY } = process.env
 
 /**
@@ -83,10 +82,9 @@ const tmdbAdapter = ({ mapping, search, details, credits }) => {
   }
 }
 
-module.exports = {
+export {
   tmdbAdapter,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

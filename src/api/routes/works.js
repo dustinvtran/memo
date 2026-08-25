@@ -1,14 +1,10 @@
 /** @typedef {import('@netlify/functions').Handler} Handler */
-const responses = require('../utils/responses')
-const {
-  searchForWork,
-  retrieveWork,
-} = require('../controllers/works')
-const { matchVerbAndNumberOfUrlSegments } = require('../router')
-const { getUrlSegments } = require('../controllers/utils')
-
+import * as responses from '../utils/responses.js'
+import { searchForWork, retrieveWork } from '../controllers/works.js'
+import { matchVerbAndNumberOfUrlSegments } from '../router.js'
+import { getUrlSegments } from '../controllers/utils.js'
 /** @type Handler */
-exports.handler = async (event, context) =>
+export const handler = async (event, context) =>
   matchVerbAndNumberOfUrlSegments(event)
 
     .with(['GET', 3], () =>

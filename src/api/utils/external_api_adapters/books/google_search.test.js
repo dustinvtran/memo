@@ -1,19 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const {
-  PAGES,
-  PAGE_SIZE,
-  isbnOf,
-  matchRank,
-  normalizeTitle,
-  queriesFor,
-  searchUrls,
-  titleOf,
-  toSearchResult,
-  toSearchResults,
-} = require('./google_search')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { PAGES, PAGE_SIZE, isbnOf, matchRank, normalizeTitle, queriesFor, searchUrls, titleOf, toSearchResult, toSearchResults } from './google_search.js'
 /** A `/volumes` item, cut down to the fields that are read. */
 const aVolume = (volumeInfo) => ({ volumeInfo })
 

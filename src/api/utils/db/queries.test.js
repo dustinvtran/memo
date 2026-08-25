@@ -1,12 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const {
-  toUserEntriesPipeline,
-  toScoreTallyPipeline,
-  toFindOptions,
-} = require('./queries')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { toUserEntriesPipeline, toScoreTallyPipeline, toFindOptions } from './queries.js'
 const stageNames = (pipeline) => pipeline.map((stage) => Object.keys(stage)[0])
 
 const stage = (pipeline, name) =>

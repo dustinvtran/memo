@@ -14,19 +14,14 @@
 /** @typedef {import('../types').GameRetrieveFunction} GameRetrieveFunction */
 /** @typedef {import('../../errors').Error} Error */
 /** @typedef {import('../../parsers/games').Game} Game */
-const { ResultAsync } = require('neverthrow')
-const errors = require('../../errors')
-const igdb = require('igdb-api-node').default
-const axios = require('axios').default
-const {
-  TIME_TO_BEATS_URL,
-  timeToBeatQuery,
-  toPlaytime,
-} = require('./time_to_beat')
-const { earliestReleaseDate } = require('./release_dates')
-const { throwIt } = require('../../general')
-const { retrying, describeFailure, publicFailure, statusOf } = require('../retry')
-
+import { ResultAsync } from 'neverthrow'
+import * as errors from '../../errors.js'
+import igdb from 'igdb-api-node'
+import axios from 'axios'
+import { TIME_TO_BEATS_URL, timeToBeatQuery, toPlaytime } from './time_to_beat.js'
+import { earliestReleaseDate } from './release_dates.js'
+import { throwIt } from '../../general.js'
+import { retrying, describeFailure, publicFailure, statusOf } from '../retry.js'
 const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET } = process.env
 
 /**
@@ -187,11 +182,10 @@ const retrieve = (ref) => ResultAsync.fromPromise(
 )
 
 /** @type Adapter */
-module.exports = {
+export {
   search,
   retrieve
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

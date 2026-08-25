@@ -4,9 +4,8 @@
  * @template T
  * @typedef {(x: any) => Result<T, Error>} Validator
  */
-const { Result } = require('neverthrow')
-const errors = require('../errors')
-
+import { Result } from 'neverthrow'
+import * as errors from '../errors.js'
 /**
  * Zod's account of what was wrong goes to the log rather than to the caller.
  * It names our own field layout issue by issue, and the same `validate` runs
@@ -20,6 +19,6 @@ const validate = (parser, x) =>
     (e) => errors.req(e, 'the request body is not valid'),
   )(x)
 
-module.exports = {
+export {
   validate
 }

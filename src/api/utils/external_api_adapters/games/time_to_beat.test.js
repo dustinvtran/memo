@@ -1,16 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const {
-  MAX_GAME_IDS_PER_QUERY,
-  DURATION_SOURCE,
-  timeToBeatQuery,
-  batchGameIds,
-  toDurationInMinutes,
-  toPlaytime,
-  indexTimesByGameId,
-} = require('./time_to_beat')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { MAX_GAME_IDS_PER_QUERY, DURATION_SOURCE, timeToBeatQuery, batchGameIds, toDurationInMinutes, toPlaytime, indexTimesByGameId } from './time_to_beat.js'
 /** A row exactly as IGDB returns it, times in seconds. */
 const aRealRow = {
   game_id: 3042,

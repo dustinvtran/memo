@@ -1,146 +1,149 @@
-# Why `src/api` is still CommonJS
+# The API's module system
 
-#185 proposed three routes out of "the functions runtime cannot `require` an
-ES module". Routes 1 and 2 were ways to keep the API on CommonJS; route 3 was
-to move it to ES modules, which is also what Netlify now recommends for
-functions. #190 took a fourth: bundle the functions with esbuild.
+`src/api` is ES modules. `src/api/package.json` is one line — `{ "type":
+"module" }` — and it scopes that to this subtree and nothing else. The rest
+of the repo is still CommonJS and was not touched.
 
-This is the decision not to follow route 3 yet, what it rests on, and what
-would change it. It is written down because "we looked at it and decided not
-to" is otherwise indistinguishable from "nobody got round to it", and the
-next person to read Netlify's recommendation deserves better than having to
-re-derive this.
+This is #185's route 3. It was declined once, on the reasoning below, and
+then done anyway once it became clear the thing blocking it was worth
+removing on its own. Both halves are worth keeping, because the first is why
+you must not assume this migration bought anything at deploy time, and the
+second is the rule that keeps the tree loadable.
 
-## The short version
+## Migrating changed nothing about what the runtime loads
 
-Bundling did not reduce the case for migrating. It removed it. With
-`node_bundler = "esbuild"` the deployed artefact is CommonJS **whichever
-module system the source is written in**, so migrating the source changes
-nothing about what the runtime loads. The remaining arguments are modernity
-and Netlify's recommendation, and the bill for them is `npm test` becoming
-permanently dependent on an experimental Node API whose shape has already
-changed once.
+This is the part to read before concluding that ESM sources made bundling
+unnecessary. They did not.
 
-Cheaper than #185 thought, and worth much less than #185 thought. The second
-of those moved a great deal further than the first.
+The functions runtime is started with `--no-experimental-require-module` —
+AWS passes it on the command line, by name, and #185 read it off
+`process.execArgv` on `nodejs22.x` and `nodejs26.x` alike. So `require` of
+an ES module throws while the module is being read, before a handler runs,
+and every route 502s at once. That is #162 (`uuid` 13) and nearly #168
+(`jose` 6).
 
-## What esbuild does to an ESM source
-
-Not asserted from the documentation — built, and the output read. An ESM
-route bundled the way zip-it-and-ship-it bundles one (`bundle: true`,
-`platform: "node"`, `format: "cjs"`) comes out as:
+`netlify.toml` answers it with `node_bundler = "esbuild"`, and esbuild
+**flattens an ESM source into a CommonJS bundle**. Built with the settings
+zip-it-and-ship-it uses, a route comes out as:
 
 ```js
-// esm/route.mjs
 var route_exports = {};
 __export(route_exports, { handler: () => handler });
 module.exports = __toCommonJS(route_exports);
 ```
 
-The `import` statements are gone. `module.exports` is what ships. The
-runtime's `--no-experimental-require-module` — the flag AWS passes by name,
-which #185 read off `process.execArgv` — never meets a module boundary,
-because the bundler left none for it to meet. That is already true today
-with CommonJS sources, and it stays exactly as true with ESM ones.
+The `import` statements are gone; `module.exports` is what ships. The
+artefact was CommonJS before this migration and it is CommonJS after it. So:
 
-So the migration does not remove a module boundary; there is none left to
-remove. It does not unlock an ESM-only dependency; `jose` 6 and
-`openid-client` 6 are unlocked already, and were the entire reason anyone
-wanted it. Deployment benefit, measured rather than assumed: zero.
+- **Bundling is still load-bearing.** Turning it off does not now work
+  because the sources are ESM — it breaks everything, exactly as before.
+- **ESM-only dependencies were already fine**, from #190 onward, and this
+  migration is not what made them fine.
+- `external_node_modules` still bypasses the bundler by design. Anything in
+  that list is copied rather than inlined, so the runtime meets it directly
+  and must be requireable CommonJS. `mongodb` is the only entry.
+  `scripts/check_function_dependencies.js` asserts both facts.
 
-The one place the old rule survives is `external_node_modules`, which
-bypasses the bundler by design — `mongodb` is copied rather than inlined, so
-the runtime meets it directly. Source module system has no bearing on that
-either. `scripts/check_function_dependencies.js` guards it and would go on
-guarding it unchanged.
+## What actually blocked it, and why that was worth fixing
 
-## What the migration would actually cost
+Six controller tests injected their in-memory Mongo, their `jose` stub and
+their `openid-client` stub by patching `Module._load`. ES modules have no
+such hook, and `node:test`'s `mock.module` — the usual replacement — needs
+`--experimental-test-module-mocks`, without which the files fail rather than
+skip. That would have made `npm test` permanently dependent on an
+experimental flag, against a suite CLAUDE.md protects for needing no
+install, no database and no keys. Its options shape has already moved once:
+`namedExports` was the documented form when it landed in Node 22.3 and warns
+as deprecated on Node 24.
 
-**The test harness, and only the test harness.** Everything else about
-`src/api` is unusually ready: 79 files, zero `__dirname` or `__filename`
-between them, and the four `require('x').default` interop shims in the
-adapters and `parsers/users.js` get *simpler* as ESM imports, not harder.
+But the tests reached through the module system because **four modules built
+clients while they were being imported**, leaving nothing to pass:
 
-Six test files — `entries`, `name`, `revisions`, `stats`, `works` and
-`auth_token` — inject their in-memory Mongo, their `jose` stub and their
-`openid-client` stub by patching `Module._load`. (#185 counted four. It is
-six now; the cost drifts upward while nobody is watching.)
+- `utils/db/db.js` constructed its `MongoClient` at module top level.
+- `utils/external_api_adapters/tmdb_adapter.js` built its TMDB client the
+  same way, throwing on a missing `TMDB_API_KEY`.
+- `utils/external_api_adapters/games/igdb.js` threw at require time on
+  missing Twitch credentials — with a comment complaining that this kills
+  the cold start before any handler exists to report it.
+- `utils/openid_client.js` wrapped `import("openid-client")` — the package is
+  ESM-only from v6 — behind a CommonJS module whose *path* the suite patched,
+  because `import()` does not go through `Module._load` at all. That module's
+  own comment named this problem and called keeping it "to one module instead
+  of seventy-seven" the cheaper trade.
 
-They patch module resolution because there is nothing to pass. `db.js`
-constructs its `MongoClient` at module top level:
+By the time a test held any of these, the real thing existed. Intercepting
+resolution was the only seam, and `mock.module` would have reproduced that
+same reach-through with a flag holding it up rather than fixing it.
 
-```js
-const mongoClient = new MongoClient(
-  process.env.MONGODB_URL ?? throwIt('MONGODB_URL not set'), ...)
-```
+So the fix was not the migration. It was deferring construction to first
+use and leaving ordinary seams — `useClient`, `useAdapters`, `useLoader`,
+each called only by the suite. That is worth having in CommonJS on its own
+merits, and once it was done the migration needed no experimental anything.
 
-The singleton exists as a side effect of the import. A test cannot hand the
-module a fake client because by the time it holds the module, the real one
-is built. Intercepting the *resolution* is the only seam there is.
+**One thing the migration did simplify outright.** Three test files probed
+for `openid-client` with `require.resolve('openid-client/package.json')`,
+because `require` of an ESM-only package answers "not installed" on a loader
+without `require(esm)` — which would have skipped the file rather than
+failed it. Under ESM that is just `await import('openid-client')`. The
+workaround was load-bearing: a leftover `require.resolve` in an ESM file
+throws `require is not defined`, the probe's own `catch` swallows it, and
+the file skips itself while claiming the dependencies are missing. Which is
+the failure mode worth stating plainly — **a probe that throws for the wrong
+reason skips silently.** Run the suite with the dependencies installed and
+confirm nothing skips; that is what catches it.
 
-ESM has no `Module._load`. The replacement is `node:test`'s `mock.module`,
-and it was tried:
+**The rule this leaves, which matters more than the module system:**
+importing anything under `src/api` must not require a credential, open a
+connection or construct a client. A missing key is a fault of the request
+that needs it, not of the cold start of every route that happens to share a
+module with it. `check_function_dependencies.js` now loads every route with
+the environment passed through untouched, so a new import-time credential
+read fails CI rather than waiting to fail a deploy.
 
-- It needs `--experimental-test-module-mocks`. Without the flag the file does
-  not skip, it **fails** — so `npm test` stops being a bare `node --test`
-  for every developer and every CI run, permanently.
-- Its options shape has already moved. `namedExports` was the documented form
-  when the API landed in Node 22.3; on Node 24 it warns
-  `options.namedExports is deprecated. Use options.exports instead.` That is
-  the experimental-API risk arriving on schedule rather than in theory.
+## Scoping: why a nested `package.json`
 
-Trading a private-but-stable API for a public-but-experimental one, to make
-the suite depend on a flag, in exchange for nothing — CLAUDE.md calls the
-no-install, no-database, no-API-key suite worth protecting, and the same
-argument protects no-flag.
+Three ways to make Netlify take ESM functions, and the choice is not
+obvious:
 
-**The alternative is better and does not need this migration.** Injecting
-the dependencies as arguments — restructuring the `db.js` singleton and the
-12 files that import it — gives better tests with no experimental anything.
-It is worth doing on its own merits, in CommonJS, today. That is the whole
-point: the good half of route 3 is separable from route 3.
+1. `"type": "module"` at the repo root. Rejected: it converts
+   `.eleventy.js`, `src/frontend/_data/assets.js` and the 16 files under
+   `src/db_maintenance` and `src/frontend` that use `__dirname`, none of
+   which this change has any business touching.
+2. Rename all 79 files to `.mjs`. Works — Netlify takes `.mjs` functions and
+   a bare `node --test` discovers `.test.mjs` — but it is 79 renames plus
+   every relative specifier, and it would have made
+   `check_function_dependencies.js`'s `readdirSync(...).endsWith('.js')`
+   filter match nothing and quietly check zero routes.
+3. **A nested `src/api/package.json`.** Node takes `type` from the nearest
+   `package.json`, so this scopes ESM to the subtree with the filenames
+   unchanged. Bare specifiers still resolve up to the root `node_modules`,
+   and esbuild honours it when bundling.
 
-## Three things #185 got wrong, all in the migration's favour
+Option 3 is what is here. `jsconfig.json` follows it, and affects nothing
+but an editor — no CI job runs `tsc`.
 
-Recorded because they cut against the conclusion here, and a decision
-document that only lists the evidence for itself is an advert.
+## The one place CommonJS still meets this tree
 
-1. **`"type": "module"` is not required.** Netlify takes ESM functions
-   per-file as `.mjs`, and a bare `node --test` discovers `.test.mjs`
-   alongside `.test.js` with no configuration — verified. The repo-wide blast
-   radius #185 priced in — `.eleventy.js`, `src/frontend/_data/assets.js`,
-   `jsconfig.json`'s `"module": "commonjs"`, and the 16 files under
-   `src/db_maintenance` and `src/frontend` that do use `__dirname` — is
-   avoidable in full.
+`src/db_maintenance` is CommonJS and requires four modules out of
+`src/api`: `utils/work_types.js`, `utils/db/queries.js` and
+`utils/external_api_adapters/games/time_to_beat.js`. Those are now ESM, so
+this is `require(esm)`, which Node has had unflagged since 22.12 — and the
+repo pins 24, in `netlify.toml` and in CI alike, so there is room to spare.
 
-2. **The chain no longer has to move together.** "A route importing a CJS
-   controller solves nothing" was true when the runtime met every boundary.
-   Under esbuild an ESM route importing a CJS controller bundles and runs —
-   verified, output executed. A phased migration is available.
+Two things to know about that:
 
-3. It is 79 files now, not 77.
+- **The AWS flag does not apply here.** `--no-experimental-require-module`
+  is passed to the *functions runtime*, and only `src/api/routes` is
+  deployed. `src/db_maintenance` runs on a laptop.
+- **`require(esm)` throws if the imported graph uses top-level await.** None
+  of those three modules or their imports do. Adding one would break the
+  maintenance scripts, and `index_plan.test.js` and
+  `game_playtime_plan.test.js` are what would catch it — both run in CI's
+  dependency-free job, so the boundary is exercised on every push rather
+  than trusted.
 
-None of this rescues the case. A migration that is easier than believed but
-buys nothing measurable is still a migration that buys nothing measurable.
+## Still out of scope
 
-## What would change this
-
-- **Bundling stops being the answer.** If Netlify defaults away from esbuild,
-  or the API needs a dependency that has to go in `external_node_modules` and
-  is ESM-only. Externals bypass the bundler, so that is the one live path
-  back to the original failure — and it is the reason
-  `check_function_dependencies.js` asserts the bundler is still esbuild.
-- **`mock.module` goes stable and flag-free.** The cost above is almost
-  entirely that flag. Without it this becomes a mechanical change.
-- **The dependency-injection refactor happens first**, for its own reasons.
-  Afterwards the six test files no longer need a module-resolution seam and
-  the migration is a rename plus a `sed`.
-- **Functions move off the bundler to native ESM** — #185's route 3 taken to
-  its end, which is a different and larger argument than the one here.
-
-## Not in scope, now or then
-
-`src/frontend/_includes/js/**` is deliberately not a module system.
-`asset_plan.js` concatenates 42 files, each wrapped in its own IIFE,
-communicating through globals. Making it modules is #24 and stands or falls
-on its own reasoning; it is not a rider on this one.
+`src/frontend/_includes/js/**` is deliberately not a module system:
+`asset_plan.js` concatenates 42 files, each in its own IIFE, communicating
+through globals. That is #24 and its own argument, not a rider on this one.

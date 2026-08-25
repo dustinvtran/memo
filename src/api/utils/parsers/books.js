@@ -3,11 +3,10 @@
  * @template T
  * @typedef {import('./utils').Validator<T>} Validator
  */
-const { workParser } = require('./works')
-const { validate } = require('./utils')
-const { z } = require('zod')
-const { entryParser, entryUpdateParser } = require('./entries')
-
+import { workParser } from './works.js'
+import { validate } from './utils.js'
+import { z } from 'zod'
+import { entryParser, entryUpdateParser } from './entries.js'
 const bookParser = workParser.extend({
   entryType: z.literal('Book'),
   authors: z.array(z.string()).nullable().optional(),
@@ -32,7 +31,7 @@ const bookEntryUpdates = (x) => validate(bookEntryUpdateParser, x)
 /** @type Validator<Book> */
 const books = (x) => validate(bookParser, x)
 
-module.exports = {
+export {
   bookEntries,
   bookEntryUpdates,
   books,

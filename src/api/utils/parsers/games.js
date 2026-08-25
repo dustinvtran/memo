@@ -3,11 +3,10 @@
  * @template T
  * @typedef {import('./utils').Validator<T>} Validator
  */
-const { workParser } = require('./works')
-const { validate } = require('./utils')
-const { z } = require('zod')
-const { entryParser, entryUpdateParser } = require('./entries')
-
+import { workParser } from './works.js'
+import { validate } from './utils.js'
+import { z } from 'zod'
+import { entryParser, entryUpdateParser } from './entries.js'
 const gameParser = workParser.extend({
   entryType: z.literal('Game'),
   platforms: z.array(z.string()).nullable().optional(),
@@ -33,7 +32,7 @@ const gameEntryUpdates = (x) => validate(gameEntryUpdateParser, x)
 /** @type Validator<Game> */
 const games = (x) => validate(gameParser, x)
 
-module.exports = {
+export {
   gameEntries,
   gameEntryUpdates,
   games,

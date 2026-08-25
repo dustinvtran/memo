@@ -1,8 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const { earliestReleaseDate } = require('./release_dates')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { earliestReleaseDate } from './release_dates.js'
 /** Dates as IGDB sends them: unix seconds, in no particular order. */
 const threePlatforms = [
   { id: 2, date: 1101772800, platform: 8 },

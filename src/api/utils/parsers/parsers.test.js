@@ -16,14 +16,13 @@
  * `zod` is a dependency, so the file **skips itself** when it isn't installed
  * (which is how CI runs the suite), the same way responses.test.js does.
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('zod')
-    require('neverthrow')
-    require('validator')
+    await import('zod')
+    await import('neverthrow')
+    await import('validator')
     return true
   } catch (error) {
     return false
@@ -34,10 +33,10 @@ const options = {
   skip: dependenciesInstalled ? false : 'run `npm install` to run these',
 }
 
-const parsers = dependenciesInstalled ? require('./index') : {}
-const updates = dependenciesInstalled ? require('./updates') : {}
-const revisions = dependenciesInstalled ? require('./revisions') : {}
-const users = dependenciesInstalled ? require('./users') : {}
+const parsers = dependenciesInstalled ? await import('./index.js') : {}
+const updates = dependenciesInstalled ? await import('./updates.js') : {}
+const revisions = dependenciesInstalled ? await import('./revisions.js') : {}
+const users = dependenciesInstalled ? await import('./users.js') : {}
 
 /** The value a parser produced, or an assertion failure naming the error. */
 const parsed = (validator, input) => {

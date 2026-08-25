@@ -99,7 +99,7 @@ const revisionsToPrune = (revisions, max = MAX_REVISIONS_PER_ENTRY) =>
     .slice(max)
     .map(({ _id }) => _id)
 
-module.exports = {
+export {
   REVISION_FIELDS,
   MAX_REVISIONS_PER_ENTRY,
   toSnapshot,
@@ -108,7 +108,6 @@ module.exports = {
   toVersionList,
   revisionsToPrune,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 const byNewestFirst = (a, b) => (b.createdDate ?? 0) - (a.createdDate ?? 0)

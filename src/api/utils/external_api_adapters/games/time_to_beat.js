@@ -104,7 +104,7 @@ const indexTimesByGameId = (rows) =>
       .map((row) => [Number(row.game_id), row])
   )
 
-module.exports = {
+export {
   TIME_TO_BEATS_URL,
   MAX_GAME_IDS_PER_QUERY,
   TIME_TO_BEAT_FIELD,

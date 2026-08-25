@@ -1,12 +1,11 @@
 /** @typedef {import('@netlify/functions').Handler} Handler */
-const responses = require('../utils/responses')
-const { matchVerbAndNumberOfUrlSegments, } = require('../router')
-const { getUrlSegments } = require('../controllers/utils')
-const { handleLogout, handleLogin, handleCallback, handleRenew } = require('../controllers/auth')
-const { match } = require('ts-pattern')
-
+import * as responses from '../utils/responses.js'
+import { matchVerbAndNumberOfUrlSegments } from '../router.js'
+import { getUrlSegments } from '../controllers/utils.js'
+import { handleLogout, handleLogin, handleCallback, handleRenew } from '../controllers/auth.js'
+import { match } from 'ts-pattern'
 /** @type Handler */
-exports.handler = async (event, context) => {
+export const handler = async (event, context) => {
   return matchVerbAndNumberOfUrlSegments(event)
 
     // GET /api/auth/{logout | login | renew}

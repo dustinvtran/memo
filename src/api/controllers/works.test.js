@@ -18,15 +18,14 @@
  * **skips itself** when they aren't installed, which is how CI runs the
  * suite.
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('neverthrow')
-    require('zod')
-    require('ts-pattern')
-    require('ramda')
+    await import('neverthrow')
+    await import('zod')
+    await import('ts-pattern')
+    await import('ramda')
     return true
   } catch (error) {
     return false
@@ -38,7 +37,7 @@ const options = {
 }
 
 /** An adapter answers with a ResultAsync, so the stub below has to as well. */
-const { okAsync } = dependenciesInstalled ? require('neverthrow') : {}
+const { okAsync } = dependenciesInstalled ? await import('neverthrow') : {}
 
 process.env.MONGODB_URL = process.env.MONGODB_URL ?? 'mongodb://in-memory'
 process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
@@ -104,11 +103,11 @@ const stubAdapter = {
    than by intercepting `require('mongodb')`. ES modules have no `Module._load`,
    and that patch was the only thing keeping this tree on CommonJS — see
    `docs/module_system.md`. The tokens are real for the same reason. */
-const { useClient } = dependenciesInstalled ? require('../utils/db/db') : {}
+const { useClient } = dependenciesInstalled ? await import('../utils/db/db.js') : {}
 const { useAdapters } = dependenciesInstalled
-  ? require('../utils/external_api_adapters')
+  ? await import('../utils/external_api_adapters/index.js')
   : {}
-const { tokenFor } = dependenciesInstalled ? require('./test_tokens') : {}
+const { tokenFor } = dependenciesInstalled ? await import('./test_tokens.js') : {}
 
 if (dependenciesInstalled) {
   useClient(new MongoClient())
@@ -120,7 +119,7 @@ if (dependenciesInstalled) {
   })
 }
 
-const works = dependenciesInstalled ? require('../routes/works') : undefined
+const works = dependenciesInstalled ? await import('../routes/works.js') : undefined
 
 ///////////////////////////////////////////////////////////////////////////////
 

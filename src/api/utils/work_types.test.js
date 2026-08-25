@@ -1,14 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const {
-  WORK_TYPES,
-  TYPES,
-  byType,
-  byEntryCollection,
-  parseRef,
-} = require('./work_types')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { WORK_TYPES, TYPES, byType, byEntryCollection, parseRef } from './work_types.js'
 /**
  * Refs the works collections really hold: Inception, Breaking Bad, Grand Theft
  * Auto V, The Passage, and an ISBN-10 whose check digit is an X — the one

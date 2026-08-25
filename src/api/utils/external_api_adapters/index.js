@@ -1,3 +1,7 @@
+import films from './films/tmdb.js'
+import tv from './tv_shows/tmdb.js'
+import * as games from './games/igdb.js'
+import * as books from './books/google.js'
 /**
  * @file The adapter for each work type, keyed by the `:type` url segment.
  *
@@ -10,12 +14,8 @@
  * seam — which is what lets the tree be ES modules at all. See
  * `docs/module_system.md`.
  */
-const adapters = {
-  films: require('./films/tmdb'),
-  tv: require('./tv_shows/tmdb'),
-  games: require('./games/igdb'),
-  books: require('./books/google'),
-}
+
+const adapters = { films, tv, games, books }
 
 /**
  * Replace some or all of the adapters. The suite is the only caller.
@@ -25,4 +25,4 @@ const useAdapters = (replacements) => {
   Object.assign(adapters, replacements)
 }
 
-module.exports = { adapters, useAdapters }
+export { adapters, useAdapters }

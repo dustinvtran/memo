@@ -110,6 +110,12 @@ jobs:
       # used — so `netlify.toml` runs this script too, ahead of Eleventy.
       # Failing here is cheaper; failing there is the one that cannot be
       # skipped.
+      #
+      # `src/api` is ES modules now, which changes none of that — esbuild
+      # flattens an ESM source to a CommonJS bundle either way. The script
+      # also loads every route with `import()` and with the environment passed
+      # through untouched, so a module that reads a credential while it is
+      # being imported fails here. See docs/module_system.md.
       - name: The functions runtime and the API's dependencies must be what the repo says
         run: node scripts/check_function_dependencies.js
 

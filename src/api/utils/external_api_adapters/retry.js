@@ -160,7 +160,7 @@ const retrying = async (attempt, { attempts = ATTEMPTS, sleep = wait } = {}) => 
   }
 }
 
-module.exports = {
+export {
   ATTEMPTS,
   BASE_DELAY_MS,
   MAX_DELAY_MS,
@@ -175,7 +175,6 @@ module.exports = {
   retrying,
   statusOf,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /** @type {(ms: number) => Promise<void>} */

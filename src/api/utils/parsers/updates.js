@@ -20,9 +20,14 @@
 /** @typedef {import('./index').ValidCollection} ValidCollection */
 
 /** @type {Record<string, Validator<any>>} */
-module.exports = {
-  filmEntries: require('./films').filmEntryUpdates,
-  gameEntries: require('./games').gameEntryUpdates,
-  tvShowEntries: require('./tvShows').tvShowEntryUpdates,
-  bookEntries: require('./books').bookEntryUpdates,
+import { filmEntryUpdates } from './films.js'
+import { gameEntryUpdates } from './games.js'
+import { tvShowEntryUpdates } from './tvShows.js'
+import { bookEntryUpdates } from './books.js'
+
+export {
+  filmEntryUpdates as filmEntries,
+  gameEntryUpdates as gameEntries,
+  tvShowEntryUpdates as tvShowEntries,
+  bookEntryUpdates as bookEntries,
 }

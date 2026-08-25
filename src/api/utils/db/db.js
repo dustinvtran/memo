@@ -1,8 +1,7 @@
 /** @typedef {import('mongodb').Db} Db */
 /** @typedef {import('mongodb').ClientSession} ClientSession */
-const { MongoClient, ServerApiVersion } = require('mongodb')
-const { throwIt, warn } = require('../general')
-
+import { MongoClient, ServerApiVersion } from 'mongodb'
+import { throwIt, warn } from '../general.js'
 /**
  * The client every query here runs through, built on first use rather than
  * on import.
@@ -89,12 +88,11 @@ const withTransaction = async (work) => {
   )
 }
 
-module.exports = {
+export {
   mongo,
   withTransaction,
   useClient,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /** @type {boolean | undefined} */

@@ -14,14 +14,13 @@
  * dependencies, so the file **skips itself** when they aren't installed
  * (which is how CI runs the suite).
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('neverthrow')
-    require('zod')
-    require('ts-pattern')
+    await import('neverthrow')
+    await import('zod')
+    await import('ts-pattern')
     return true
   } catch (error) {
     return false
@@ -126,15 +125,15 @@ class MongoClient {
    than by intercepting `require('mongodb')`. ES modules have no `Module._load`,
    and that patch was the only thing keeping this tree on CommonJS — see
    `docs/module_system.md`. The tokens are real for the same reason. */
-const { useClient } = dependenciesInstalled ? require('../utils/db/db') : {}
-const { tokenFor } = dependenciesInstalled ? require('./test_tokens') : {}
+const { useClient } = dependenciesInstalled ? await import('../utils/db/db.js') : {}
+const { tokenFor } = dependenciesInstalled ? await import('./test_tokens.js') : {}
 
 if (dependenciesInstalled) useClient(new MongoClient())
 
-const name = dependenciesInstalled ? require('../routes/name') : undefined
-const bio = dependenciesInstalled ? require('../routes/bio') : undefined
+const name = dependenciesInstalled ? await import('../routes/name.js') : undefined
+const bio = dependenciesInstalled ? await import('../routes/bio.js') : undefined
 const { MAX_BIOGRAPHY_LENGTH } = dependenciesInstalled
-  ? require('../utils/parsers/users')
+  ? await import('../utils/parsers/users.js')
   : { MAX_BIOGRAPHY_LENGTH: 0 }
 
 ///////////////////////////////////////////////////////////////////////////////

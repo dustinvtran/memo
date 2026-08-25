@@ -4,13 +4,12 @@
 /** @typedef {import('../types').BookRetrieveFunction} BookRetrieveFunction */
 /** @typedef {import('../../errors').Error} Error */
 /** @typedef {import('../../parsers/books').Book} Book */
-const { ResultAsync } = require('neverthrow')
-const errors = require('../../errors')
-const axios = require('axios').default
-const { throwIt } = require('../../general')
-const { retrying, describeFailure, publicFailure, statusOf } = require('../retry')
-const { BASE_URL, searchUrls, toSearchResults } = require('./google_search')
-
+import { ResultAsync } from 'neverthrow'
+import * as errors from '../../errors.js'
+import axios from 'axios'
+import { throwIt } from '../../general.js'
+import { retrying, describeFailure, publicFailure, statusOf } from '../retry.js'
+import { BASE_URL, searchUrls, toSearchResults } from './google_search.js'
 const { GOOGLE_API_KEY } = process.env
 
 /* Only use key if it's present in the env vars */
@@ -53,11 +52,10 @@ const retrieve = (ref) => ResultAsync.fromPromise(
 )
 
 /** @type Adapter */
-module.exports = {
+export {
   search,
   retrieve
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

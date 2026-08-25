@@ -15,8 +15,7 @@
  *
  * Not named `*.test.js`, so `node --test` does not try to run it.
  */
-const { SignJWT } = require('jose')
-
+import { SignJWT } from 'jose'
 /*
  * Signed with whatever the test file put in `TOKEN_SECRET`, which is also
  * what the controllers verify against. `session_token.js` refuses a key of
@@ -46,4 +45,4 @@ const tokenFor = async (sub) => {
     .sign(secret())
 }
 
-module.exports = { tokenFor }
+export { tokenFor }

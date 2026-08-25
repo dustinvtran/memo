@@ -1,10 +1,9 @@
 /** @typedef {import('@netlify/functions').Handler} Handler */
-const responses = require('../utils/responses')
-const { matchVerbAndNumberOfUrlSegments, } = require('../router')
-const { setBio } = require('../controllers/bio')
-
+import * as responses from '../utils/responses.js'
+import { matchVerbAndNumberOfUrlSegments } from '../router.js'
+import { setBio } from '../controllers/bio.js'
 /** @type Handler */
-exports.handler = async (event, context) =>
+export const handler = async (event, context) =>
   matchVerbAndNumberOfUrlSegments(event)
 
     // POST /api/bio

@@ -5,11 +5,10 @@
  */
 /** @typedef {import('../types').Adapter} Adapter */
 /** @typedef {import('../../parsers/films').Film} Film */
-const { tmdbAdapter } = require('../tmdb_adapter')
-const { FILM_MAPPING } = require('../tmdb_mapping')
-
+import { tmdbAdapter } from '../tmdb_adapter.js'
+import { FILM_MAPPING } from '../tmdb_mapping.js'
 /** @type Adapter */
-module.exports = tmdbAdapter({
+export default tmdbAdapter({
   mapping: FILM_MAPPING,
   search: (client, query) => client.search.movies({ query: { query } }),
   details: (client, movie_id) => client.movie.getDetails({ pathParameters: { movie_id } }),

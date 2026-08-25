@@ -21,13 +21,12 @@
 /** @typedef {import('../responses').Response} Response */
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../errors').Error} Error */
-const { ResultAsync, okAsync, errAsync } = require('neverthrow')
-const { _findOne, _findMany, _countScoresByValue, _findOneByField, _findOneByRef, _findAllByFieldIn, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } = require('./unsafe_functions')
-const { compose } = require('ramda')
-const { withTransaction } = require('./db')
-const { toResponse, toResult } = require('./into_safe_values')
-const errors = require('../errors')
-
+import { ResultAsync, okAsync, errAsync } from 'neverthrow'
+import { _findOne, _findMany, _countScoresByValue, _findOneByField, _findOneByRef, _findAllByFieldIn, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } from './unsafe_functions.js'
+import { compose } from 'ramda'
+import { withTransaction } from './db.js'
+import { toResponse, toResult } from './into_safe_values.js'
+import * as errors from '../errors.js'
 /** @typedef {import('./queries').QueryOptions} QueryOptions */
 /** @typedef {import('mongodb').ClientSession} ClientSession */
 
@@ -102,7 +101,7 @@ const create = compose(toResponse, _create)
 /** @type {(collection: ValidCollection, data: ExprArg, session?: ClientSession) => ResultAsync<any, Error>} */
 const create_ = compose(toResult, _create)
 
-module.exports = {
+export {
   withTransaction,
   findOneByRef_,
   findOne_,

@@ -35,4 +35,4 @@ const useLoader = (replacement) => {
   loader = replacement
 }
 
-module.exports = { load, useLoader }
+export { load, useLoader }

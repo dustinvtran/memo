@@ -2,9 +2,8 @@
  * @file A past version of an entry (`kind: 'revision'`), or the unsaved
  * edit-in-progress the form autosaves (`kind: 'draft'`).
  */
-const { z } = require('zod')
-const { validate } = require('./utils')
-
+import { z } from 'zod'
+import { validate } from './utils.js'
 /**
  * The user-editable half of an entry, plus the review text, which lives in
  * its own collection but is the field most worth being able to recover.
@@ -45,7 +44,7 @@ const entryRevisions = (x) => validate(entryRevisionParser, x)
 /** @type Validator<any> */
 const snapshot = (x) => validate(snapshotParser, x)
 
-module.exports = {
+export {
   entryRevisions,
   snapshot,
 }

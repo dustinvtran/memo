@@ -16,26 +16,13 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
-const { ResultAsync, okAsync } = require('neverthrow')
-const responses = require('../utils/responses')
-const db = require('../utils/db/')
-const parsers = require('../utils/parsers')
-const {
-  getUserId,
-  getSegment,
-  getReqBody,
-  toEntryCollection,
-  toEntryType,
-  toReviewCollection,
-} = require('./utils')
-const { triplet, toPromise, warn } = require('../utils/general')
-const {
-  toSnapshot,
-  hasChanges,
-  toVersionList,
-  revisionsToPrune,
-} = require('../utils/revision_history')
-
+import { ResultAsync, okAsync } from 'neverthrow'
+import * as responses from '../utils/responses.js'
+import * as db from '../utils/db/index.js'
+import * as parsers from '../utils/parsers/index.js'
+import { getUserId, getSegment, getReqBody, toEntryCollection, toEntryType, toReviewCollection } from './utils.js'
+import { triplet, toPromise, warn } from '../utils/general.js'
+import { toSnapshot, hasChanges, toVersionList, revisionsToPrune } from '../utils/revision_history.js'
 const COLLECTION = 'entryRevisions'
 
 /**
@@ -167,7 +154,7 @@ const discardDraft = async (entryRef, userId) => {
 const discardHistory = (entryRef) =>
   db.deleteAllByField_(COLLECTION, 'entryRef', entryRef).unwrapOr(undefined)
 
-module.exports = {
+export {
   getVersions,
   getDraft,
   saveDraft,
@@ -176,7 +163,6 @@ module.exports = {
   discardDraft,
   discardHistory,
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 /**

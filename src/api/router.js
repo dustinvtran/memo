@@ -7,11 +7,10 @@
 /** @typedef {import('./utils/responses').Response} Response */
 /** @typedef {import('./utils/errors').Error} Error */
 /** @typedef {import('./utils/parsers').ValidCollection} ValidCollection */
-const { match } = require('ts-pattern')
-const { length } = require('ramda')
-const { pair } = require('./utils/general')
-const { getUrlSegments } = require('./controllers/utils')
-
+import { match } from 'ts-pattern'
+import { length } from 'ramda'
+import { pair } from './utils/general.js'
+import { getUrlSegments } from './controllers/utils.js'
 /**
  * This is the main routing utility we use in our Netlify functions.
  * Refer to the ts-pattern API to understand how it works, but the
@@ -27,6 +26,6 @@ const { getUrlSegments } = require('./controllers/utils')
 const matchVerbAndNumberOfUrlSegments = (event) =>
   match(pair([event.httpMethod, length(getUrlSegments(event))]))
 
-module.exports = {
+export {
   matchVerbAndNumberOfUrlSegments,
 }

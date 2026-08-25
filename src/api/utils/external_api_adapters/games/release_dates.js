@@ -31,6 +31,6 @@ const earliestReleaseDate = (releaseDates) =>
     .filter((date) => typeof date === 'number' && Number.isFinite(date))
     .sort((a, b) => a - b)[0]
 
-module.exports = {
+export {
   earliestReleaseDate,
 }

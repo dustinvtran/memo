@@ -3,13 +3,12 @@
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../utils/errors').Error} Error */
 /** @typedef {import('../utils/responses').Response} Response */
-const responses = require('../utils/responses')
-const { ResultAsync } = require('neverthrow')
-const { getUserId, getReqBody } = require('./utils')
-const { pair, toAsync, toPromise } = require('../utils/general')
-const db = require('../utils/db/')
-const { biography: parseBiography } = require('../utils/parsers/users')
-
+import * as responses from '../utils/responses.js'
+import { ResultAsync } from 'neverthrow'
+import { getUserId, getReqBody } from './utils.js'
+import { pair, toAsync, toPromise } from '../utils/general.js'
+import * as db from '../utils/db/index.js'
+import { biography as parseBiography } from '../utils/parsers/users.js'
 /** @type {(event: Event, context: Context) => Promise<Response>} */
 const setBio = (event) => toPromise(
   ResultAsync.combine(pair([
@@ -38,6 +37,6 @@ const setBio = (event) => toPromise(
 )
 
 
-module.exports = {
+export {
   setBio,
 }

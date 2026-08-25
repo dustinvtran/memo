@@ -2,14 +2,13 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/errors').Error} Error */
-const { okAsync, ResultAsync } = require('neverthrow')
-const { findOneByField_, updateByRef_, create_ } = require('../utils/db')
-const { pair, toAsync, toPromise } = require('../utils/general')
-const responses = require('../utils/responses')
-const { getUserId, getReqBody, getSegment } = require('./utils')
-const feErrors = require('../utils/frontend_errors')
-const { username: parseUsername } = require('../utils/parsers/users')
-
+import { okAsync, ResultAsync } from 'neverthrow'
+import { findOneByField_, updateByRef_, create_ } from '../utils/db/index.js'
+import { pair, toAsync, toPromise } from '../utils/general.js'
+import * as responses from '../utils/responses.js'
+import { getUserId, getReqBody, getSegment } from './utils.js'
+import * as feErrors from '../utils/frontend_errors.js'
+import { username as parseUsername } from '../utils/parsers/users.js'
 /** @type {(event: Event) => Promise<Response>} */
 const findOwnName = (event) => toPromise(
   getUserId(event)
@@ -51,12 +50,11 @@ const setOwnName = (event) => toPromise(
     .mapErr(responses.fromError)
 )
 
-module.exports = {
+export {
   findOwnName,
   setOwnName,
   getUserIdFromName,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

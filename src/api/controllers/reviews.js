@@ -1,11 +1,10 @@
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
-const { getSegment } = require('./utils')
-const { toPromise } = require('../utils/general')
-const responses = require('../utils/responses')
-const db = require('../utils/db/')
-const workTypes = require('../utils/work_types')
-
+import { getSegment } from './utils.js'
+import { toPromise } from '../utils/general.js'
+import * as responses from '../utils/responses.js'
+import * as db from '../utils/db/index.js'
+import * as workTypes from '../utils/work_types.js'
 /**
  * GET /api/reviews/:type/:entryRef
  *
@@ -32,6 +31,6 @@ const getReview = async (event) => {
   )
 }
 
-module.exports = {
+export {
   getReview,
 }

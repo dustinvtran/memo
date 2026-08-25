@@ -22,14 +22,13 @@
  * aren't installed (which is how CI runs the suite). The same shape is pinned
  * without them on `toStats` in ../utils/score_tallies.test.js.
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('neverthrow')
-    require('zod')
-    require('ts-pattern')
+    await import('neverthrow')
+    await import('zod')
+    await import('ts-pattern')
     return true
   } catch (error) {
     return false
@@ -113,12 +112,12 @@ class MongoClient {
    than by intercepting `require('mongodb')`. ES modules have no `Module._load`,
    and that patch was the only thing keeping this tree on CommonJS — see
    `docs/module_system.md`. The tokens are real for the same reason. */
-const { useClient } = dependenciesInstalled ? require('../utils/db/db') : {}
-const { tokenFor } = dependenciesInstalled ? require('./test_tokens') : {}
+const { useClient } = dependenciesInstalled ? await import('../utils/db/db.js') : {}
+const { tokenFor } = dependenciesInstalled ? await import('./test_tokens.js') : {}
 
 if (dependenciesInstalled) useClient(new MongoClient())
 
-const stats = dependenciesInstalled ? require('../routes/stats') : undefined
+const stats = dependenciesInstalled ? await import('../routes/stats.js') : undefined
 
 ///////////////////////////////////////////////////////////////////////////////
 

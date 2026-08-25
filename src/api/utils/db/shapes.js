@@ -29,6 +29,6 @@ const toEntryWithMetadata = ({ work, ...entry }, entryType) => ({
   work: work?.[0] ?? { entryType },
 })
 
-module.exports = {
+export {
   toEntryWithMetadata,
 }
