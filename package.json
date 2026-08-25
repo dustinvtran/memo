@@ -29,7 +29,7 @@
     "node-themoviedb": "^0.2.8",
     "openid-client": "^5.1.10",
     "ramda": "^0.27.2",
-    "ts-pattern": "^3.3.4",
+    "ts-pattern": "^5.9.0",
     "uglify-js": "^3.14.5",
     "validator": "^13.7.0",
     "zod": "^3.2.0"
