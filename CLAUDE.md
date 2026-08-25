@@ -77,9 +77,9 @@ again (#168).
 **The mechanism, which #185 finally read rather than guessed.** A throwaway
 function on a deploy preview reported `process.execArgv`, and AWS starts the
 runtime with `--no-experimental-require-module` on the command line, by
-name, next to `--no-experimental-detect-module`. Identical on `nodejs22.x`
-and on `nodejs26.x` — a Node where `require(esm)` has been stable and on by
-default for two releases. So this is AWS policy, not version drift: a newer
+name, next to `--no-experimental-detect-module`. Identical on `nodejs22.x`,
+`nodejs24.x` and `nodejs26.x` — Nodes where `require(esm)` has been stable
+and on by default for two releases or more. So this is AWS policy, not version drift: a newer
 runtime will not grow out of it, and `NODE_OPTIONS` cannot undo it, because
 a command-line flag beats `NODE_OPTIONS`. `process.features.require_module`
 is `false` on the deployed runtime for that reason and no other.
@@ -120,53 +120,47 @@ artefact has jose inlined, so an ESM-only dependency would fail it and ship
 perfectly well. A check that cries wolf gets deleted, and the real rule
 would have gone with it.
 
-**The runtime is pinned outside the repo, and #198 made the repo say so.**
-`AWS_LAMBDA_JS_RUNTIME` picks it, and Netlify reads that variable only from
-its UI, CLI or API — never from `netlify.toml`. That is not a footnote: the
-API ran on `nodejs18.x` — deprecated by AWS in September 2025, Node 18
-itself end-of-life since April 2025 — for years, while `netlify.toml` pinned
-`NODE_VERSION = "22"`, CI pinned Node 22, and this file said the repo builds
-on Node 22 deliberately. All true, all about the build, none of it about the
-runtime that serves requests, and nothing short of deploying a function that
-reported `process.version` could have found it.
+**The runtime used to be pinned outside the repo, and #198 removed the pin
+rather than mirroring it.** `AWS_LAMBDA_JS_RUNTIME` overrides the runtime and
+Netlify reads it only from its UI, CLI or API — never from `netlify.toml`.
+Set there, it kept the API on `nodejs18.x` for years — deprecated by AWS in
+September 2025, Node 18 itself end-of-life since April 2025 — while
+`netlify.toml` pinned `NODE_VERSION = "22"`, CI pinned Node 22, and this file
+said the repo builds on Node 22 deliberately. All true, all about the build,
+none of it about the runtime that serves requests, and nothing short of
+deploying a function that reported `process.version` could have found it.
 
-What changed is that the value is written down and checked, not that it
-moved. `netlify.toml` declares `EXPECTED_AWS_LAMBDA_JS_RUNTIME =
-"nodejs26.x"` under a name Netlify will never act on, so it stays a
-declaration rather than becoming a second place to configure the same thing.
-What gives a declaration teeth is a measurement: the Netlify build *is*
-handed the real `AWS_LAMBDA_JS_RUNTIME`, read off a preview in #198 rather
-than assumed, so `scripts/check_function_dependencies.js` can compare the two
-— and `netlify.toml` runs it before Eleventy, so a runtime changed in the UI
-without the repo fails the deploy instead of shipping. Every build now prints
-what the functions will run on next to what the build itself ran on.
+Netlify has derived the functions runtime from the build's Node since May
+2023, and documents that variable as the way to *break* that link when the
+two need to differ. They do not need to differ here. So the variable is gone
+from the UI, `NODE_VERSION` in `netlify.toml` is the whole configuration —
+one number, in the repo, for the build and the API alike — and
+`scripts/check_function_dependencies.js` fails the deploy if a Netlify build
+is ever handed that variable again. An override is now a failure rather than
+a value to keep in sync, which is a much easier thing to get right than two
+places that must agree.
 
-So changing the runtime is two edits, the Netlify UI and that line, and doing
-only the first stops deploys until the second lands. That is the intended
-noise. And `nodejs26.x` is an AWS **public preview** runtime — no SLA, no
-support, breaking changes possible and auto-applied — which is a deliberate
-choice for a hobby project rather than an oversight; declaring it makes the
-choice visible, not safe.
+**Why 24 and not something newer**, since #198 measured it and the number
+looks arbitrary otherwise. AWS ships a managed Lambda runtime only for Node
+majors on the LTS track, so there is no `nodejs25.x` and never will be.
+`nodejs26.x` does exist, as a **public preview** — no SLA, no support,
+breaking changes auto-applied, GA targeted for November 2026 — and Netlify
+will not derive a runtime from it: a preview deploy built on Node 26,
+`NODE_VERSION = "26"` asked for and honoured at `v26.1.0`, put its functions
+on `nodejs24.x` anyway. Netlify substitutes rather than failing, and it
+substitutes *after* the build, so nothing on the build side can see it
+happen. Node 26 is therefore the one value this file cannot tell the truth
+about, which makes it the #185 bug again with a different number. 24 is the
+newest that stays true, and is generally available on Amazon Linux 2023 with
+AWS support to April 2028. When 26 goes GA, this is a one-line change plus
+the allowlist in the script.
 
-The build's Node is still a different number, and always was: the same
-preview reported `v22.23.2` from the build and `v26.1.0` from a function in
-the same deploy. It is pinned in `netlify.toml` and in both CI jobs, and the
-same script now checks those two against each other — `ci.yml` had only ever
-*said* it matched.
-
-**One thing #198 deliberately did not measure**: whether Netlify derives the
-runtime from the build's Node when `AWS_LAMBDA_JS_RUNTIME` is unset. Its docs
-say the default "is based on the Node.js version used for the build", with a
-fallback to Node 24 when that version is not a Lambda runtime in good
-standing — so unsetting the variable would probably move the API to
-`nodejs22.x`, and could silently land it on `nodejs24.x` instead. Measuring
-it means deleting the variable in the UI for one preview, and it could not
-have kept `nodejs26.x` anyway: expressing a public-preview runtime that way
-would mean `NODE_VERSION = "26"`, dragging the build and both CI jobs along
-and betting they land on the number you asked for. So the check treats an
-unset variable as a failure with an explanation rather than as a
-configuration — an unset variable is the invisible pinning it exists to end.
-If you ever do measure it, that is the branch to rewrite.
+The script keeps that allowlist — the majors Netlify will actually derive,
+not the ones AWS ships — so a version that would be quietly substituted fails
+before a deploy rather than being discovered after one. It also checks
+`netlify.toml` against both CI pins, which `ci.yml` had only ever *said* it
+matched, and on Netlify checks that the build really got the Node it asked
+for, since that is what the functions inherit.
 
 **The remaining way out, if esbuild ever stops being enough**, is ES modules
 for the functions themselves, which is what Netlify now recommends. That is
