@@ -75,8 +75,13 @@ const goodCookieHeader = (route) =>
  * Every way a callback can arrive without a login behind it. None of them
  * reaches `openidClient.load()`, which is why this file needs no stand-in for
  * Auth0 and no network.
+ *
+ * Built on call rather than at module load, because `cookie` is `undefined`
+ * until the check above says otherwise and a table built at load time runs
+ * before `skip` can decide anything. The suite runs with no install; a fixture
+ * that needs one has to be behind a function.
  */
-const unreadableCookieHeaders = {
+const unreadableCookieHeaders = () => ({
   'no cookie header at all': undefined,
   'no headers at all': null,
   'cookies, but not ours': 'other=1; nf_jwt=something',
@@ -97,14 +102,14 @@ const unreadableCookieHeaders = {
       state: Buffer.from(JSON.stringify({ nonce: 'e' })).toString('base64'),
     })
   ),
-}
+})
 
 /** The event shape the route hands the handler. */
 const asEvent = (cookieHeader) =>
   cookieHeader === null ? {} : { headers: { cookie: cookieHeader } }
 
 test('a callback with no login behind it is a 400, not a throw', options, async (t) => {
-  for (const [name, header] of Object.entries(unreadableCookieHeaders)) {
+  for (const [name, header] of Object.entries(unreadableCookieHeaders())) {
     await t.test(name, async () => {
       const response = await handleCallback(asEvent(header))
 
@@ -129,7 +134,7 @@ test('nothing about the cookie reaches the caller', options, async () => {
   // Which of the nine ways above it was is the log's business. All the caller
   // is told is that there is no login here to finish.
   const responses = await Promise.all(
-    Object.values(unreadableCookieHeaders).map((header) =>
+    Object.values(unreadableCookieHeaders()).map((header) =>
       handleCallback(asEvent(header))
     )
   )
