@@ -26,7 +26,9 @@ const dependenciesInstalled = (() => {
     require('ramda')
     // `controllers/auth.js` reaches these two, and its handlers are tested here.
     require('cookie')
-    require('openid-client')
+    /* ESM-only since v6, so `require` of it would answer "not installed" on any
+       loader without `require(esm)` and skip this file rather than fail it. */
+    require.resolve('openid-client/package.json')
     return true
   } catch (error) {
     return false
@@ -46,7 +48,7 @@ process.env.AUTH0_TOKEN_NAMESPACE = 'https://memo.test'
 /* The only stand-in in the file, and it stands in for Auth0 rather than for
    anything about the token: `handleCallback` is where a session's start is
    minted rather than carried forward, so it is worth reaching, and the only
-   thing between here and it is a discovery request and a code exchange. The
+   thing between here and it is a discovery request and the response check. The
    token that comes out the other end is verified below by the real jose,
    exactly as a request to the API would verify it. */
 const auth0Claims = {
@@ -55,24 +57,34 @@ const auth0Claims = {
   'https://memo.test/roles': ['user'],
 }
 
+/* What is replaced is `utils/openid_client`, not `'openid-client'` itself.
+   Since v6 the package is ESM-only and can only be loaded with `import()`,
+   which does not go through `Module._load` — so patching it here by the
+   package's own name is quietly ignored, and `handleCallback` goes out to the
+   real Auth0. That is a DNS error rather than a failed assertion, which is a
+   long way to travel to learn that the stub never applied. The seam is a
+   CommonJS module for exactly this reason and says so.
+
+   The shape is v6's: `discovery` answers a `Configuration` that the flow only
+   passes back in, and `implicitAuthentication` answers the ID Token claims set
+   directly, where v5's `callback()` answered a TokenSet with a `.claims()`. */
 if (dependenciesInstalled) {
   const Module = require('module')
   const loadModule = Module._load
   Module._load = function (request, ...args) {
-    if (request !== 'openid-client') {
+    if (!request.endsWith('utils/openid_client')) {
       return loadModule.apply(this, [request, ...args])
     }
-    class Client {
-      callbackParams() {
-        return {}
-      }
-      async callback() {
-        return { claims: () => auth0Claims }
-      }
-    }
     return {
-      generators: { nonce: () => 'a-nonce' },
-      Issuer: { discover: async () => ({ Client }) },
+      load: async () => ({
+        discovery: async () => ({}),
+        useIdTokenResponseType: () => {},
+        None: () => ({}),
+        randomNonce: () => 'a-nonce',
+        randomState: () => 'a-state',
+        buildAuthorizationUrl: () => new URL('https://auth0.test/authorize'),
+        implicitAuthentication: async () => auth0Claims,
+      }),
     }
   }
 }

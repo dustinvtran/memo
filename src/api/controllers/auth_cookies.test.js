@@ -22,7 +22,8 @@ const dependenciesInstalled = (() => {
   try {
     require('cookie')
     require('jose')
-    require('openid-client')
+    // ESM-only since v6 — see the note in `auth_cookie.test.js`.
+    require.resolve('openid-client/package.json')
     require('ts-pattern')
     return true
   } catch (error) {
