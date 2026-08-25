@@ -2,11 +2,10 @@
  * @template T
  * @typedef {import('./utils').Validator<T>} Validator
  */
-const { z } = require('zod')
-const validator = require('validator')
+import { z } from 'zod'
+import validator from 'validator'
 const { isAlphanumeric } = validator.default
-const { validate } = require('./utils')
-
+import { validate } from './utils.js'
 const scoreTallyParser = z.object({
   [1]: z.number(),
   [2]: z.number(),
@@ -70,7 +69,7 @@ const username = (x) => validate(usernameParser, x)
 /** @type Validator<string | null> */
 const biography = (x) => validate(biographyParser, x)
 
-module.exports = {
+export {
   users,
   username,
   biography,

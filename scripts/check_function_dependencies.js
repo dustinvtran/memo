@@ -44,6 +44,14 @@
  * perfectly well. Kept as it was, it would eventually be deleted for crying
  * wolf, and the real rule would go unguarded with it.
  *
+ * `src/api` is ES modules now (`src/api/package.json` sets the type for that
+ * subtree and nothing else). That changes nothing above: esbuild flattens an
+ * ESM source to a CommonJS bundle, so the artefact the runtime loads is the
+ * same either way — which is exactly why the migration was not urgent, and
+ * `docs/module_system.md` is that argument. What it does change is how this
+ * file loads a route to smoke-test it, `import()` rather than `require()`,
+ * because that is now what the source is.
+ *
  * Two things still bite, and they are what this checks:
  *
  *   1. Bundling has to actually be on. Everything else here rests on it, and
@@ -64,6 +72,7 @@
 const { execFileSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
+const { pathToFileURL } = require('node:url')
 
 const CONFIG = 'netlify.toml'
 const CI_WORKFLOW = '.github/workflows/ci.yml'
@@ -89,23 +98,20 @@ const readConfig = () => {
   return { directory, bundler, externals, nodeVersion, setsRuntime }
 }
 
-/** @type {(args: string[], what: string) => string | null} The error, or null. */
-const run = (args, what) => {
+/**
+ * @type {(args: string[]) => string | null} The error, or null.
+ *
+ * Deliberately no placeholder credentials. They used to be set here because
+ * `db.js` built its Mongo client, and the three adapters built theirs, while
+ * their modules were being read — so loading a route without keys threw, and
+ * this would have failed for the wrong reason. All four are built on first
+ * use now, which is what let the controller tests stop intercepting
+ * `require`. Passing the environment through untouched turns that into
+ * something this asserts: a route must load without a single credential.
+ */
+const run = (args) => {
   try {
-    execFileSync(process.execPath, args, {
-      stdio: 'pipe',
-      env: {
-        // Loading a route reads these into strings and connects to nothing,
-        // but `db.js` throws on a missing MONGODB_URL, which would fail this
-        // for the wrong reason.
-        MONGODB_URL: 'mongodb://localhost:27017/memo',
-        TWITCH_CLIENT_ID: 'placeholder',
-        TWITCH_CLIENT_SECRET: 'placeholder',
-        TMDB_API_KEY: 'placeholder',
-        GOOGLE_API_KEY: 'placeholder',
-        ...process.env,
-      },
-    })
+    execFileSync(process.execPath, args, { stdio: 'pipe' })
     return null
   } catch (error) {
     return String(error.stderr || error.message).trim()
@@ -240,14 +246,17 @@ for (const name of externals) {
 }
 
 /* Not the production loader — that is the point of bundling. This is the
-   plain smoke test the old job also gave us for free: a route whose requires
-   do not resolve is broken long before ESM enters into it. */
+   plain smoke test the old job also gave us for free: a route whose imports
+   do not resolve is broken long before the module system enters into it.
+   `import()` rather than `require()` because the routes are ES modules, and
+   a file url rather than a path because Windows drive letters are not. */
 if (!directory || !fs.existsSync(directory)) {
   fail(`${CONFIG} names a functions directory that does not exist: ${directory}`)
 } else {
   for (const file of fs.readdirSync(directory).filter((f) => f.endsWith('.js'))) {
-    const route = `./${path.posix.join(directory, file)}`
-    const error = run(['-e', `require('${route}')`])
+    const route = path.posix.join(directory, file)
+    const url = pathToFileURL(path.resolve(route)).href
+    const error = run(['--input-type=module', '-e', `await import('${url}')`])
     if (error) fail(`${route} does not load.`, error)
     else console.log(`ok: ${route} loads`)
   }

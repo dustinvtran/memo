@@ -14,8 +14,7 @@
  * `work_types` is pure for the same reason, so importing it costs nothing.
  */
 
-const { TYPES } = require('./work_types')
-
+import { TYPES } from './work_types.js'
 /** The `:type` segment of a list url, in the order the lists are exported. */
 const ENTRY_TYPES = TYPES
 
@@ -137,7 +136,7 @@ const toMarkdown = (doc, siteUrl) =>
     '',
   ].join('\n')
 
-module.exports = {
+export {
   ENTRY_TYPES,
   TYPE_TITLES,
   STATUS_ORDER,
@@ -147,7 +146,6 @@ module.exports = {
   toExportDocument,
   toMarkdown,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

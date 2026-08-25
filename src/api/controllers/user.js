@@ -12,11 +12,10 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/errors').Error} Error */
-const { findOneByField_ } = require('../utils/db')
-const responses = require('../utils/responses')
-const { toPromise } = require('../utils/general')
-const { getSegment } = require('./utils')
-
+import { findOneByField_ } from '../utils/db/index.js'
+import * as responses from '../utils/responses.js'
+import { toPromise } from '../utils/general.js'
+import { getSegment } from './utils.js'
 /**
  * GET /api/user/:username
  *
@@ -38,6 +37,6 @@ const getUserFromName = (event) => toPromise(
     .mapErr(responses.fromError)
 )
 
-module.exports = {
+export {
   getUserFromName,
 }

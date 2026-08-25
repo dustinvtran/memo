@@ -1,14 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const {
-  statusLabel,
-  toExportEntry,
-  toExportList,
-  toExportDocument,
-  toMarkdown,
-} = require('./export_view')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { statusLabel, toExportEntry, toExportList, toExportDocument, toMarkdown } from './export_view.js'
 const film = {
   entry: {
     _id: 'e1',

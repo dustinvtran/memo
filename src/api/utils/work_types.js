@@ -143,14 +143,13 @@ const parseRef = (type, segment) => {
   return shape?.test(segment) ? segment : undefined
 }
 
-module.exports = {
+export {
   WORK_TYPES,
   TYPES,
   byType,
   byEntryCollection,
   parseRef,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

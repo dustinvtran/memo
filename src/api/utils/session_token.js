@@ -94,7 +94,7 @@ const isWithinAbsoluteLifetime = (claims, nowSeconds) => {
   return startedAt !== undefined && nowSeconds - startedAt < MAX_SESSION_SECONDS
 }
 
-module.exports = {
+export {
   MAX_SESSION_SECONDS,
   VERIFY_OPTIONS,
   tokenSecret,

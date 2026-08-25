@@ -6,11 +6,10 @@
  */
 /** @typedef {import('../responses').Response} Response */
 /** @typedef {import('../errors').Error} Error */
-const responses = require('../responses')
-const { match } = require('ts-pattern')
-const { fromPromise, ResultAsync } = require('neverthrow')
-const errors = require('../errors')
-
+import * as responses from '../responses.js'
+import { match } from 'ts-pattern'
+import { fromPromise, ResultAsync } from 'neverthrow'
+import * as errors from '../errors.js'
 /** @type {(returnedDocument: Promise<any>) => Promise<Response>} */
 const toResponse = (returnedDocument) =>
   returnedDocument.then(responses.ok).catch(dbErrToResponse)
@@ -19,11 +18,10 @@ const toResponse = (returnedDocument) =>
 const toResult = (returnedDocument) =>
   fromPromise(returnedDocument, errors.db)
 
-module.exports = {
+export {
   toResponse,
   toResult,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

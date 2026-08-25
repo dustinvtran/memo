@@ -11,16 +11,14 @@
  * Needs the dependencies (zod parses what goes in), so it **skips itself**
  * when they aren't installed, which is how CI runs the suite.
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-const Module = require('module')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('neverthrow')
-    require('zod')
-    require('ts-pattern')
-    require('ramda')
+    await import('neverthrow')
+    await import('zod')
+    await import('ts-pattern')
+    await import('ramda')
     return true
   } catch (error) {
     return false
@@ -158,19 +156,17 @@ class MongoClient {
   }
 }
 
-const loadModule = Module._load
-Module._load = function (request, ...args) {
-  if (request === 'mongodb') return { MongoClient, ServerApiVersion: { v1: '1' } }
-  // jose verifies asynchronously from v4 on, and answers with the payload
-  // wrapped rather than the payload itself. A test's token is its user id.
-  if (request === 'jose') {
-    return { jwtVerify: async (token) => ({ payload: { sub: token } }) }
-  }
-  return loadModule.call(this, request, ...args)
-}
+/* The in-memory Mongo goes in through the seam `db.js` leaves for it, rather
+   than by intercepting `require('mongodb')`. ES modules have no `Module._load`,
+   and that patch was the only thing keeping this tree on CommonJS — see
+   `docs/module_system.md`. The tokens are real for the same reason. */
+const { useClient } = dependenciesInstalled ? await import('../utils/db/db.js') : {}
+const { tokenFor } = dependenciesInstalled ? await import('./test_tokens.js') : {}
 
-const entries = dependenciesInstalled ? require('../routes/entries') : undefined
-const revisions = dependenciesInstalled ? require('../routes/revisions') : undefined
+if (dependenciesInstalled) useClient(new MongoClient())
+
+const entries = dependenciesInstalled ? await import('../routes/entries.js') : undefined
+const revisions = dependenciesInstalled ? await import('../routes/revisions.js') : undefined
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -179,7 +175,7 @@ const call = async (route, method, url, { as, body } = {}) => {
     {
       httpMethod: method,
       path: `/.netlify/functions/${url}`,
-      headers: as ? { authorization: `Bearer ${as}` } : {},
+      headers: as ? { authorization: `Bearer ${await tokenFor(as)}` } : {},
       body: body === undefined ? null : JSON.stringify(body),
     },
     {}

@@ -1,14 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const {
-  toSnapshot,
-  changedFields,
-  hasChanges,
-  toVersionList,
-  revisionsToPrune,
-} = require('./revision_history')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { toSnapshot, changedFields, hasChanges, toVersionList, revisionsToPrune } from './revision_history.js'
 test('a snapshot keeps the fields the user edits, and the review with them', () => {
   const entry = {
     _id: 'e1',

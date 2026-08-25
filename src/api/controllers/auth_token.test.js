@@ -16,19 +16,18 @@
  * they aren't installed, which is how CI runs the suite. The rules in
  * `utils/session_token.js` need nothing, so those tests always run.
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('jose')
-    require('neverthrow')
-    require('ramda')
+    await import('jose')
+    await import('neverthrow')
+    await import('ramda')
     // `controllers/auth.js` reaches these two, and its handlers are tested here.
-    require('cookie')
+    await import('cookie')
     /* ESM-only since v6, so `require` of it would answer "not installed" on any
        loader without `require(esm)` and skip this file rather than fail it. */
-    require.resolve('openid-client/package.json')
+    await import('openid-client')
     return true
   } catch (error) {
     return false
@@ -57,46 +56,39 @@ const auth0Claims = {
   'https://memo.test/roles': ['user'],
 }
 
-/* What is replaced is `utils/openid_client`, not `'openid-client'` itself.
-   Since v6 the package is ESM-only and can only be loaded with `import()`,
-   which does not go through `Module._load` — so patching it here by the
-   package's own name is quietly ignored, and `handleCallback` goes out to the
-   real Auth0. That is a DNS error rather than a failed assertion, which is a
-   long way to travel to learn that the stub never applied. The seam is a
-   CommonJS module for exactly this reason and says so.
+/* The stub goes in through `utils/openid_client`'s own seam. That module
+   exists because `openid-client` is ESM-only from v6 and can only be loaded
+   with `import()`, which no amount of `Module._load` patching reaches; the
+   seam used to be replaced by patching this module's path instead, which
+   worked and tied the suite to a hook ES modules do not have. See
+   `docs/module_system.md`.
 
    The shape is v6's: `discovery` answers a `Configuration` that the flow only
    passes back in, and `implicitAuthentication` answers the ID Token claims set
    directly, where v5's `callback()` answered a TokenSet with a `.claims()`. */
+const { useLoader } = dependenciesInstalled
+  ? await import('../utils/openid_client.js')
+  : {}
+
 if (dependenciesInstalled) {
-  const Module = require('module')
-  const loadModule = Module._load
-  Module._load = function (request, ...args) {
-    if (!request.endsWith('utils/openid_client')) {
-      return loadModule.apply(this, [request, ...args])
-    }
-    return {
-      load: async () => ({
-        discovery: async () => ({}),
-        useIdTokenResponseType: () => {},
-        None: () => ({}),
-        randomNonce: () => 'a-nonce',
-        randomState: () => 'a-state',
-        buildAuthorizationUrl: () => new URL('https://auth0.test/authorize'),
-        implicitAuthentication: async () => auth0Claims,
-      }),
-    }
-  }
+  useLoader(async () => ({
+    discovery: async () => ({}),
+    useIdTokenResponseType: () => {},
+    None: () => ({}),
+    randomNonce: () => 'a-nonce',
+    randomState: () => 'a-state',
+    buildAuthorizationUrl: () => new URL('https://auth0.test/authorize'),
+    implicitAuthentication: async () => auth0Claims,
+  }))
 }
 
-const jose = dependenciesInstalled ? require('jose') : undefined
-const cookie = dependenciesInstalled ? require('cookie') : undefined
-const { getUserId } = dependenciesInstalled ? require('./utils') : {}
-const { handleRenew, handleCallback } = dependenciesInstalled ? require('./auth') : {}
+const jose = dependenciesInstalled ? await import('jose') : undefined
+const cookie = dependenciesInstalled ? await import('cookie') : undefined
+const { getUserId } = dependenciesInstalled ? await import('./utils.js') : {}
+const { handleRenew, handleCallback } = dependenciesInstalled ? await import('./auth.js') : {}
 
 /* The rules themselves are dependency-free, which is the point of the module. */
-const sessionToken = require('../utils/session_token')
-
+import * as sessionToken from '../utils/session_token.js'
 const secret = () => new TextEncoder().encode(process.env.TOKEN_SECRET)
 const now = () => Math.floor(Date.now() / 1000)
 

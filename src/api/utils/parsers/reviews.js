@@ -1,6 +1,5 @@
-const { z } = require('zod')
-const { validate } = require('./utils')
-
+import { z } from 'zod'
+import { validate } from './utils.js'
 const reviewParser = z.object({
   text: z.string(),
   // `.optional()` says what `z.any()` alone used to: under zod 3 a key whose
@@ -17,6 +16,6 @@ const reviewParser = z.object({
 /** @type Validator<Review> */
 const reviews = (x) => validate(reviewParser, x)
 
-module.exports = {
+export {
   reviews
 }

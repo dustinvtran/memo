@@ -15,17 +15,31 @@
 /** @typedef {import('./types').SearchResult} SearchResult */
 /** @typedef {import('./tmdb_mapping').Mapping} Mapping */
 /** @typedef {import('../errors').Error} Error */
-const tmdb = require('node-themoviedb')
-const { ResultAsync } = require('neverthrow')
-const errors = require('../errors')
-const { match } = require('ts-pattern')
-const { throwIt } = require('../general')
-const { retrying, describeFailure, publicFailure, statusOf } = require('./retry')
-const { toSearchResults, toWork } = require('./tmdb_mapping')
-
+import tmdb from 'node-themoviedb'
+import { ResultAsync } from 'neverthrow'
+import * as errors from '../errors.js'
+import { match } from 'ts-pattern'
+import { throwIt } from '../general.js'
+import { retrying, describeFailure, publicFailure, statusOf } from './retry.js'
+import { toSearchResults, toWork } from './tmdb_mapping.js'
 const { TMDB_API_KEY } = process.env
 
-const tmdbClient = new tmdb(TMDB_API_KEY ?? throwIt('TMDB_API_KEY is not set.'))
+/**
+ * Built on the first search rather than while this module is read.
+ *
+ * At import time a missing key took down the cold start of every route that
+ * reaches this file, before any handler existed to report it — the same
+ * complaint `games/igdb.js` records a few lines into itself. It also meant
+ * the suite could not load the module at all without a key, which is why
+ * `works.test.js` used to intercept the adapter index through `Module._load`.
+ * Failing on the request that needs the key is both the honest moment and
+ * the one a test can reach.
+ */
+let client
+
+/** @type {() => any} */
+const tmdbClient = () =>
+  (client ??= new tmdb(TMDB_API_KEY ?? throwIt('TMDB_API_KEY is not set.')))
 
 /**
  * The three endpoints a media type answers on. Each takes the client rather
@@ -50,15 +64,15 @@ const tmdbAdapter = ({ mapping, search, details, credits }) => {
 
   return {
     search: (titleSearch) => ResultAsync.fromPromise(
-      retrying(() => search(tmdbClient, titleSearch))
+      retrying(() => search(tmdbClient(), titleSearch))
         .then(({ data }) => toSearchResults(mapping, data)),
       toError
     ),
 
     retrieve: (ref) => ResultAsync.fromPromise(
       retrying(() => Promise.all([
-        details(tmdbClient, ref),
-        credits(tmdbClient, ref),
+        details(tmdbClient(), ref),
+        credits(tmdbClient(), ref),
       ]))
         .then(([{ data }, { data: castAndCrew }]) =>
           toWork(mapping, ref, data, castAndCrew)
@@ -68,10 +82,9 @@ const tmdbAdapter = ({ mapping, search, details, credits }) => {
   }
 }
 
-module.exports = {
+export {
   tmdbAdapter,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

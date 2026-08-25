@@ -1,4 +1,4 @@
-const { z } = require('zod')
+import { z } from 'zod'
 const entryTypeParser = z.enum(['Game', 'Film', 'TVShow', 'Book'])
 // const apiRefParser = z.object({
   // name: z.string(),
@@ -23,6 +23,6 @@ const workParser = z.object({
 
 /** @typedef {z.infer<typeof workParser>} Work */
 
-module.exports = {
+export {
   workParser
 }

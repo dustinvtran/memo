@@ -34,10 +34,10 @@ const error = (name) => (detail, message) => ({
 })
 
 /** @type {Object.<string, ErrorCreator>} */
-module.exports = {
-  db: error('DBError'),
-  req: error('RequestError'),
-  unauthorized: error('UnauthorizedError'),
-  notFound: error('NotFound'),
-  internal: error('InternalError')
-}
+const db = error('DBError')
+const req = error('RequestError')
+const unauthorized = error('UnauthorizedError')
+const notFound = error('NotFound')
+const internal = error('InternalError')
+
+export { db, req, unauthorized, notFound, internal }

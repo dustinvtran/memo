@@ -2,15 +2,14 @@
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/external_api_adapters/types').Adapter} Adapter */
 /** @typedef {import('../utils/errors').Error} Error */
-const { toPromise } = require('../utils/general')
-const { getUrlSegments, getUserId } = require('./utils')
-const { Result, ok, err, ResultAsync, okAsync, errAsync } = require('neverthrow')
-const errors = require('../utils/errors')
-const responses = require('../utils/responses')
-const adapters = require('../utils/external_api_adapters')
-const db = require('../utils/db')
-const workTypes = require('../utils/work_types')
-
+import { toPromise } from '../utils/general.js'
+import { getUrlSegments, getUserId } from './utils.js'
+import { Result, ok, err, ResultAsync, okAsync, errAsync } from 'neverthrow'
+import * as errors from '../utils/errors.js'
+import * as responses from '../utils/responses.js'
+import { adapters } from '../utils/external_api_adapters/index.js'
+import * as db from '../utils/db/index.js'
+import * as workTypes from '../utils/work_types.js'
 /**
  * GET /api/works/search/:type/:query
  *
@@ -78,11 +77,10 @@ const retrieveWork = (event) => {
   )
 }
 
-module.exports = {
+export {
   searchForWork,
   retrieveWork,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /** @type {(type: string) => string | undefined} */

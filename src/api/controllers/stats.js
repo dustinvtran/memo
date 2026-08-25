@@ -3,13 +3,12 @@
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../utils/errors').Error} Error */
 /** @typedef {import('../utils/responses').Response} Response */
-const responses = require('../utils/responses')
-const { okAsync, ResultAsync } = require('neverthrow')
-const { getSegment } = require('./utils')
-const { toPromise } = require('../utils/general')
-const db = require('../utils/db/')
-const { toScoreTally, toStats } = require('../utils/score_tallies')
-
+import * as responses from '../utils/responses.js'
+import { okAsync, ResultAsync } from 'neverthrow'
+import { getSegment } from './utils.js'
+import { toPromise } from '../utils/general.js'
+import * as db from '../utils/db/index.js'
+import { toScoreTally, toStats } from '../utils/score_tallies.js'
 /**
  * GET /api/stats/:username
  *
@@ -42,10 +41,9 @@ const getUserStats = (event) => toPromise(
   .mapErr(responses.fromError)
 )
 
-module.exports = {
+export {
   getUserStats,
 }
-
 /** @type {ValidCollection[]} */
 const entryCollections = ['gameEntries', 'tvShowEntries', 'filmEntries', 'bookEntries']
 

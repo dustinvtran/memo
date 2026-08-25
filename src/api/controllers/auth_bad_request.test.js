@@ -22,19 +22,18 @@
  * It needs the dependencies, so it **skips itself** when they aren't
  * installed, which is how CI runs the suite.
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('jose')
-    require('cookie')
+    await import('jose')
+    await import('cookie')
     // `utils/responses`, which is what these handlers now answer through.
-    require('ts-pattern')
-    require('neverthrow')
-    require('ramda')
+    await import('ts-pattern')
+    await import('neverthrow')
+    await import('ramda')
     // ESM-only since v6 — see the note in `auth_cookie.test.js`.
-    require.resolve('openid-client/package.json')
+    await import('openid-client')
     return true
   } catch (error) {
     return false
@@ -47,16 +46,16 @@ const options = {
 
 process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
 
-const cookie = dependenciesInstalled ? require('cookie') : undefined
+const cookie = dependenciesInstalled ? await import('cookie') : undefined
 const { JSON_CONTENT_TYPE } = dependenciesInstalled
-  ? require('../utils/responses')
+  ? await import('../utils/responses.js')
   : {}
 const {
   handleLogin,
   handleCallback,
   readLoginCookie,
   generateEncodedStateString,
-} = dependenciesInstalled ? require('./auth') : {}
+} = dependenciesInstalled ? await import('./auth.js') : {}
 
 /** A cookie header carrying `value` as the login cookie, whatever it is. */
 const loginCookieHeader = (value) =>

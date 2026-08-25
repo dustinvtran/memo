@@ -2,15 +2,14 @@
 /** @typedef {import('@netlify/functions').HandlerContext} Context */
 /** @typedef {import('../errors').Error} Error */
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
-const { Result, ResultAsync, err, ok } = require('neverthrow')
-const errors = require('../utils/errors')
-const db = require('../utils/db')
-const workTypes = require('../utils/work_types')
-const { validateExists } = require('../utils/general')
-const { identity } = require('ramda')
-const { jwtVerify } = require("jose")
-const { tokenSecret, VERIFY_OPTIONS } = require('../utils/session_token')
-
+import { Result, ResultAsync, err, ok } from 'neverthrow'
+import * as errors from '../utils/errors.js'
+import * as db from '../utils/db/index.js'
+import * as workTypes from '../utils/work_types.js'
+import { validateExists } from '../utils/general.js'
+import { identity } from 'ramda'
+import { jwtVerify } from 'jose'
+import { tokenSecret, VERIFY_OPTIONS } from '../utils/session_token.js'
 /**
  * The `sub` of the bearer token, or an unauthorized error.
  *
@@ -94,7 +93,7 @@ const toEntryType = (entryCollection) =>
 const toReviewCollection = (entryCollection) =>
   /** @type any */ (workTypes.byEntryCollection(entryCollection)?.reviews)
 
-module.exports = {
+export {
   getUserId,
   getSegment,
   getUrlSegments,
@@ -104,4 +103,3 @@ module.exports = {
   toEntryType,
   toReviewCollection,
 }
-

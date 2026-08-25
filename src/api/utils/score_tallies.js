@@ -85,13 +85,12 @@ const emptyScoreTally = () =>
  */
 const toStats = (scores, updatedDate) => ({ scores, updatedDate })
 
-module.exports = {
+export {
   SCORE_TALLY_KEYS,
   toScoreTally,
   emptyScoreTally,
   toStats,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

@@ -1,22 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const {
-  SEARCH_IMAGE_URL_PREFIX,
-  POSTER_IMAGE_URL_PREFIX,
-  MAX_ACTORS,
-  FILM_MAPPING,
-  TV_SHOW_MAPPING,
-  releaseYearString,
-  releaseYear,
-  genreNames,
-  directorNames,
-  notableActors,
-  episodeCount,
-  toSearchResults,
-  toWork,
-} = require('./tmdb_mapping')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { SEARCH_IMAGE_URL_PREFIX, POSTER_IMAGE_URL_PREFIX, MAX_ACTORS, FILM_MAPPING, TV_SHOW_MAPPING, releaseYearString, releaseYear, genreNames, directorNames, notableActors, episodeCount, toSearchResults, toWork } from './tmdb_mapping.js'
 /** A `/movie/{id}` response, cut down to the fields that are read. */
 const aFilm = {
   title: 'Spirited Away',

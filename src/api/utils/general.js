@@ -3,9 +3,8 @@
  * no specific domain. They fill general holes
  * in JavaScript stdlib.
  */
-const { Result, ResultAsync, err, ok, okAsync } = require('neverthrow')
-const { identity, isNil } = require('ramda')
-
+import { Result, ResultAsync, err, ok, okAsync } from 'neverthrow'
+import { identity, isNil } from 'ramda'
 /** @type {<T>(x: T) => T} */
 const log = (x) => (console.log(x), x)
 
@@ -39,7 +38,7 @@ const validateExists = (x) =>
 const toAsync = (result) =>
   result.asyncAndThen(okAsync)
 
-module.exports = {
+export {
   toAsync,
   log,
   warn,

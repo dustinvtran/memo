@@ -14,27 +14,34 @@
 /** @typedef {import('../types').GameRetrieveFunction} GameRetrieveFunction */
 /** @typedef {import('../../errors').Error} Error */
 /** @typedef {import('../../parsers/games').Game} Game */
-const { ResultAsync } = require('neverthrow')
-const errors = require('../../errors')
-const igdb = require('igdb-api-node').default
-const axios = require('axios').default
-const {
-  TIME_TO_BEATS_URL,
-  timeToBeatQuery,
-  toPlaytime,
-} = require('./time_to_beat')
-const { earliestReleaseDate } = require('./release_dates')
-const { throwIt } = require('../../general')
-const { retrying, describeFailure, publicFailure, statusOf } = require('../retry')
-
+import { ResultAsync } from 'neverthrow'
+import * as errors from '../../errors.js'
+import igdb from 'igdb-api-node'
+import axios from 'axios'
+import { TIME_TO_BEATS_URL, timeToBeatQuery, toPlaytime } from './time_to_beat.js'
+import { earliestReleaseDate } from './release_dates.js'
+import { throwIt } from '../../general.js'
+import { retrying, describeFailure, publicFailure, statusOf } from '../retry.js'
 const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET } = process.env
-if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) {
-  // A real Error rather than the bare string this used to throw: this runs at
-  // require time, so it kills the cold start before any handler exists to
-  // report it, and a string leaves no stack behind to say where it came from.
-  throwIt(new Error(
-    'Must set TWITCH_CLIENT_SECRET and TWITCH_CLIENT_ID environment variables.'
-  ))
+
+/**
+ * Checked when a request needs the credentials rather than while this module
+ * is read.
+ *
+ * It used to run at require time, and the comment here said why that was
+ * bad — it killed the cold start before any handler existed to report it.
+ * It was also what stopped the suite loading the adapters without
+ * credentials, so `works.test.js` intercepted the whole index through
+ * `Module._load` instead. Both problems are the same problem. The Error is
+ * still a real one rather than the bare string this once threw, so there is
+ * a stack saying where it came from.
+ */
+const requireCredentials = () => {
+  if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) {
+    throwIt(new Error(
+      'Must set TWITCH_CLIENT_SECRET and TWITCH_CLIENT_ID environment variables.'
+    ))
+  }
 }
 
 /**
@@ -60,7 +67,10 @@ const twitchToken = () => {
 }
 
 /** @type {() => Promise<any>} */
-const igdbClient = async () => igdb(TWITCH_CLIENT_ID, await twitchToken())
+const igdbClient = async () => {
+  requireCredentials()
+  return igdb(TWITCH_CLIENT_ID, await twitchToken())
+}
 
 /** @type SearchFunction */
 const search = (titleSearch) => ResultAsync.fromPromise(
@@ -172,11 +182,10 @@ const retrieve = (ref) => ResultAsync.fromPromise(
 )
 
 /** @type Adapter */
-module.exports = {
+export {
   search,
   retrieve
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

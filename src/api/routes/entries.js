@@ -1,16 +1,10 @@
 /** @file entries */
 /** @typedef {import('@netlify/functions').Handler} Handler */
-const responses = require('../utils/responses')
-const {
-  getAllEntriesForUser,
-  createNewUserListEntry,
-  updateEntry,
-  deleteEntry,
-} = require('../controllers/entries')
-const { matchVerbAndNumberOfUrlSegments } = require('../router')
-
+import * as responses from '../utils/responses.js'
+import { getAllEntriesForUser, createNewUserListEntry, updateEntry, deleteEntry } from '../controllers/entries.js'
+import { matchVerbAndNumberOfUrlSegments } from '../router.js'
 /** @type Handler */
-exports.handler = async (event, context) =>
+export const handler = async (event, context) =>
   matchVerbAndNumberOfUrlSegments(event)
 
     // GET /api/entries/:type/:username/:limit?

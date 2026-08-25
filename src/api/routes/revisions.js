@@ -1,20 +1,14 @@
 /** @file revisions: an entry's edit history and its autosaved draft */
 /** @typedef {import('@netlify/functions').Handler} Handler */
-const responses = require('../utils/responses')
-const {
-  getVersions,
-  getDraft,
-  saveDraft,
-  deleteDraft,
-} = require('../controllers/revisions')
-const { getSegment } = require('../controllers/utils')
-const { matchVerbAndNumberOfUrlSegments } = require('../router')
-
+import * as responses from '../utils/responses.js'
+import { getVersions, getDraft, saveDraft, deleteDraft } from '../controllers/revisions.js'
+import { getSegment } from '../controllers/utils.js'
+import { matchVerbAndNumberOfUrlSegments } from '../router.js'
 /** The third segment only ever names the draft. */
 const isDraft = (event) => getSegment(2, event) === 'draft'
 
 /** @type Handler */
-exports.handler = async (event, context) =>
+export const handler = async (event, context) =>
   matchVerbAndNumberOfUrlSegments(event)
 
     // GET /api/revisions/:type/:dbRef

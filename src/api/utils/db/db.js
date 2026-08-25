@@ -1,20 +1,60 @@
 /** @typedef {import('mongodb').Db} Db */
 /** @typedef {import('mongodb').ClientSession} ClientSession */
-const { MongoClient, ServerApiVersion } = require('mongodb')
-const { throwIt, warn } = require('../general')
+import { MongoClient, ServerApiVersion } from 'mongodb'
+import { throwIt, warn } from '../general.js'
+/**
+ * The client every query here runs through, built on first use rather than
+ * on import.
+ *
+ * Building it eagerly is what used to force the controller tests to
+ * intercept `require('mongodb')` itself: by the time a test held this module
+ * the real client already existed, so there was no seam left and patching
+ * `Module._load` was the only way in. That patch is why the suite could not
+ * move to ES modules, which have no such hook — see `docs/module_system.md`.
+ * Deferring construction leaves an ordinary seam, and `useClient` below is
+ * it.
+ *
+ * The other half of the change is when a missing `MONGODB_URL` is noticed.
+ * It used to throw while this module was being read, so a route that never
+ * queried anything still failed to load; now it throws on the first query,
+ * which is the request that actually cannot be served.
+ *
+ * @type {MongoClient | undefined}
+ */
+let client
 
-const mongoClient = new MongoClient(process.env.MONGODB_URL ?? throwIt('MONGODB_URL not set'), {
-  serverApi: ServerApiVersion.v1,
-})
+/** @type {() => MongoClient} */
+const getClient = () =>
+  (client ??= new MongoClient(
+    process.env.MONGODB_URL ?? throwIt('MONGODB_URL not set'),
+    { serverApi: ServerApiVersion.v1 }
+  ))
 
 /** @type {Db | undefined} */
 let mdb
 
+/**
+ * Hand this module a client to use instead of building one. The suite is the
+ * only caller — an in-memory fake standing in for a deployment — and nothing
+ * in `src/api` calls it at all.
+ *
+ * It drops the cached database with it, so a test file that hands over a
+ * fresh store gets a fresh connection to go with it rather than the previous
+ * file's.
+ *
+ * @type {(replacement: any) => void}
+ */
+const useClient = (replacement) => {
+  client = replacement
+  mdb = undefined
+  available = undefined
+}
+
 /** @type {<T>(query: (db: Db) => Promise<T>) => Promise<T>} */
 const mongo = async (query) => {
   if (mdb === undefined) {
-    await mongoClient.connect()
-    mdb = mongoClient.db('memo')
+    await getClient().connect()
+    mdb = getClient().db('memo')
   }
 
   return query(mdb)
@@ -43,16 +83,16 @@ const withTransaction = async (work) => {
   // The driver may run the callback more than once when the server asks for a
   // retry, and hands back what the run that committed returned — so `work`
   // must stay safe to repeat, but the result needs no catching on the side.
-  return mongoClient.withSession((session) =>
+  return getClient().withSession((session) =>
     session.withTransaction(() => work(session))
   )
 }
 
-module.exports = {
+export {
   mongo,
   withTransaction,
+  useClient,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /** @type {boolean | undefined} */

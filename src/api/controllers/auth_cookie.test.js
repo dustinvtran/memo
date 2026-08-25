@@ -22,20 +22,19 @@
  * It needs the dependencies, so it **skips itself** when they aren't
  * installed — which is how CI runs the suite.
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('jose')
-    require('cookie')
+    await import('jose')
+    await import('cookie')
     /* `openid-client` 6 is ESM-only, so `require` of it is not the question
        this is asking — whether it is installed is, and `require` would answer
        "no" on any loader that will not take an ES module. That would skip this
        file rather than fail it, which is the wrong way round for the tests
        covering the flow with the least coverage. Loading it for real is
        `auth.js`'s job, through an `import()`. */
-    require.resolve('openid-client/package.json')
+    await import('openid-client')
     return true
   } catch (error) {
     return false
@@ -48,9 +47,9 @@ const options = {
 
 process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
 
-const jose = dependenciesInstalled ? require('jose') : undefined
+const jose = dependenciesInstalled ? await import('jose') : undefined
 const { handleRenew, handleLogout } = dependenciesInstalled
-  ? require('./auth')
+  ? await import('./auth.js')
   : {}
 
 const secret = () => new TextEncoder().encode(process.env.TOKEN_SECRET)

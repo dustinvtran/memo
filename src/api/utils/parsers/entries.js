@@ -1,5 +1,5 @@
 /** @typedef {import('zod').ZodObject} ZodObject */
-const { z } = require('zod')
+import { z } from 'zod'
 const statusParser = z.enum(['InProgress', 'Completed', 'Dropped', 'Planned'])
 
 const scoreParser = z.union([
@@ -61,7 +61,7 @@ const entryUpdateParser = (specificWorkParser) =>
     .omit({ userId: true, review: true })
     .partial()
 
-module.exports = {
+export {
   entryParser,
   entryUpdateParser,
 }

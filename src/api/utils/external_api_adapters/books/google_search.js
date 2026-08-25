@@ -171,7 +171,7 @@ const toSearchResults = (titleSearch, pages) =>
   )
     .map(toSearchResult)
 
-module.exports = {
+export {
   BASE_URL,
   PAGES,
   PAGE_SIZE,

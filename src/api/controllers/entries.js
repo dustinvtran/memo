@@ -3,26 +3,17 @@
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../utils/errors').Error} Error */
 /** @typedef {import('../utils/responses').Response} Response */
-const responses = require('../utils/responses')
-const errors = require('../utils/errors')
-const { identity } = require('ramda')
-const { ResultAsync, okAsync } = require('neverthrow')
-const {
-  getUserId,
-  getSegment,
-  getReqBody,
-  findIdOfName,
-  toEntryCollection,
-  toEntryType,
-  toReviewCollection,
-} = require('./utils')
-const { triplet, quad, toPromise, toAsync, throwIt } = require('../utils/general')
-const db = require('../utils/db/')
-const updateParsers = require('../utils/parsers/updates')
-const { toResponse } = require('../utils/db/into_safe_values')
-const { recordRevision, discardDraft, discardHistory } = require('./revisions')
-const { toSnapshot } = require('../utils/revision_history')
-
+import * as responses from '../utils/responses.js'
+import * as errors from '../utils/errors.js'
+import { identity } from 'ramda'
+import { ResultAsync, okAsync } from 'neverthrow'
+import { getUserId, getSegment, getReqBody, findIdOfName, toEntryCollection, toEntryType, toReviewCollection } from './utils.js'
+import { triplet, quad, toPromise, toAsync, throwIt } from '../utils/general.js'
+import * as db from '../utils/db/index.js'
+import * as updateParsers from '../utils/parsers/updates.js'
+import { toResponse } from '../utils/db/into_safe_values.js'
+import { recordRevision, discardDraft, discardHistory } from './revisions.js'
+import { toSnapshot } from '../utils/revision_history.js'
 /** @type {(event: Event) => Promise<Response>} */
 const getAllEntriesForUser = (event) => toPromise(
   ResultAsync.combine(triplet([
@@ -79,13 +70,12 @@ const deleteEntry = (event) => toPromise(
 )
 
 
-module.exports = {
+export {
   getAllEntriesForUser,
   createNewUserListEntry,
   updateEntry,
   deleteEntry,
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 /** @type {([uid, col, limit]: [string, ValidCollection, string | undefined]) => Promise<any>} */

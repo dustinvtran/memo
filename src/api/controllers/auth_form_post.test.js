@@ -17,15 +17,14 @@
  * It needs the dependencies, so it **skips itself** when they aren't
  * installed — which is how CI runs the suite.
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('jose')
-    require('cookie')
+    await import('jose')
+    await import('cookie')
     // ESM-only since v6 — see the note in `auth_cookie.test.js`.
-    require.resolve('openid-client/package.json')
+    await import('openid-client')
     return true
   } catch (error) {
     return false
@@ -37,7 +36,7 @@ const options = {
 }
 
 const { asFormPostResponseUrl, generateEncodedStateString } =
-  dependenciesInstalled ? require('./auth') : {}
+  dependenciesInstalled ? await import('./auth.js') : {}
 
 const CALLBACK = 'https://nil.moe/.netlify/functions/auth/callback'
 

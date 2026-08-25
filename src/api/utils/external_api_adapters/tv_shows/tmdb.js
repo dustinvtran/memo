@@ -5,11 +5,10 @@
  */
 /** @typedef {import('../types').Adapter} Adapter */
 /** @typedef {import('../../parsers/tvShows').TVShow} TVShow */
-const { tmdbAdapter } = require('../tmdb_adapter')
-const { TV_SHOW_MAPPING } = require('../tmdb_mapping')
-
+import { tmdbAdapter } from '../tmdb_adapter.js'
+import { TV_SHOW_MAPPING } from '../tmdb_mapping.js'
 /** @type Adapter */
-module.exports = tmdbAdapter({
+export default tmdbAdapter({
   mapping: TV_SHOW_MAPPING,
   search: (client, query) => client.search.TVShows({ query: { query } }),
   details: (client, tv_id) => client.tv.getDetails({ pathParameters: { tv_id } }),

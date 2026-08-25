@@ -12,18 +12,17 @@
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('mongodb').ObjectId} ObjectId */
 /** @typedef {import('mongodb').ClientSession} ClientSession */
-const { mongo } = require('./db')
+import { mongo } from './db.js'
 // The platform generates the v4 string, rather than the `uuid` package: these
 // functions are CommonJS and the deployed functions runtime cannot `require` an
 // ES module, which is what uuid became at v13 — every route 502'd on load. Node
 // has had `randomUUID` since 14.17 and it produces the same kind of _id.
-const { randomUUID } = require('node:crypto')
-const { throwIt } = require('../general')
-const parsers = require('../parsers/')
-const { toEntryWithMetadata } = require('./shapes')
-const { toUserEntriesPipeline, toScoreTallyPipeline, toFindOptions } = require('./queries')
-const workTypes = require('../work_types')
-
+import { randomUUID } from 'node:crypto'
+import { throwIt } from '../general.js'
+import * as parsers from '../parsers/index.js'
+import { toEntryWithMetadata } from './shapes.js'
+import { toUserEntriesPipeline, toScoreTallyPipeline, toFindOptions } from './queries.js'
+import * as workTypes from '../work_types.js'
 /** @typedef {import('./queries').QueryOptions} QueryOptions */
 
 /**
@@ -124,7 +123,7 @@ const _countScoresByValue = (collection, userId) =>
     .toArray()
   )
 
-module.exports = {
+export {
   _findOne,
   _findMany,
   _countScoresByValue,
@@ -137,7 +136,6 @@ module.exports = {
   _deleteOneByRef,
   _deleteAllByField,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

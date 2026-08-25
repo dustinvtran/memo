@@ -11,14 +11,13 @@
  * itself** when the dependencies aren't installed (which is how CI runs the
  * suite), the same way name.test.js and revisions.test.js do.
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('neverthrow')
-    require('ts-pattern')
-    require('ramda')
+    await import('neverthrow')
+    await import('ts-pattern')
+    await import('ramda')
     return true
   } catch (error) {
     return false
@@ -29,9 +28,9 @@ const options = {
   skip: dependenciesInstalled ? false : 'run `npm install` to run these',
 }
 
-const responses = dependenciesInstalled ? require('./responses') : undefined
-const errors = dependenciesInstalled ? require('./errors') : undefined
-const intoSafeValues = dependenciesInstalled ? require('./db/into_safe_values') : undefined
+const responses = dependenciesInstalled ? await import('./responses.js') : undefined
+const errors = dependenciesInstalled ? await import('./errors.js') : undefined
+const intoSafeValues = dependenciesInstalled ? await import('./db/into_safe_values.js') : undefined
 
 ///////////////////////////////////////////////////////////////////////////////
 

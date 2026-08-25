@@ -1,6 +1,12 @@
 {
+  // `src/api` is ES modules — `src/api/package.json` sets the type for that
+  // subtree, and nothing outside it. This only affects what an editor
+  // reports: nothing in CI or on Netlify runs tsc, and the pinned
+  // `typescript` predates `"nodenext"`, hence `esnext` plus classic
+  // resolution rather than the pair you would reach for today.
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "esnext",
+    "moduleResolution": "node",
     "target": "es2020",
     "checkJs": true,
     "strictNullChecks": true

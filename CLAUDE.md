@@ -62,6 +62,12 @@ back.
 
 ## ES modules, the functions runtime, and why the API is bundled
 
+**`src/api` is ES modules** — `src/api/package.json` sets `"type": "module"`
+for that subtree and nothing else. That is #185's route 3, and
+`docs/module_system.md` is the record: what it did not buy, what it cost,
+and the import-time rule it leaves behind. Read it before assuming the
+bundler is now optional. It is not, and the next paragraph is why.
+
 **The functions runtime cannot `require` an ES module, and `netlify.toml`
 bundles the API with esbuild so that it never has to.** Both halves matter:
 the constraint is real and permanent, and the reason you can ignore it most
@@ -92,24 +98,6 @@ to production. With `node_bundler = "esbuild"` set, an ESM-only package in
 the API is simply fine — verified on a preview, where `require` of an
 ESM-only package returns cleanly on a runtime still reporting
 `features.require_module: false`.
-
-**`jose` is the first dependency to actually rely on that.** #144 held it
-back for years as the hard one, #170 took it as far as 4.x and recorded
-that `SignJWT` and `jwtVerify` there are already the API 5 and 6 want, and
-#168 tried 6 and was reverted for exactly the reason above. Nothing about
-the package has changed since: `node --no-experimental-require-module -e
-"require('jose')"` still throws `ERR_REQUIRE_ESM` on 6.x. Only the bundler
-underneath it changed, and #170's reading held, so the upgrade was
-packaging rather than a rewrite.
-
-What is worth knowing is that the tree is no longer single-version.
-`openid-client` 5 asks for `jose` ^4, so npm nests a copy under it and
-esbuild inlines both: the session token is signed and verified on 6, while
-login and callback go on reaching 4 through `openid-client`. That is fine
-— separate call graphs, and neither hands the other a key — and `npm ls
-jose` is where it shows up. It stops being true when `openid-client`
-reaches 6, which is a rewrite of that library's API and its own job
-(#182).
 
 **What still bites.** `external_node_modules` bypasses the bundler by
 design, so anything in that list is copied rather than inlined and the
@@ -180,20 +168,27 @@ before a deploy rather than being discovered after one. It also checks
 matched, and on Netlify checks that the build really got the Node it asked
 for, since that is what the functions inherit.
 
-That setting is now load-bearing twice over. `mongodb` 7 requires Node
-20.19.0 or newer and targets ES2023, and the driver is the one dependency
-the runtime still meets directly: `external_node_modules` keeps it out of
-the bundle, so nothing inlines or transpiles it on the way. Nothing catches
-a runtime below that floor before the deploy either — `engines` is
-advisory, and CI and Netlify both build on Node 22 whatever the functions
-are given — and it would land as the same every-route-502 as an ESM
-require.
+**Migrating the source to ESM did not change any of the above**, which is
+the one thing to hold on to. esbuild flattens an ESM source to a CommonJS
+bundle, so the artefact is CommonJS either way and every line above still
+describes production. What the migration did buy was the death of the
+`Module._load` patching in the controller tests — and that was worth having
+because those patches existed to work around four modules that built
+clients, and threw on missing credentials, while they were being imported.
 
-**The remaining way out, if esbuild ever stops being enough**, is ES modules
-for the functions themselves, which is what Netlify now recommends. That is
-#185's route 3 and it is a project: 77 files, and the controller tests mock
-their dependencies by monkey-patching `Module._load`, which `import()` does
-not go through, so it is a test-harness rewrite before it is anything else.
+**The rule that leaves: importing anything under `src/api` must not read a
+credential, open a connection or build a client.** Do it on first use
+instead, behind a seam the suite can replace — `useClient`, `useAdapters`,
+`useLoader` are the three. `check_function_dependencies.js` loads
+every route with the environment passed through untouched, so breaking this
+fails CI rather than a deploy.
+
+**`src/db_maintenance` is still CommonJS and requires three modules out of
+`src/api`**, so it depends on `require(esm)` — unflagged since Node 22.12,
+and the repo pins 24. The AWS flag has nothing to do with it: only
+`src/api/routes` is deployed. It would break if any of those modules grew a
+top-level `await`, and `index_plan.test.js` and `game_playtime_plan.test.js`
+are what catch that, in CI's dependency-free job.
 
 ## Credentials
 

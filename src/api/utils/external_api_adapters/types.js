@@ -3,8 +3,7 @@
 /** @typedef {import('../parsers/games').Game} Game */
 /** @typedef {import('../parsers/books').Book} Book */
 /** @typedef {import('../parsers/tvShows').TVShow} TVShow */
-const { ResultAsync } = require('neverthrow')
-
+import { ResultAsync } from 'neverthrow'
 /** @typedef {object} Adapter
  * @property {SearchFunction} search
  * @property {RetrieveFunction} retrieve

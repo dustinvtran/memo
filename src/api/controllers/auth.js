@@ -1,16 +1,10 @@
 // file mostly copypasted from:
 // https://github.com/jamesqquick/netlify-auth0-rbac-integration-demo/blob/master/functions/AuthUtils.js
-const { SignJWT, jwtVerify } = require("jose")
-const cookie = require("cookie")
-const openidClient = require("../utils/openid_client")
-const responses = require("../utils/responses")
-const {
-  VERIFY_OPTIONS,
-  isWithinAbsoluteLifetime,
-  sessionStartedAt,
-  tokenSecret,
-} = require("../utils/session_token")
-
+import { SignJWT, jwtVerify } from 'jose'
+import cookie from 'cookie'
+import * as openidClient from '../utils/openid_client.js'
+import * as responses from '../utils/responses.js'
+import { VERIFY_OPTIONS, isWithinAbsoluteLifetime, sessionStartedAt, tokenSecret } from '../utils/session_token.js'
 /* `openid-client` 6 is ESM-only — its exports map has no `require` condition —
    so it is loaded with `import()`, through the seam in `utils/openid_client`
    rather than from here directly. That works on every loader: the deployed
@@ -433,7 +427,7 @@ const handleLogout = async () => {
   }
 }
 
-module.exports = {
+export {
   handleLogin,
   handleCallback,
   handleLogout,

@@ -1,8 +1,6 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const { toEntryWithMetadata } = require('./shapes')
-
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { toEntryWithMetadata } from './shapes.js'
 /**
  * One row of the list aggregate: the entry document, with `$lookup`'s array of
  * matched works on it.

@@ -95,12 +95,11 @@ const toFindOptions = ({ projection, sort, limit, session } = {}) => ({
   ...(session ? { session } : {}),
 })
 
-module.exports = {
+export {
   toUserEntriesPipeline,
   toScoreTallyPipeline,
   toFindOptions,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

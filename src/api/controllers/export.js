@@ -13,19 +13,13 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
-const { Result } = require('neverthrow')
-const responses = require('../utils/responses')
-const errors = require('../utils/errors')
-const db = require('../utils/db/')
-const { getSegment, findIdOfName, toEntryCollection, toReviewCollection } = require('./utils')
-const { safeJSONStringify, warn } = require('../utils/general')
-const {
-  ENTRY_TYPES,
-  toExportList,
-  toExportDocument,
-  toMarkdown,
-} = require('../utils/export_view')
-
+import { Result } from 'neverthrow'
+import * as responses from '../utils/responses.js'
+import * as errors from '../utils/errors.js'
+import * as db from '../utils/db/index.js'
+import { getSegment, findIdOfName, toEntryCollection, toReviewCollection } from './utils.js'
+import { safeJSONStringify, warn } from '../utils/general.js'
+import { ENTRY_TYPES, toExportList, toExportDocument, toMarkdown } from '../utils/export_view.js'
 /**
  * A Netlify function may return 6 MB, and going over is a 502 with nothing in
  * it to explain itself. All four of one heavy user's lists already come to
@@ -76,10 +70,9 @@ const exportUserLists = async (event) => {
     : asJson(document, username)
 }
 
-module.exports = {
+export {
   exportUserLists,
 }
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**

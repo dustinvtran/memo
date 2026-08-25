@@ -15,16 +15,15 @@
  * It needs the dependencies, so it **skips itself** when they aren't
  * installed — which is how CI runs the suite.
  */
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-
-const dependenciesInstalled = (() => {
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+const dependenciesInstalled = await (async () => {
   try {
-    require('cookie')
-    require('jose')
+    await import('cookie')
+    await import('jose')
     // ESM-only since v6 — see the note in `auth_cookie.test.js`.
-    require.resolve('openid-client/package.json')
-    require('ts-pattern')
+    await import('openid-client')
+    await import('ts-pattern')
     return true
   } catch (error) {
     return false
@@ -37,10 +36,10 @@ const options = {
 
 process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
 
-const cookie = dependenciesInstalled ? require('cookie') : undefined
-const jose = dependenciesInstalled ? require('jose') : undefined
+const cookie = dependenciesInstalled ? await import('cookie') : undefined
+const jose = dependenciesInstalled ? await import('jose') : undefined
 const { handleLogout, handleRenew } = dependenciesInstalled
-  ? require('./auth')
+  ? await import('./auth.js')
   : {}
 
 const NETLIFY_COOKIE_NAME = 'nf_jwt'
