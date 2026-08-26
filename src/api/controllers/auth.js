@@ -2,6 +2,7 @@
 // https://github.com/jamesqquick/netlify-auth0-rbac-integration-demo/blob/master/functions/AuthUtils.js
 import { SignJWT, jwtVerify } from 'jose'
 import cookie from 'cookie'
+import * as errors from '../utils/errors.js'
 import * as openidClient from '../utils/openid_client.js'
 import * as responses from '../utils/responses.js'
 import { VERIFY_OPTIONS, isWithinAbsoluteLifetime, sessionStartedAt, tokenSecret } from '../utils/session_token.js'
@@ -49,6 +50,40 @@ const isRunningLocally = process.env.NETLIFY_DEV === "true"
    the class of failure and not one word more. */
 const badRequest = (message) =>
   responses.badRequest({ error: "RequestError", message })
+
+/* The same body, for the requests that get past the guards. Everything Auth0
+   checks in a callback — the state, the nonce, the id_token's expiry, the
+   response body being the one that was signed — fails on perfectly ordinary
+   events: a second login tab overwrites the login cookie the first one is
+   still holding, and a back button re-submits a callback that has already been
+   spent. So this is the caller's to act on, by starting again, and it is a 400
+   for the same reason the guards above are one.
+
+   None of what the library said comes back with it. Its messages name the
+   claim that mismatched and the urls it compared, and a failed login is the
+   request a stranger makes on purpose. Nor is it logged: a stale tab is not an
+   incident, and a line per stale tab is how a log stops being read. */
+const loginNotCompleted = () =>
+  badRequest("that login could not be completed")
+
+/* The other failure in the same two handlers, and the other side of whose
+   fault it is. Discovery is a network round trip to Auth0 taken before
+   anything the caller sent is so much as looked at, so when it fails a caller
+   who did everything right gets nothing and has nothing to do about it. That
+   is ours, and it is a 5xx.
+
+   Through `fromError` rather than spelled out, because unlike the guards there
+   *is* an exception here and `detail` is the slot it goes in — logged, never
+   sent, which is what #105 put it there for.
+
+   500 rather than the 502 that would describe a bad upstream more precisely: a
+   502 out of this route is the one answer the note above is about, and being
+   exact about which gateway failed is worth less than staying distinguishable
+   from the load-time failure that 502s every route at once. */
+const providerUnavailable = (error) =>
+  responses.fromError(
+    errors.internal(error, "the login provider did not answer")
+  )
 
 /* The registered redirect_uri. It moved out of the client metadata in v6 and
    into the authorization request, so it is written down once here rather than
@@ -291,32 +326,43 @@ const handleLogin = async (event) => {
   if (!event || !event.headers) {
     return badRequest("malformed request")
   }
-  const { buildAuthorizationUrl, randomNonce, randomState } =
-    await openidClient.load()
-  const configuration = await getOpenIDConfiguration()
   const referer = event.headers.referer
 
-  const nonce = randomNonce()
-  const state = generateEncodedStateString(referer, randomState())
-  /* v5 was `client.authorizationUrl({...})`, which took the `redirect_uri`
-     from the client metadata. v6 builds the url from the configuration and the
-     request parameters together, and `redirect_uri` is one of the parameters.
-     It answers a `URL` where v5 answered a string.
-     https://github.com/panva/openid-client/blob/main/docs/functions/buildAuthorizationUrl.md */
-  const authRedirectURL = buildAuthorizationUrl(configuration, {
-    redirect_uri: callbackUrl(),
-    scope: "openid email profile",
-    response_mode: "form_post",
-    nonce,
-    state,
-  })
-  return {
-    statusCode: 302,
-    headers: {
-      Location: authRedirectURL.href,
-      "Cache-Control": "no-cache",
-      "Set-Cookie": generateAuth0LoginCookie(nonce, state),
-    },
+  /* Everything past the guard is a conversation with Auth0 and none of it is
+     the caller's to get right: discovery is a round trip on every login, and
+     the url is built out of the endpoints it answers with. So the whole of it
+     gets the one answer, and a rejection leaves here as a response rather than
+     as an uncaught throw — which is a 502 with an empty body, and #215 all
+     over again. */
+  try {
+    const { buildAuthorizationUrl, randomNonce, randomState } =
+      await openidClient.load()
+    const configuration = await getOpenIDConfiguration()
+
+    const nonce = randomNonce()
+    const state = generateEncodedStateString(referer, randomState())
+    /* v5 was `client.authorizationUrl({...})`, which took the `redirect_uri`
+       from the client metadata. v6 builds the url from the configuration and
+       the request parameters together, and `redirect_uri` is one of the
+       parameters. It answers a `URL` where v5 answered a string.
+       https://github.com/panva/openid-client/blob/main/docs/functions/buildAuthorizationUrl.md */
+    const authRedirectURL = buildAuthorizationUrl(configuration, {
+      redirect_uri: callbackUrl(),
+      scope: "openid email profile",
+      response_mode: "form_post",
+      nonce,
+      state,
+    })
+    return {
+      statusCode: 302,
+      headers: {
+        Location: authRedirectURL.href,
+        "Cache-Control": "no-cache",
+        "Set-Cookie": generateAuth0LoginCookie(nonce, state),
+      },
+    }
+  } catch (error) {
+    return providerUnavailable(error)
   }
 }
 
@@ -331,8 +377,26 @@ const handleCallback = async (event) => {
   }
   const { nonce, state } = login
 
-  const { implicitAuthentication } = await openidClient.load()
-  const configuration = await getOpenIDConfiguration()
+  /* Discovery gets its own `try` rather than sharing the one below, because
+     the two failures are not the same person's fault: this one is ours and a
+     5xx, the verification is the caller's and a 400. Catching both together
+     would tell a user whose login was fine to go and try it again, every time
+     Auth0 was unreachable. */
+  let implicitAuthentication
+  let configuration
+  try {
+    implicitAuthentication = (await openidClient.load()).implicitAuthentication
+    configuration = await getOpenIDConfiguration()
+  } catch (error) {
+    return providerUnavailable(error)
+  }
+
+  /* Built before the `try` below for the same reason `handleRenew` reads
+     `tokenSecret()` before its own: a `URL` that will not parse means an unset
+     `process.env.URL`, which is a misconfigured site rather than a login
+     anyone can retry their way out of. Dressing that up as the caller's
+     mistake is the failure mode that comment is about. */
+  const responseUrl = asFormPostResponseUrl(callbackUrl(), event.body)
 
   /* v5 pulled the response out of a request-shaped object with
      `client.callbackParams(req)` and then checked it with `client.callback()`.
@@ -352,12 +416,14 @@ const handleCallback = async (event) => {
      positional and required, `expectedState` stayed in the options — and the
      return value is the ID Token claims set itself, rather than a TokenSet to
      call `.claims()` on. */
-  const claims = await implicitAuthentication(
-    configuration,
-    asFormPostResponseUrl(callbackUrl(), event.body),
-    nonce,
-    { expectedState: state }
-  )
+  let claims
+  try {
+    claims = await implicitAuthentication(configuration, responseUrl, nonce, {
+      expectedState: state,
+    })
+  } catch (error) {
+    return loginNotCompleted()
+  }
 
   const netlifyCookie = await generateNetlifyCookieFromAuth0Token(claims)
 
