@@ -114,18 +114,37 @@ const CUSTOM_SEARCH = 'searchListRows'
  * is advertised: a query language nothing mentions is a query language nobody
  * types.
  */
-const searchSettings = () => ({
-  search: true,
-  customSearch: CUSTOM_SEARCH,
-  formatSearch: () => 'Search, e.g. director:nolan',
-})
+const searchSettings = () => {
+  // The search and the empty-list message happen at different moments, so the
+  // one hands the other a box rather than a value. bootstrap-table copies its
+  // options shallowly, which is what makes `this.options.searchState` below
+  // this same object.
+  const searchState = { abandoned: false }
+  return {
+    search: true,
+    customSearch: CUSTOM_SEARCH,
+    formatSearch: () => 'Search, e.g. director:nolan',
+    searchState,
+    formatNoMatches: () =>
+      searchState.abandoned
+        ? 'That search was too slow to finish, so it was stopped'
+        : 'No matching records found',
+  }
+}
 
 window[CUSTOM_SEARCH] = function (searchText) {
-  this.data = EntrySearch.filterEntries(
+  const rows = EntrySearch.filterEntries(
     this.options.data,
     searchText,
     freeTextFields(this.columns)
   )
+  // A pattern that backtracks is abandoned rather than run to the end, and an
+  // empty list nobody explains looks exactly like a search that found nothing
+  // (#228).
+  if (this.options.searchState) {
+    this.options.searchState.abandoned = EntrySearch.wasAbandoned(rows)
+  }
+  this.data = rows
 }
 
 /**

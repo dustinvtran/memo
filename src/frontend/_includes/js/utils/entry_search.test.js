@@ -20,7 +20,7 @@ const { EntrySearch, searchFields } = vm.runInContext(
   vm.createContext({})
 );
 
-const { filterEntries, fieldFor } = EntrySearch;
+const { filterEntries, fieldFor, wasAbandoned } = EntrySearch;
 
 /** The fields of the columns a film list shows before anything is toggled. */
 const visibleFilmFields = [
@@ -160,6 +160,108 @@ test("a value that is not a valid regex is matched as text", () => {
   assert.deepEqual(search('title:"the witcher: nightmare of the wolf"'), [
     "The Witcher: Nightmare of the Wolf",
   ]);
+});
+
+/** 400 rows of one long title, which is what the measurement in #228 used. */
+const backtrackingRows = () =>
+  Array.from({ length: 400 }, () => entry({ title: "a".repeat(40) }));
+
+const millisecondsToSearch = (rows, query) => {
+  const started = Date.now();
+  const kept = filterEntries(rows, query, visibleFilmFields);
+  return { elapsed: Date.now() - started, kept };
+};
+
+test("a pattern that would backtrack for minutes answers immediately", () => {
+  // #228: `?q=` is compiled to a RegExp, so a link can carry one, and the
+  // search runs on load rather than on a keypress — the tab was frozen before
+  // the reader had done anything. `title:(a+)+$` measured 299 seconds over
+  // these rows, and the repeated atom below does not finish at all, which is
+  // why both are refused rather than merely timed: nothing can interrupt a
+  // `RegExp.test` once it has started.
+  const rows = backtrackingRows();
+
+  for (const query of [
+    "title:(a+)+$",
+    "title:^(([a-z])+.)+[A-Z]$",
+    `title:${"a*".repeat(12)}b`,
+  ]) {
+    const { elapsed, kept } = millisecondsToSearch(rows, query);
+    assert.ok(elapsed < 1000, `${query} took ${elapsed}ms`);
+    // Refused as a shape rather than abandoned on the clock, so this is a real
+    // answer about titles that do not hold that text — not a giving up.
+    assert.deepEqual(titlesOf(kept), []);
+    assert.equal(wasAbandoned(kept), false);
+  }
+});
+
+test("a refused shape is matched as text, the way one that will not compile is", () => {
+  const rows = [
+    entry({ title: "Twelve Monkeys" }),
+    entry({ title: "Regex (a+)+ the Movie" }),
+    entry({ title: "Nested (a*)* and (a|a)* Quantifiers" }),
+    entry({ title: "Repeated a*a*b Atoms" }),
+  ];
+  const search = (query) => titlesOf(filterEntries(rows, query, visibleFilmFields));
+
+  assert.deepEqual(search("title:(a+)+"), ["Regex (a+)+ the Movie"]);
+  assert.deepEqual(search("title:(a*)*"), ["Nested (a*)* and (a|a)* Quantifiers"]);
+  assert.deepEqual(search("title:(a|a)*"), ["Nested (a*)* and (a|a)* Quantifiers"]);
+  assert.deepEqual(search("title:a*a*b"), ["Repeated a*a*b Atoms"]);
+  assert.deepEqual(search("title:((a+))+"), []);
+});
+
+test("a pattern that cannot blow up is still a regex", () => {
+  // What is refused is a quantifier on a group that repeats or alternates
+  // inside it, and the same atom quantified twice in a row. A group that holds
+  // text does neither, adjacent quantifiers on different atoms do neither, and
+  // a bracket that was escaped into being one is not a group at all.
+  const rows = [
+    entry({ title: "The The Prestige" }),
+    entry({ title: "Twelve Monkeys (1995)" }),
+  ];
+  const search = (query) => titlesOf(filterEntries(rows, query, visibleFilmFields));
+
+  assert.deepEqual(search("title:(the )+prestige"), ["The The Prestige"]);
+  assert.deepEqual(search("title:^t[a-z+ ]+ys"), ["Twelve Monkeys (1995)"]);
+  assert.deepEqual(search("title:^t.*e M.*$"), ["Twelve Monkeys (1995)"]);
+  assert.deepEqual(search("title:\\(1995\\)$"), ["Twelve Monkeys (1995)"]);
+  assert.deepEqual(search("title:^(the|twelve) "), [
+    "The The Prestige",
+    "Twelve Monkeys (1995)",
+  ]);
+});
+
+test("a pass that runs out of budget returns no rows, and says so", () => {
+  // The budget is what covers the shapes the refusal misses, so this exercises
+  // it without needing a pattern slow enough to be flaky: a row that is
+  // expensive to *read* costs the pass the same time a slow pattern would.
+  const slowRow = () => ({
+    commonMetadata: {
+      get englishTranslatedTitle() {
+        const until = Date.now() + 5;
+        while (Date.now() < until) {}
+        return "Inception";
+      },
+    },
+  });
+  const rows = Array.from({ length: 400 }, slowRow);
+
+  const started = Date.now();
+  const kept = filterEntries(rows, "title:inception", visibleFilmFields);
+  const elapsed = Date.now() - started;
+
+  assert.ok(elapsed < 2000, `took ${elapsed}ms`);
+  assert.equal(kept.length, 0);
+  // Not the rows matched so far, which would be a subset of the answer that
+  // looks like the answer, and not all of them, which would be the search
+  // quietly not happening.
+  assert.equal(wasAbandoned(kept), true);
+});
+
+test("a pass that finishes is never marked as abandoned", () => {
+  assert.equal(wasAbandoned(filterEntries(films, "nolan", visibleFilmFields)), false);
+  assert.equal(wasAbandoned(filterEntries(films, "", visibleFilmFields)), false);
 });
 
 test("an empty field term keeps the rows that have the field at all", () => {

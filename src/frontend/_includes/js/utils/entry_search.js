@@ -24,7 +24,9 @@
  * A prefix that is not a field name is not a field term — `9:00` searches for
  * `9:00`. A field value that is not a valid regex falls back to a substring
  * test rather than matching nothing, which is what every half-typed `title:^(`
- * on the way to a real query is.
+ * on the way to a real query is, and so does one that would take minutes to
+ * run — see `toRegexTest` and the budget in `filterEntries` for the two halves
+ * of #228.
  *
  * Pure: no DOM, no jQuery, no bootstrap-table. The glue is in
  * `utils/tables.js`, and `components/list/list.js` puts the query in the url.
@@ -125,23 +127,77 @@ const matchesQuery = (row, terms, freeTextFields) =>
  * `freeTextFields` is what a bare term is tried against — the fields of the
  * columns the table is showing. An empty query keeps the rows as they are,
  * array and all, the way bootstrap-table's own search does.
+ *
+ * The pass is on a clock. A field term is a regex the reader supplies, and
+ * `?q=` means the reader can be whoever was sent a link (#156), so the pattern
+ * is not necessarily anyone's own mistake: `title:(a+)+$` over 400 rows took
+ * five minutes of blocked main thread, on a page that searches on load rather
+ * than on a keypress (#228). Past `FILTER_BUDGET_MS` the pass gives up instead
+ * of finishing.
+ *
+ * An abandoned pass returns **no rows**, marked for `wasAbandoned` to read.
+ * The rows matched so far would be a subset of the answer wearing the answer's
+ * clothes, and all of the rows would be the search silently not happening; an
+ * empty list is the only one of the three a caller can tell the reader the
+ * truth about, and `utils/tables.js` does.
  * @type {(rows: object[], text: string, freeTextFields: object[]) => object[]}
  */
 const filterEntries = (rows, text, freeTextFields) => {
   const terms = parseQuery(text)
-  return terms.length === 0
-    ? rows
-    : rows.filter((row) => matchesQuery(row, terms, freeTextFields))
+  if (terms.length === 0) return rows
+
+  const deadline = Date.now() + FILTER_BUDGET_MS
+  let abandoned = false
+  const kept = rows.filter((row, index) => {
+    // The clock bounds how many rows the pass matches, not how long one
+    // `RegExp.test` takes — a catastrophic test runs to completion however
+    // long that is, because nothing can interrupt it. That is the other half
+    // of why `toRegexTest` refuses the explosive shapes: the budget keeps a
+    // slow pattern from being minutes, and the shape check keeps a single row
+    // from being minutes on its own.
+    if (!abandoned && index % BUDGET_CHECK_ROWS === 0 && Date.now() > deadline) {
+      abandoned = true
+    }
+    return abandoned ? false : matchesQuery(row, terms, freeTextFields)
+  })
+  return abandoned ? abandonedPass() : kept
 }
+
+/** Whether `filterEntries` gave up on that pass, rather than finding nothing. */
+const wasAbandoned = (rows) => rows?.searchAbandoned === true
 
 EntrySearch = {
   fieldFor,
   parseQuery,
   matchesQuery,
   filterEntries,
+  wasAbandoned,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * How long a filtering pass gets. A real search over a real list is nowhere
+ * near it — 400 rows of `title:^the` is about a millisecond — so the budget
+ * only ever ends a pass that was never going to end usefully, and a quarter of
+ * a second is short enough to read as a pause rather than as a freeze.
+ */
+const FILTER_BUDGET_MS = 250
+
+/**
+ * The clock is read every 32nd row rather than every row: `Date.now()` is
+ * cheap, but so is a row that matches nothing, and the pass runs again on
+ * every keystroke.
+ */
+const BUDGET_CHECK_ROWS = 32
+
+/**
+ * The empty result of a pass that gave up, told apart from an honest empty
+ * result by the flag riding on it. A property on the array rather than a
+ * wrapper object, because the caller assigns what it gets straight to
+ * bootstrap-table's `this.data`.
+ */
+const abandonedPass = () => Object.assign([], { searchAbandoned: true })
 
 /** Every name in `searchFields`, pointing at the field that offers it. */
 const fieldsByName = Object.fromEntries(
@@ -193,14 +249,119 @@ const unquote = (value) =>
  * a query is typed on the way to typing the query, so `title:^the (` happens
  * to everyone who searches for a bracket, and a thrown SyntaxError there would
  * empty the page mid-keystroke.
+ *
+ * A pattern that would take minutes to *run* is treated the same way, and for
+ * the same reason: `(a+)+$` compiles perfectly and then backtracks, so the
+ * `catch` never sees it (#228).
  */
 const toRegexTest = (value) => {
+  if (hasExplosiveShape(value)) return toSubstringTest(value)
   try {
     const pattern = new RegExp(value, 'i')
     return (text) => pattern.test(text)
   } catch {
     return toSubstringTest(value)
   }
+}
+
+/**
+ * The two shapes that make the engine try every way of dividing a string
+ * rather than one way:
+ *
+ *   (a+)+   a quantifier on a group that repeats or alternates inside it
+ *   a*a*b   the same atom quantified twice over, so that what one takes the
+ *           other can give back
+ *
+ * Both are refused before they are compiled and read as text instead. This is
+ * the half of #228 that answers instantly, and it is also the only half that
+ * covers a pattern slow enough to hang on a single row: the budget in
+ * `filterEntries` can stop a pass between rows, but nothing can interrupt one
+ * `RegExp.test`, and `a*a*a*a*a*a*a*a*a*a*a*a*b` over a 40-character title
+ * does not return this week.
+ *
+ * It over-refuses a little. `(nolan|villeneuve)+` and `\d+\d+` cannot take any
+ * real time and are read as text — the answer a pattern that does not compile
+ * already gets, for patterns nobody types.
+ */
+const hasExplosiveShape = (value) => isExplosive(toAtoms(String(value)))
+
+const isExplosive = (atoms) =>
+  atoms.some((atom, index) => {
+    const previous = atoms[index - 1]
+    if (previous?.text === atom.text && previous.quantifier && atom.quantifier) {
+      return true
+    }
+    if (!isGroup(atom)) return false
+    const body = bodyOf(atom)
+    return (REPEATING.test(atom.quantifier) && repeats(body)) || isExplosive(body)
+  })
+
+/** A quantifier that can take what it follows more than once. */
+const REPEATING = /^[*+{]/
+
+const isGroup = (atom) => atom.text.startsWith('(')
+
+const bodyOf = (atom) =>
+  toAtoms(atom.text.replace(/^\(/, '').replace(/\)$/, ''))
+
+/** Whether anything in there can match a given string in more than one way. */
+const repeats = (atoms) =>
+  atoms.some(
+    (atom) =>
+      atom.quantifier !== '' ||
+      atom.text === '|' ||
+      (isGroup(atom) && repeats(bodyOf(atom)))
+  )
+
+const QUANTIFIER = /^(?:[*+?]|\{\d*(?:,\d*)?\})\??/
+
+/**
+ * The pattern as atoms — an escape, a character class, a group, or a single
+ * character — each carrying the quantifier that follows it. Reading it this
+ * way is what keeps `\(a+\)+` a search for a bracket and `[a+]` a class with a
+ * plus in it; `(?:` needs no special case either, because its `?` is the first
+ * atom of the body rather than a quantifier on anything.
+ */
+const toAtoms = (source) => {
+  const atoms = []
+  let index = 0
+  while (index < source.length) {
+    const start = index
+    index =
+      source[index] === '\\'
+        ? index + 2
+        : source[index] === '['
+        ? endOfClass(source, index)
+        : source[index] === '('
+        ? endOfGroup(source, index)
+        : index + 1
+    const text = source.slice(start, index)
+    const [quantifier = ''] = QUANTIFIER.exec(source.slice(index)) ?? []
+    index += quantifier.length
+    atoms.push({ text, quantifier })
+  }
+  return atoms
+}
+
+/** Just past the `]` closing the class that opens at `start`, or the end. */
+const endOfClass = (source, start) => {
+  for (let index = start + 1; index < source.length; index += 1) {
+    if (source[index] === '\\') index += 1
+    else if (source[index] === ']') return index + 1
+  }
+  return source.length
+}
+
+/** Just past the `)` closing the group that opens at `start`, or the end. */
+const endOfGroup = (source, start) => {
+  let depth = 0
+  for (let index = start; index < source.length; index += 1) {
+    if (source[index] === '\\') index += 1
+    else if (source[index] === '[') index = endOfClass(source, index) - 1
+    else if (source[index] === '(') depth += 1
+    else if (source[index] === ')' && (depth -= 1) === 0) return index + 1
+  }
+  return source.length
 }
 
 const toSubstringTest = (value) => {
