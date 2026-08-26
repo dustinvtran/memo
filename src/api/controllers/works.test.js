@@ -8,11 +8,12 @@
  * assertions are that the adapter was not called and that nothing was
  * written, not merely that a 401 came back.
  *
- * The adapter is stubbed rather than mocked at the network: the real one
- * builds its client at require time and throws without an API key, which is
- * why nothing that requires it can be reached from `node --test` at all. That
- * is also the honest boundary of this file — the question here is who gets to
- * the adapter, not what it answers.
+ * The adapter is stubbed rather than mocked at the network, because the
+ * question here is who gets to the adapter and not what it answers. That is
+ * the honest boundary of this file, and #235 is what lies past it: the real
+ * games adapter stopped being able to build its client at all, and a stub
+ * cannot notice. What does is
+ * ../utils/external_api_adapters/games/igdb_client.test.js.
  *
  * Needs the dependencies (zod parses the work that gets written), so it
  * **skips itself** when they aren't installed, which is how CI runs the
