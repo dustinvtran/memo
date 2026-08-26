@@ -18,6 +18,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { DURATION_SOURCE } from '../external_api_adapters/games/time_to_beat.js'
 const dependenciesInstalled = await (async () => {
   try {
     await import('zod')
@@ -59,6 +60,12 @@ const BOOK = {
   englishTranslatedTitle: 'The Little Prince',
 }
 
+const GAME = {
+  apiRefs: ['igdb__8682'],
+  entryType: 'Game',
+  englishTranslatedTitle: 'Hollow Knight',
+}
+
 const ENTRY = { userId: 'u1', status: 'Completed' }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -70,6 +77,14 @@ test('a work carrying only its required fields is accepted', options, () => {
 
 test('an entry carrying only its required fields is accepted', options, () => {
   assert.deepEqual(parsed(parsers.bookEntries, ENTRY), ENTRY)
+})
+
+test('a game need not say where its playtime came from', options, () => {
+  // Absent is one of the two values `durationSource` has: it means the
+  // playtime came from HowLongToBeat, before we recorded provenance at all.
+  // IGDB holds no time to beat for about a third of games, and `toPlaytime`
+  // gives those neither key.
+  assert.deepEqual(parsed(parsers.games, GAME), GAME)
 })
 
 test('a revision snapshot may be empty', options, () => {
@@ -150,6 +165,36 @@ test('a key the parser was not told about does not survive', options, () => {
   assert.equal('sneaky' in work, false)
 })
 
+test('a playtime keeps the source that measured it', options, () => {
+  // The other side of the rule above, and the bug it was written for.
+  // `durationSource` went undeclared here, so zod dropped it from every game
+  // the site retrieved: `retrieve` in
+  // ../external_api_adapters/games/igdb.js returns it beside the `duration`
+  // it describes, and `_create` parses a document before inserting it. What
+  // reached the database was an IGDB playtime wearing no source — which every
+  // reader takes to mean HowLongToBeat, a measurement about 1.36x shorter.
+  const game = parsed(parsers.games, {
+    ...GAME,
+    duration: 660,
+    durationSource: 'igdb',
+  })
+
+  assert.deepEqual(game, { ...GAME, duration: 660, durationSource: 'igdb' })
+})
+
+test('only a game records where its duration came from', options, () => {
+  // A film's runtime and a book's page count have one source apiece and have
+  // never carried this, which is why it is on the game parser and not on the
+  // work parser beside the `duration` it describes.
+  const book = parsed(parsers.books, {
+    ...BOOK,
+    duration: 96,
+    durationSource: 'igdb',
+  })
+
+  assert.equal('durationSource' in book, false)
+})
+
 test('an update may not rewrite the fields that decide ownership', options, () => {
   // The three that came through the gap `entryUpdateParser` closed: `userId`
   // is what every ownership check reads, `review` belongs in its own
@@ -189,6 +234,23 @@ test('a score outside 1-10 is refused, and no score at all is not', options, () 
 
 test('a status outside the four is refused', options, () => {
   rejected(parsers.bookEntries, { ...ENTRY, status: 'Watching' })
+})
+
+test('the only playtime source is the one the adapter writes', options, () => {
+  // Read against `DURATION_SOURCE` rather than against a second copy of the
+  // string: the adapter writing a spelling this refuses would fail every game
+  // retrieve, and the two files are a directory apart. #220's lesson.
+  assert.equal(
+    parsed(parsers.games, { ...GAME, durationSource: DURATION_SOURCE }).durationSource,
+    DURATION_SOURCE,
+  )
+
+  // Anything else is refused rather than stored. Every reader tests
+  // `=== 'igdb'` and reads what fails that as HowLongToBeat, so an
+  // unrecognised source would be quietly misread — and null is not a third
+  // state, it is the absent case spelled a second way.
+  rejected(parsers.games, { ...GAME, durationSource: 'hltb' })
+  rejected(parsers.games, { ...GAME, durationSource: null })
 })
 
 test('a work parser refuses another type of work', options, () => {
