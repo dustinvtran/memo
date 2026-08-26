@@ -78,12 +78,20 @@ const toEntryCollection = (segment) => {
 }
 
 /**
- * The inverse of toEntryCollection, for the code that has a collection in
- * hand rather than a URL.
+ * The `entryType` a document of this collection carries — 'Film', the
+ * spelling `parsers/works.js` enforces and every work in the database is
+ * stored with.
+ *
+ * Not the `:type` url segment, which is the `type` field of the same row and
+ * reads 'films'. This returned that one until #220, under this name, and both
+ * callers stored the result in a field they also called `entryType` — so
+ * `entryRevisions` documents were written carrying a spelling no work
+ * document has ever used. Nothing caught it, because the revisions parser had
+ * been written around the value it was being handed.
  * @type {(entryCollection: ValidCollection) => string | undefined}
  */
 const toEntryType = (entryCollection) =>
-  workTypes.byEntryCollection(entryCollection)?.type
+  workTypes.byEntryCollection(entryCollection)?.entryType
 
 /**
  * An entry's review lives in the collection of the same name, with

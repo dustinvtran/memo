@@ -4,6 +4,7 @@
  */
 import { z } from 'zod'
 import { validate } from './utils.js'
+import { entryTypeParser } from './works.js'
 /**
  * The user-editable half of an entry, plus the review text, which lives in
  * its own collection but is the field most worth being able to recover.
@@ -26,7 +27,14 @@ const snapshotParser = z.object({
 
 const entryRevisionParser = z.object({
   entryRef: z.string(),
-  entryType: z.enum(['films', 'books', 'tv', 'games']),
+  /**
+   * The same spelling a work document carries — 'Film', not the 'films' of
+   * the url. One field name, one enum, one meaning: until #220 this said
+   * `z.enum(['films', 'books', 'tv', 'games'])` while every work said
+   * `z.enum(['Game', 'Film', 'TVShow', 'Book'])`, and nothing converted
+   * between them because nothing knew there was anything to convert.
+   */
+  entryType: entryTypeParser,
   userId: z.string(),
   kind: z.enum(['revision', 'draft']),
   /** When this version was saved (for a draft: when it was last autosaved). */

@@ -16,7 +16,7 @@
 
 import { TYPES } from './work_types.js'
 /** The `:type` segment of a list url, in the order the lists are exported. */
-const ENTRY_TYPES = TYPES
+const LIST_TYPES = TYPES
 
 const TYPE_TITLES = {
   films: 'Films',
@@ -48,14 +48,14 @@ const PLANNED_LABELS = {
 /**
  * The same wording the page's sublist headings use, so a reader of the export
  * and a reader of the site are talking about the same thing.
- * @type {(entryType: string, status: string) => string}
+ * @type {(type: string, status: string) => string}
  */
-const statusLabel = (entryType, status) =>
+const statusLabel = (type, status) =>
   ({
-    InProgress: IN_PROGRESS_LABELS[entryType],
+    InProgress: IN_PROGRESS_LABELS[type],
     Completed: 'Completed',
     Dropped: 'Dropped',
-    Planned: PLANNED_LABELS[entryType],
+    Planned: PLANNED_LABELS[type],
   }[status]) ?? status
 
 /**
@@ -64,9 +64,9 @@ const statusLabel = (entryType, status) =>
  * names that say what they hold, and the long note as `notes`.
  *
  * @typedef {{ entry: object, work?: object, review?: string }} RawEntry
- * @type {(entryType: string, raw: RawEntry) => object}
+ * @type {(type: string, raw: RawEntry) => object}
  */
-const toExportEntry = (entryType, { entry = {}, work = {}, review }) => {
+const toExportEntry = (type, { entry = {}, work = {}, review }) => {
   const metadata = withOverrides(work, entry.overrides)
 
   return compact({
@@ -78,10 +78,10 @@ const toExportEntry = (entryType, { entry = {}, work = {}, review }) => {
       metadata.originalTitle !== metadata.englishTranslatedTitle
         ? metadata.originalTitle
         : undefined,
-    status: statusLabel(entryType, entry.status),
+    status: statusLabel(type, entry.status),
     score: entry.score,
     releaseYear: metadata.releaseYear,
-    ...typeSpecificFields(entryType, entry, metadata),
+    ...typeSpecificFields(type, entry, metadata),
     genres: metadata.genres,
     startedDate: toDay(entry.startedDate),
     completedDate: toDay(entry.completedDate),
@@ -95,16 +95,16 @@ const toExportEntry = (entryType, { entry = {}, work = {}, review }) => {
  * Every entry of one type, in the order the page stacks them: by status, then
  * by score, then by title. `count` is here so a reader can tell a short list
  * from a truncated one.
- * @type {(entryType: string, raws: RawEntry[]) => object}
+ * @type {(type: string, raws: RawEntry[]) => object}
  */
-const toExportList = (entryType, raws = []) => {
+const toExportList = (type, raws = []) => {
   const entries = raws
-    .map((raw) => toExportEntry(entryType, raw))
-    .sort(byStatusThenScoreThenTitle(entryType))
+    .map((raw) => toExportEntry(type, raw))
+    .sort(byStatusThenScoreThenTitle(type))
 
   return {
-    type: entryType,
-    title: TYPE_TITLES[entryType] ?? entryType,
+    type,
+    title: TYPE_TITLES[type] ?? type,
     count: entries.length,
     entries,
   }
@@ -137,7 +137,7 @@ const toMarkdown = (doc, siteUrl) =>
   ].join('\n')
 
 export {
-  ENTRY_TYPES,
+  LIST_TYPES,
   TYPE_TITLES,
   STATUS_ORDER,
   statusLabel,
@@ -161,8 +161,8 @@ const withOverrides = (work, overrides) => ({
   ),
 })
 
-/** @type {(entryType: string, entry: object, metadata: object) => object} */
-const typeSpecificFields = (entryType, entry, metadata) =>
+/** @type {(type: string, entry: object, metadata: object) => object} */
+const typeSpecificFields = (type, entry, metadata) =>
   ({
     films: {
       runtimeMinutes: toDuration(metadata.duration),
@@ -190,7 +190,7 @@ const typeSpecificFields = (entryType, entry, metadata) =>
       authors: metadata.authors,
       publishers: metadata.publishers,
     },
-  }[entryType] ?? {})
+  }[type] ?? {})
 
 /**
  * A stored duration of `0` is not a duration — it means nobody knows, the
@@ -238,16 +238,16 @@ const compact = (obj) =>
 const withoutBlanks = (values) =>
   values.filter((value) => !(typeof value === 'string' && value.trim() === ''))
 
-/** @type {(entryType: string) => (a: object, b: object) => number} */
-const byStatusThenScoreThenTitle = (entryType) => (a, b) =>
-  statusRank(entryType, a.status) - statusRank(entryType, b.status) ||
+/** @type {(type: string) => (a: object, b: object) => number} */
+const byStatusThenScoreThenTitle = (type) => (a, b) =>
+  statusRank(type, a.status) - statusRank(type, b.status) ||
   (b.score ?? -1) - (a.score ?? -1) ||
   String(a.title ?? '').localeCompare(String(b.title ?? ''))
 
-/** @type {(entryType: string, label: string) => number} */
-const statusRank = (entryType, label) => {
+/** @type {(type: string, label: string) => number} */
+const statusRank = (type, label) => {
   const index = STATUS_ORDER.findIndex(
-    (status) => statusLabel(entryType, status) === label
+    (status) => statusLabel(type, status) === label
   )
   return index === -1 ? STATUS_ORDER.length : index
 }

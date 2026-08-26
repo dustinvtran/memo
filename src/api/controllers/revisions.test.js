@@ -195,7 +195,7 @@ test('a save records the version it replaced, review included', options, async (
   const [revision] = store.entryRevisions
   assert.equal(revision.kind, 'revision')
   assert.equal(revision.entryRef, 'e1')
-  assert.equal(revision.entryType, 'films')
+  assert.equal(revision.entryType, 'Film')
   assert.equal(revision.userId, 'u1')
   assert.equal(revision.createdDate, 1700000000000)
   assert.deepEqual(revision.snapshot, {

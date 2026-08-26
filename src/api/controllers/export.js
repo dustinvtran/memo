@@ -19,7 +19,7 @@ import * as errors from '../utils/errors.js'
 import * as db from '../utils/db/index.js'
 import { getSegment, findIdOfName, toEntryCollection, toReviewCollection } from './utils.js'
 import { safeJSONStringify, warn } from '../utils/general.js'
-import { ENTRY_TYPES, toExportList, toExportDocument, toMarkdown } from '../utils/export_view.js'
+import { LIST_TYPES, toExportList, toExportDocument, toMarkdown } from '../utils/export_view.js'
 /**
  * A Netlify function may return 6 MB, and going over is a 502 with nothing in
  * it to explain itself. All four of one heavy user's lists already come to
@@ -37,16 +37,16 @@ const MAX_BODY_BYTES = 5 * 1024 * 1024
  * @type {(event: Event) => Promise<Response>}
  */
 const exportUserLists = async (event) => {
-  const [entryTypes, username] = getSegment(1, event)
+  const [types, username] = getSegment(1, event)
     ? [[getSegment(0, event)], getSegment(1, event)]
-    : [ENTRY_TYPES, getSegment(0, event)]
+    : [LIST_TYPES, getSegment(0, event)]
 
-  const collections = Result.combine(entryTypes.map(toEntryCollection))
+  const collections = Result.combine(types.map(toEntryCollection))
   // Whoever hit this is likely guessing at the url, so say what would have
   // worked rather than only that this didn't.
   if (collections.isErr()) {
     return responses.fromError(
-      errors.notFound(`no such list type; try one of ${ENTRY_TYPES.join(', ')}`)
+      errors.notFound(`no such list type; try one of ${LIST_TYPES.join(', ')}`)
     )
   }
 
@@ -58,7 +58,7 @@ const exportUserLists = async (event) => {
   const limit = toLimit(event)
   const lists = await Promise.all(
     collections.value.map(async (collection, index) =>
-      toExportList(entryTypes[index], await findListEntries(collection, userId, limit))
+      toExportList(types[index], await findListEntries(collection, userId, limit))
     )
   )
 
@@ -170,7 +170,7 @@ const withinBudget = (contentType, body, username) =>
     : responses.payloadTooLarge({
         error: 'These lists are too big to send in one response.',
         tryInstead: [
-          ...ENTRY_TYPES.map((type) => `/api/export/${type}/${username}`),
+          ...LIST_TYPES.map((type) => `/api/export/${type}/${username}`),
           `/api/export/${username}?limit=200`,
         ],
       })
