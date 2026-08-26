@@ -56,23 +56,16 @@ const ACCEPTED = {
   jquery:
     '1.11.1, from 2014, carries three moderate XSS. 1.12.2 clears one of ' +
     'them for almost nothing and is worth taking on its own; the other two ' +
-    'need 3.5.0, and jQuery 1.x to 3.x is not a drop-in. #218.',
+    'need 3.5.0, and jQuery 1.x to 3.x is not a drop-in. #254.',
   bootstrap:
     '3.3.1 carries seven moderate XSS, every one of them in `data-*` ' +
     'attribute handling and every one fixed on the 3.4 line rather than ' +
     'needing 5.x. Bootstrap 3 to 5 rewrites the markup and is its own ' +
     'change. `bootstrap-table` is pinned to match, so the two move ' +
-    'together. #218.',
+    'together. #254.',
   'bootstrap-table':
     'Pinned at 1.12.1 to match Bootstrap 3, so it cannot move ahead of the ' +
-    'entry above. One moderate and one low XSS. #218.',
-  axios:
-    '0.24.0 is a long way behind and carries several high, including SSRF ' +
-    'and prototype pollution. The frontend calls same-origin `/api` with no ' +
-    'proxy and no redirects, which is not where most of these land, but it ' +
-    'is a bump worth taking on its own. #218. Not to be confused with the ' +
-    '`axios` in check_audit.js: that is a different copy, nested under ' +
-    'igdb-api-node and server-side, and no bump to this tag touches it.',
+    'entry above. One moderate and one low XSS. #254.',
 }
 
 /**
