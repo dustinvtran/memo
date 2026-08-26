@@ -12,12 +12,19 @@
  * standing false positive on the one signal is the kind of thing that comes
  * back the next time a guard is written in a hurry.
  *
- * The flow around these guards still cannot be exercised here, or on a deploy
- * preview: Netlify sets `URL` to the site's primary url in every context, so a
- * preview's login redirects with `redirect_uri=https://nil.moe/...` and Auth0
- * posts the callback to production. What *is* reachable is everything before
- * the network — `readLoginCookie` decides the whole of it, and both handlers
- * answer from it without asking Auth0 anything — so that is what this asserts.
+ * #212 fixed the guards and stopped there, which left the two calls that
+ * really talk to Auth0 throwing exactly as they always had (#251). Both reject
+ * on things that happen to people rather than to attackers: discovery is a
+ * round trip on every login and every callback, and the response check rejects
+ * for a second login tab or a re-submitted callback. So the rest of this file
+ * is what those two answer, and the guards are only half of the subject.
+ *
+ * A real login still cannot be run here, or on a deploy preview: Netlify sets
+ * `URL` to the site's primary url in every context, so a preview's login
+ * redirects with `redirect_uri=https://nil.moe/...` and Auth0 posts the
+ * callback to production. What stands in for the tenant is the `useLoader`
+ * seam in `utils/openid_client`, which exists because the package is ESM-only
+ * and no `Module._load` patch reaches it — see `docs/module_system.md`.
  *
  * It needs the dependencies, so it **skips itself** when they aren't
  * installed, which is how CI runs the suite.
@@ -47,10 +54,19 @@ const options = {
 process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
 // The origin a route out of the login cookie is kept or discarded against.
 process.env.URL = 'https://nil.moe'
+/* Read by `getOpenIDConfiguration` on its way into the stand-in below. Nothing
+   dials them, but the tenant url is built out of AUTH0_DOMAIN before the
+   stand-in sees it, and one spelled `undefined` is a confusing thing to meet
+   in a failure. */
+process.env.AUTH0_DOMAIN = 'nil.eu.auth0.com'
+process.env.AUTH0_CLIENT_ID = 'a-client-id'
 
 const cookie = dependenciesInstalled ? await import('cookie') : undefined
 const { JSON_CONTENT_TYPE } = dependenciesInstalled
   ? await import('../utils/responses.js')
+  : {}
+const { useLoader } = dependenciesInstalled
+  ? await import('../utils/openid_client.js')
   : {}
 const {
   handleLogin,
@@ -71,6 +87,62 @@ const goodCookieHeader = (route) =>
       state: generateEncodedStateString(route, 'entropy'),
     })
   )
+
+/**
+ * Runs `body` with `openid-client` standing in as `stub`, and puts the real
+ * loader back however it goes. The seam is module-level state, so a test that
+ * leaves its stand-in behind takes the next one with it.
+ */
+const withLoader = async (stub, body) => {
+  useLoader(async () => stub)
+  try {
+    return await body()
+  } finally {
+    useLoader(() => import('openid-client'))
+  }
+}
+
+/** The v6 surface the two handlers reach for, with the happy answer to each. */
+const auth0 = {
+  discovery: async () => ({}),
+  useIdTokenResponseType: () => {},
+  None: () => ({}),
+  randomNonce: () => 'a-nonce',
+  randomState: () => 'entropy',
+  buildAuthorizationUrl: () => new URL('https://nil.eu.auth0.com/authorize'),
+  implicitAuthentication: async () => ({
+    aud: 'a-client-id',
+    sub: 'auth0|somebody',
+  }),
+}
+
+/* A tenant that is not answering, as seen from in here. `fetch failed` is the
+   whole of what an undici network error says; the host is added so a test
+   below can tell the logged detail apart from the sent body. */
+const unreachable = {
+  ...auth0,
+  discovery: async () => {
+    throw new Error('fetch failed: nil.eu.auth0.com')
+  },
+}
+
+/* And a second login tab. The message is shaped like the library's own, which
+   names the claim it compared and both of the values — the reason none of it
+   is repeated back to the caller. */
+const wontVerify = {
+  ...auth0,
+  implicitAuthentication: async () => {
+    throw new Error(
+      'unexpected JWT "nonce" claim value; expected a-nonce, got another'
+    )
+  },
+}
+
+/** A callback as the browser posts it, for a login that got as far as Auth0. */
+const callbackEvent = () => ({
+  headers: { cookie: goodCookieHeader('https://nil.moe/films') },
+  body: 'id_token=header.payload.signature&state=whatever',
+})
 
 /**
  * Every way a callback can arrive without a login behind it. None of them
@@ -180,4 +252,82 @@ test('a login with no referer redirects to the root', options, () => {
   // `generateEncodedStateString` defaults the route, so this arrives as a
   // route rather than as a cookie to refuse.
   assert.equal(readLoginCookie(goodCookieHeader(undefined)).route, '/')
+})
+
+test('a callback Auth0 will not verify is a 400, not a throw', options, async () => {
+  /* #251, and the half of it a user meets: two login tabs, or a back button
+     onto a callback that has already been spent. The cookie is good and the
+     guards let it through, so this is the first thing past them — and it threw
+     out of the handler for as long as the route has existed. */
+  const response = await withLoader(wontVerify, () =>
+    handleCallback(callbackEvent())
+  )
+
+  assert.equal(response.statusCode, 400)
+  assert.equal(response.headers['content-type'], JSON_CONTENT_TYPE)
+  assert.deepEqual(JSON.parse(response.body), {
+    error: 'RequestError',
+    message: 'that login could not be completed',
+  })
+})
+
+test('and nothing the library said comes back with it', options, async () => {
+  // Its messages name the claim that mismatched and the values it compared,
+  // and this is an answer a stranger can ask for at will.
+  const response = await withLoader(wontVerify, () =>
+    handleCallback(callbackEvent())
+  )
+
+  assert.doesNotMatch(response.body, /nonce|JWT|claim/i)
+})
+
+test('a callback Auth0 never answered is ours rather than theirs', options, async (t) => {
+  /* The other half. Discovery runs before anything the caller sent is so much
+     as looked at, so a 400 here would tell someone whose login was perfectly
+     good to go away and try it again. */
+  const logged = t.mock.method(console, 'error', () => {})
+
+  const response = await withLoader(unreachable, () =>
+    handleCallback(callbackEvent())
+  )
+
+  /* 500 rather than the 502 that describes a bad upstream more precisely: a
+     502 out of this route is the answer this whole file is about, and cannot
+     be told apart from #162 taking every route down at once. */
+  assert.equal(response.statusCode, 500)
+  assert.deepEqual(JSON.parse(response.body), {
+    error: 'InternalError',
+    message: 'the login provider did not answer',
+  })
+  // `detail` is the log's and only the log's, which is what #105 built it for.
+  assert.match(logged.mock.calls[0].arguments[0], /fetch failed: nil\.eu\.auth0\.com/)
+  assert.doesNotMatch(response.body, /nil\.eu\.auth0\.com/)
+})
+
+test('a login Auth0 never answered is the same 500', options, async (t) => {
+  // The reproduction in #251 that needs no cookie at all: for as long as the
+  // tenant was unreachable, every login anyone started was a 502.
+  const logged = t.mock.method(console, 'error', () => {})
+
+  const response = await withLoader(unreachable, () =>
+    handleLogin({ headers: { referer: 'https://nil.moe/films' } })
+  )
+
+  assert.equal(response.statusCode, 500)
+  assert.equal(JSON.parse(response.body).error, 'InternalError')
+  assert.match(logged.mock.calls[0].arguments[0], /fetch failed/)
+})
+
+test('and a login that works still redirects to Auth0', options, async () => {
+  /* The other thing a `try` around the whole of a handler can get wrong is
+     catching the success, so this says that it does not. It is also all the
+     coverage `handleLogin` has past its guard. */
+  const response = await withLoader(auth0, () =>
+    handleLogin({ headers: { referer: 'https://nil.moe/films' } })
+  )
+
+  assert.equal(response.statusCode, 302)
+  assert.equal(response.headers.Location, 'https://nil.eu.auth0.com/authorize')
+  // The nonce and state it just sent, to be compared with what comes back.
+  assert.match(response.headers['Set-Cookie'], /^auth0_login_cookie=/)
 })
