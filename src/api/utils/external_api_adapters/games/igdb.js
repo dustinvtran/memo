@@ -20,6 +20,7 @@ import igdb from 'igdb-api-node'
 import axios from 'axios'
 import { TIME_TO_BEATS_URL, timeToBeatQuery, toPlaytime } from './time_to_beat.js'
 import { earliestReleaseDate } from './release_dates.js'
+import { involvedCompanyIds, companyIdsToLookUp, companyQueryLimit, companyNames } from './companies.js'
 import { throwIt } from '../../general.js'
 import { retrying, describeFailure, publicFailure, statusOf } from '../retry.js'
 const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET } = process.env
@@ -114,40 +115,28 @@ const retrieve = (ref) => ResultAsync.fromPromise(
 
     const playtime = toPlaytime(await retrieveTimeToBeat(mainData.id))
 
-    const publisherIds =
-      mainData
-        .involved_companies
-        ?.filter((c) => c.publisher)
-        ?.map((c) => c.company)
-        ?? []
-
-    const studioIds =
-      mainData
-        .involved_companies
-        ?.filter((c) => c.developer)
-        ?.map((c) => c.company)
-        ?? []
+    // `involved_companies` carries ids and role flags; the names are a second
+    // request. Everything either side of it is in ./companies.js, where the
+    // suite can reach it — #214 was a hole in these two lists, and nothing
+    // short of Twitch credentials could have caught it here.
+    const publisherIds = involvedCompanyIds(mainData.involved_companies, 'publisher')
+    const studioIds = involvedCompanyIds(mainData.involved_companies, 'developer')
+    const idsToLookUp = companyIdsToLookUp(studioIds, publisherIds)
 
     const companies = await (
-      [studioIds, publisherIds].some((arr) => arr.length > 0)
+      idsToLookUp.length > 0
         ? client
             .fields(['name'])
-            .where(
-              `id = (${[...studioIds, ...publisherIds].join(', ')})`
-            )
-            .limit(50)
+            .where(`id = (${idsToLookUp.join(', ')})`)
+            .limit(companyQueryLimit(idsToLookUp))
             .request('/companies')
             .then((resp) => resp.data)
         : []
     )
 
-    const publisherNames =
-      publisherIds
-        .map((id) => companies.find((c) => c.id === id)?.name)
+    const publisherNames = companyNames(publisherIds, companies)
 
-    const studioNames =
-      studioIds
-        .map((id) => companies.find((c) => c.id === id)?.name)
+    const studioNames = companyNames(studioIds, companies)
 
     const releaseYearTs = earliestReleaseDate(mainData.release_dates)
 
