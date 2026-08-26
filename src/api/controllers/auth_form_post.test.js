@@ -14,6 +14,11 @@
  * that does not match, and a login that fails at the last step for no visible
  * reason.
  *
+ * The same goes for the route the login ends on. It is a `Referer` header
+ * that has been through the browser twice, so where it may point is a
+ * decision rather than a detail (#229), and `readLoginCookie` is where that
+ * decision is made — reachable here, unlike everything around it.
+ *
  * It needs the dependencies, so it **skips itself** when they aren't
  * installed — which is how CI runs the suite.
  */
@@ -35,7 +40,12 @@ const options = {
   skip: dependenciesInstalled ? false : 'run `npm install` to run these',
 }
 
-const { asFormPostResponseUrl, generateEncodedStateString } =
+/* Set before anything is asserted about a route, because it is the origin
+   `toSafeRoute` compares against. Netlify sets it in every context. */
+process.env.URL = 'https://nil.moe'
+
+const cookie = dependenciesInstalled ? await import('cookie') : undefined
+const { asFormPostResponseUrl, generateEncodedStateString, readLoginCookie } =
   dependenciesInstalled ? await import('./auth.js') : {}
 
 const CALLBACK = 'https://nil.moe/.netlify/functions/auth/callback'
@@ -91,4 +101,51 @@ test('the state carries the route back, and defaults to the root', options, () =
   // The entropy is passed in rather than generated, because v6 deleted
   // `generators.nonce()` and its replacement is only reachable asynchronously.
   assert.equal(decode(generateEncodedStateString('/', 'entropy')).nonce, 'entropy')
+})
+
+/** The cookie a browser sends back mid-login, for a login begun on `referer`. */
+const loginBegunOn = (referer) =>
+  cookie.serialize(
+    'auth0_login_cookie',
+    JSON.stringify({
+      nonce: 'a-nonce',
+      state: generateEncodedStateString(referer, 'entropy'),
+    })
+  )
+
+/** Where the 302 at the end of that login would send the browser. */
+const landsOn = (referer) => readLoginCookie(loginBegunOn(referer)).route
+
+test('a referer on another origin is not where a login ends', options, () => {
+  // The whole of #229: any page on the internet can link to /api/auth/login,
+  // and the browser hands us that page's url as the Referer. Honouring it
+  // finishes a genuine login on a trusted domain by dropping the user on the
+  // attacker's page, which is the setup for phishing them there.
+  assert.equal(landsOn('https://evil.example/looks-like-memo'), '/')
+  // A prefix of our origin is not our origin, however much it reads like one.
+  assert.equal(landsOn('https://nil.moe.evil.example/films'), '/')
+})
+
+test('a protocol-relative referer is another origin too', options, () => {
+  // The case a `startsWith("/")` check waves through: this is a path by that
+  // test and another host once resolved. Comparing resolved origins is what
+  // makes it fail, which is why it is done that way round.
+  assert.equal(landsOn('//evil.example/x'), '/')
+})
+
+test('a referer of ours keeps its path, query and fragment', options, () => {
+  // Why the route is carried at all: a login begun from a filtered list comes
+  // back to that list rather than to the home page. What comes back is
+  // relative, so nothing here can point off-site later.
+  assert.equal(landsOn('https://nil.moe/films?sort=year#top'), '/films?sort=year#top')
+  assert.equal(landsOn('/games?played=yes'), '/games?played=yes')
+})
+
+test('a login with no referer, or an unreadable one, ends at the home page', options, () => {
+  // `generateEncodedStateString` defaults an absent referer; this pins that the
+  // default survives the constraint rather than being refused by it. A route
+  // that will not parse is the same answer, not a throw out of the callback.
+  assert.equal(landsOn(undefined), '/')
+  assert.equal(landsOn(''), '/')
+  assert.equal(landsOn('http://'), '/')
 })
