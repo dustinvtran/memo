@@ -21,6 +21,17 @@ const scoreTallyParser = z.object({
 })
 
 /**
+ * The bounds, named and exported for the reason `MAX_BIOGRAPHY_LENGTH` below
+ * is: the username setter has to state the rule before a name is submitted,
+ * and a rule written down in two places drifts apart. Nothing imports these
+ * yet — the frontend bundle has no module system, which is #221 — so
+ * `components/home/username_setter.js` restates them with a comment pointing
+ * back here. The export is what that comment will eventually be able to mean.
+ */
+const MIN_USERNAME_LENGTH = 2
+const MAX_USERNAME_LENGTH = 16
+
+/**
  * A username, defined once and used twice.
  *
  * `_create` parses the whole user document and `_updateOneByRef` parses
@@ -30,7 +41,10 @@ const scoreTallyParser = z.object({
  * be any length, any type, or markup — and `username` is interpolated into the
  * profile page. `setOwnName` runs this by hand for that reason. See #172.
  */
-const usernameParser = z.string().max(16).min(2).refine((val) => isAlphanumeric(val))
+const usernameParser = z.string()
+  .max(MAX_USERNAME_LENGTH)
+  .min(MIN_USERNAME_LENGTH)
+  .refine((val) => isAlphanumeric(val))
 
 /**
  * A biography is markdown, rendered through `marked` and `DOMPurify` on the
@@ -73,5 +87,7 @@ export {
   users,
   username,
   biography,
+  MIN_USERNAME_LENGTH,
+  MAX_USERNAME_LENGTH,
   MAX_BIOGRAPHY_LENGTH,
 }
