@@ -1,9 +1,10 @@
-const { html, css } = Utils
+const { html, css, escapeHtml } = Utils
 const { initComponent, setContent, WithRemoteData } = Components
 const { Modal, InputWithAction, showNotification, Button } = Components.UI
 const { searchWorks } = Netlify
 const { typeToTitle } = Conversions
 const { SearchResults, EntryForm } = Components.List
+const { errorMessage } = Http
 
 const AddEntryButton = (type) => initComponent({
   content: ({ include }) => include(Modal({
@@ -54,7 +55,7 @@ const AddEntryModal = (type) => initComponent({
             .map((results) =>
               setContent('#search-results', SearchResults(type, results))
             )
-            .mapErr(showNotification)
+            .mapErr((err) => showNotification(escapeHtml(errorMessage(err))))
         }
       }))}
       ${include(Button({
