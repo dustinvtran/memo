@@ -2,12 +2,20 @@ const { html, css } = Utils
 const { initComponent } = Components
 const { isArray } = Array
 
-/** You can pass a single input ID or an array of { name, inputId } */
-const Button = ({ style, label, relatedInputIdOrIds, onClick }) => initComponent({
+/**
+ * You can pass a single input ID or an array of { name, inputId }
+ *
+ * A caller that wants the button styled passes a `className` to hang the rule
+ * on and a `style` that names it. It used to pass a `style` taking the
+ * instance `id`, which gave every button its own copy of a rule the next
+ * button could not reuse — appended again per construction, and buttons are
+ * constructed on every render of a form.
+ */
+const Button = ({ className, style, label, relatedInputIdOrIds, onClick }) => initComponent({
   content: ({ id }) => html`
-    <button id="${id}">${label ?? "Submit"}</button>
+    <button id="${id}" class="${className ?? ''}">${label ?? "Submit"}</button>
   `,
-  style: style ?? (() => ''),
+  style,
   initializer: ({ id }) => {
     $(`#${id}`).off('click', '**')
     $(`#${id}`).click(() => {

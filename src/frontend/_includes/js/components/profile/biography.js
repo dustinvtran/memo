@@ -46,8 +46,9 @@ const BiographyInput = (currentBio) => initComponent({
     ${include(Button({
       label: "Save",
       // TODO: the style is duplicated with add entry button, deduplicate
-      style: ({ id }) => css`
-        #${id} {
+      className: "td-save-biography-button",
+      style: () => css`
+        .td-save-biography-button {
           margin: auto;
           margin-top: 10px;
           cursor: pointer;

@@ -93,12 +93,16 @@ const ModalHeader = (title, parentId, showCloseConfirmationDialog) => initCompon
   `
 })
 
+// The rule names the class and the element keeps the id: the id is how the
+// click handler and `closeModal` find this overlay, but nothing about the rule
+// is per-instance, and scoping it by id meant every modal opened appended a
+// block that no later modal could match and `closeModal` did not remove.
 const Overlay = (parentId, showCloseConfirmationDialog) => initComponent({
   content: () => html`
-    <div id="overlay-${parentId}"></div>
+    <div id="overlay-${parentId}" class="td-modal-overlay"></div>
   `,
   style: () => css`
-    #overlay-${parentId} {
+    .td-modal-overlay {
       //display: none;
       position: fixed;
       top: 0;

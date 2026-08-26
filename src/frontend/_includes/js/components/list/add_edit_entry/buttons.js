@@ -6,8 +6,9 @@ const { readForm } = EntryFormIO;
 const DeleteButton = (type, data) =>
   Button({
     label: "Delete",
-    style: ({ id }) => css`
-      #${id} {
+    className: "td-delete-entry-button",
+    style: () => css`
+      .td-delete-entry-button {
         ${buttonStyle("#e0480e")}
         margin-left: 5px;
       }
@@ -28,8 +29,9 @@ const DeleteButton = (type, data) =>
 const SubmitButton = (type, data, isEdit) =>
   Button({
     label: isEdit ? "Edit entry" : "Add entry",
-    style: ({ id }) => css`
-      #${id} {
+    className: "td-submit-entry-button",
+    style: () => css`
+      .td-submit-entry-button {
         ${buttonStyle("#0E9CE0")}
         margin-right: 5px;
       }
