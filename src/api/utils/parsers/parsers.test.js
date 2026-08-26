@@ -90,7 +90,7 @@ test('a review need not name the entry it belongs to', options, () => {
 test('a draft revision has no supersededDate, and is still a revision', options, () => {
   const draft = {
     entryRef: 'e1',
-    entryType: 'books',
+    entryType: 'Book',
     userId: 'u1',
     kind: 'draft',
     createdDate: 1700000000000,
@@ -98,6 +98,32 @@ test('a draft revision has no supersededDate, and is still a revision', options,
   }
 
   assert.deepEqual(parsed(parsers.entryRevisions, draft), draft)
+})
+
+test('a revision names its type the way a work does, not the way a url does', options, () => {
+  // #220: this parser declared `z.enum(['films', 'books', 'tv', 'games'])` in
+  // a field every work document spells 'Film', and was correct only because
+  // the controller happened to hand it url segments. It now shares the works
+  // enum, so the two cannot drift apart again.
+  const revision = {
+    entryRef: 'e1',
+    userId: 'u1',
+    kind: 'revision',
+    createdDate: 1700000000000,
+    supersededDate: 1700000000001,
+    snapshot: { status: 'Completed' },
+  }
+
+  for (const entryType of ['Film', 'TVShow', 'Game', 'Book']) {
+    assert.equal(
+      parsed(parsers.entryRevisions, { ...revision, entryType }).entryType,
+      entryType
+    )
+  }
+
+  for (const urlType of ['films', 'tv', 'games', 'books']) {
+    rejected(parsers.entryRevisions, { ...revision, entryType: urlType })
+  }
 })
 
 test('an optional field sent explicitly as undefined is accepted too', options, () => {

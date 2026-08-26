@@ -16,10 +16,10 @@ import * as workTypes from '../utils/work_types.js'
  * @type {(event: Event) => Promise<Response>}
  */
 const getReview = async (event) => {
-  const entryType = getSegment(0, event)
+  const type = getSegment(0, event)
   const entryId = getSegment(1, event)
 
-  const collection = workTypes.byType(entryType)?.reviews
+  const collection = workTypes.byType(type)?.reviews
 
   if (collection == null) return responses.notFound()
 

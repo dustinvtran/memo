@@ -20,6 +20,7 @@ The scripts, and the section below that explains each:
 | `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
 | `strip_dead_entry_fields.js` | Unsets `review` and `commonMetadata` from entry documents — a duplicated note and a stale copy of the work, neither of which any reader uses. | `--apply` |
+| `retype_entry_revisions.js` | Rewrites `entryRevisions.entryType` from the url spelling to the one every other collection uses: `films` to `Film`. | `--apply` |
 
 Everything marked `--apply` is a **dry run without it**, and takes a backup of
 each collection it writes to first — except `ensure_indexes.js`, which writes
@@ -28,11 +29,12 @@ the overrides a user set by hand, which live on the entry documents, are out
 of reach by construction; `dedupe_works.js` is the one that also writes to the
 entry collections, repointing `workRef` at the document it merged into.
 
-Two scripts write outside the work collections, and both say so in their own
+Three scripts write outside the work collections, and each says so in its own
 section below: `prune_orphan_reviews.js` deletes review documents nothing can
-reach, and `strip_dead_entry_fields.js` unsets two named dead fields from
-entry documents. Neither can reach an override, and neither creates or
-deletes an entry.
+reach, `strip_dead_entry_fields.js` unsets two named dead fields from entry
+documents, and `retype_entry_revisions.js` corrects one field on the history
+and draft documents. None can reach an override, and none creates or deletes
+an entry.
 
 The commands below are written from this folder, as
 `node scripts/audit_database.js`, but nothing depends on that. The `.env` and
@@ -465,6 +467,77 @@ store the request body wholesale. #171 (PR #183) validates a PATCH body
 against what an entry may hold instead, which is what stops these coming back.
 Until that lands, a run of this clears the backlog rather than settling the
 question, and an entry edited through the form afterwards carries them again.
+
+## One `entryType`, spelled the way the works collections spell it
+
+`entryType` named two different values. A work document carries `Film` — the
+spelling `parsers/works.js` enforces on all four works collections, and the
+one `db/shapes.js` stands in for a missing work — while `entryRevisions`
+documents were written with `films`, which is the `:type` segment a url starts
+with and is stored nowhere else. Both are real values in the same field name,
+and the two parsers each accepted their own and rejected the other.
+
+It came from one helper. `toEntryType` in `api/controllers/utils.js` returned
+`workTypes.byEntryCollection(col)?.type` — the url spelling, under a name that
+promises the other one — and both of its callers stored the result in a field
+they also called `entryType`. `parsers/revisions.js` was then written around
+the value it was being handed, which is why nothing objected. See #220.
+
+The API writes `Film` now, and the revisions parser shares the works enum, so
+there is one spelling and one enum. `scripts/retype_entry_revisions.js` is the
+backfill for the documents written before that. It is a **dry run unless you
+pass `--apply`**.
+
+```
+node scripts/retype_entry_revisions.js
+node scripts/retype_entry_revisions.js --apply
+```
+
+Flags: `--json=path`, `--backup-dir=path`.
+
+The mapping is read out of `api/utils/work_types.js`, the one table that holds
+both spellings, so this cannot disagree with the code that produced the values
+it corrects. `entry_revision_type_plan.js` decides; the script only writes what
+it is given.
+
+It is the third script here that writes outside the work collections. What
+bounds it:
+
+- It `$set`s one field to one of four constants. `snapshot` — where the
+  writing a user can still read back lives — is unreachable from it, as are
+  `entryRef`, `kind` and `userId`.
+- **It never reads a snapshot.** The plan needs `_id`, `entryType` and `kind`,
+  so that is the projection. No note is loaded, printed, or written to the
+  before-map.
+- It touches no dates. `createdDate` and `supersededDate` say when a version
+  was saved and when it was replaced; a migration is neither.
+- A document carrying neither spelling is printed and skipped. Its type is
+  recoverable from the entry it belongs to, which beats a guess.
+- Re-running is a no-op: a document already carrying the document spelling is
+  counted, not rewritten.
+
+Afterwards it re-reads the collection and reports the document count and how
+many still carry a url spelling, so a run that did something other than what
+it planned says so rather than exiting quietly.
+
+Order does not matter against a deploy. Nothing reads `entryRevisions.entryType`
+back — the version list projects `createdDate`, `supersededDate` and `snapshot`,
+and the draft route returns `createdDate` and `snapshot` — so an unmigrated
+document is never validated, and saving a draft rewrites the whole document
+through the parser anyway.
+
+**Applied to production on 2026-08-26 (UTC)**, against snapshot
+`snapshot-2026-08-26T07-27-44-541Z` — verified first against live
+`countDocuments()` and the manifest's own SHA-256s, all 14 collections
+agreeing. The dry run found all 18 documents carrying a url spelling and none
+it could not recognise; applying rewrote 3 to `Film`, 2 to `TVShow`, 11 to
+`Game` and 2 to `Book`.
+
+Afterwards: 18 documents still, none carrying a url spelling and none without
+an `entryType`; the four values in `entryRevisions` are now exactly the four
+the works collections use; all 18 still carry their `snapshot`; and every
+collection in the database still holds the number of documents the pre-run
+snapshot recorded.
 
 ## Backing up the database, with history
 

@@ -4,6 +4,14 @@
  * `entryType` its documents carry, and the apiRef prefixes its works are
  * cached under.
  *
+ * **`type` and `entryType` are two different strings for the same type**, and
+ * the table carries both because both are real: `type` is 'films' and appears
+ * only in urls, `entryType` is 'Film' and appears only in documents. Reach for
+ * the one that matches where the value is going — a row's `type` belongs in a
+ * path, its `entryType` in a field. #220 is what happens when they are
+ * confused: a helper named after one returned the other, and its callers wrote
+ * url segments into a field every other collection spells the other way.
+ *
  * This mapping used to be written out by hand wherever it was needed — as a
  * ts-pattern match in `controllers/utils.js`, as object literals in
  * `controllers/reviews.js`, `controllers/works.js` and `db/unsafe_functions.js`,
@@ -21,6 +29,9 @@
 /** @typedef {import('./parsers').ValidCollection} ValidCollection */
 
 /**
+ * `type` is the url spelling ('films'); `entryType` is the document spelling
+ * ('Film'). See the note at the top of the file.
+ *
  * @typedef {{
  *   type: string,
  *   works: ValidCollection,

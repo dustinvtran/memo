@@ -1,4 +1,10 @@
 import { z } from 'zod'
+/**
+ * The `entryType` a document carries, which is the capitalised spelling and
+ * the only one any document has. The url segment that names the same type is
+ * `type` in ../work_types.js — a different string ('films'), never stored.
+ * Exported because ./revisions.js enforces the same field.
+ */
 const entryTypeParser = z.enum(['Game', 'Film', 'TVShow', 'Book'])
 // const apiRefParser = z.object({
   // name: z.string(),
@@ -24,5 +30,6 @@ const workParser = z.object({
 /** @typedef {z.infer<typeof workParser>} Work */
 
 export {
-  workParser
+  workParser,
+  entryTypeParser,
 }

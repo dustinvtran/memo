@@ -53,6 +53,23 @@ test('a review collection is its entry collection with Entries swapped out', () 
   }
 })
 
+test('the url spelling and the document spelling cannot be mistaken for each other', () => {
+  // Two strings for the same four types, and until #220 both were written
+  // into a field called `entryType`. Keeping the sets disjoint is what makes
+  // a mix-up fail a parser rather than validate quietly: no url segment is a
+  // legal `entryType`, and no `entryType` names a route.
+  const urlTypes = new Set(WORK_TYPES.map((workType) => workType.type))
+
+  for (const workType of WORK_TYPES) {
+    assert.equal(
+      urlTypes.has(workType.entryType),
+      false,
+      `${workType.entryType} is both spellings at once`
+    )
+    assert.equal(byType(workType.entryType), undefined)
+  }
+})
+
 test('nothing is named twice, so the lookups cannot collide', () => {
   for (const field of ['type', 'works', 'entries', 'reviews', 'entryType']) {
     const values = WORK_TYPES.map((workType) => workType[field])

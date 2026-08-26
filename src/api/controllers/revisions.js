@@ -108,6 +108,9 @@ const deleteDraft = (event) =>
  * History is a convenience: a failure to record it must never fail the save
  * that the user actually asked for.
  *
+ * `entryType` is the document spelling ('Film'), which is what the parser
+ * demands and what `toEntryType` hands over — see controllers/utils.js.
+ *
  * @type {(args: { entryType: string, entry: any, previousReview?: string, nextSnapshot: object }) => Promise<void>}
  */
 const recordRevision = async ({
