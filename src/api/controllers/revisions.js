@@ -32,8 +32,13 @@ const COLLECTION = 'entryRevisions'
  */
 const getVersions = (event) =>
   withOwnedEntry(event, async ({ collection, entry }) => {
-    const review = await findReview(collection, entry._id)
-    const revisions = await findRevisions(entry._id)
+    // Neither read needs the other's answer, and the version list is opened
+    // by a click — so serialising them is latency somebody is sitting and
+    // watching, twice over: `findRevisions` is pulling up to 50 snapshots.
+    const [review, revisions] = await Promise.all([
+      findReview(collection, entry._id),
+      findRevisions(entry._id),
+    ])
 
     return responses.ok({
       versions: toVersionList(
@@ -229,9 +234,19 @@ const findReview = (collection, entryRef) =>
     .findOneByField_(toReviewCollection(collection), 'entryRef', entryRef)
     .unwrapOr(null)
 
+/**
+ * Drops whatever is past the cap in one call rather than one per document.
+ * The steady state is a single revision and the difference is nothing, but a
+ * history older than the cap hands back its whole overhang at once — and
+ * `recordRevision` is awaited from `updateEntry_` before the save's
+ * transaction opens, so the user waits for every delete in it.
+ *
+ * The err is swallowed for the reason the whole of `recordRevision` is:
+ * history is a convenience, and failing to tidy it must not fail the save.
+ */
 const pruneRevisions = async (entryRef) => {
   const revisions = await findRevisions(entryRef, PRUNE_FIELDS)
-  for (const id of revisionsToPrune(revisions)) {
-    await db.deleteByRef_(COLLECTION, id).unwrapOr(undefined)
-  }
+  await db
+    .deleteAllByRefIn_(COLLECTION, revisionsToPrune(revisions))
+    .unwrapOr(undefined)
 }
