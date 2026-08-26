@@ -80,6 +80,25 @@ const _deleteAllByField = (collection, field, value, session) =>
   )
 
 /**
+ * Many documents by id in one call, for the same reason `_findAllByFieldIn`
+ * reads many values of a field in one. Pruning an entry's history back to the
+ * cap is however many versions are over the line — one in the steady state,
+ * but the whole overhang the first time an older history meets the cap — and
+ * they used to go out one round trip at a time on the path of every save.
+ *
+ * An empty list is answered without asking: `$in: []` matches nothing, which
+ * is a round trip spent being told so.
+ * @type {(collection: ValidCollection, refs: string[], session?: ClientSession) => Promise<object>}
+ */
+const _deleteAllByRefIn = (collection, refs, session) =>
+  refs.length === 0
+    ? Promise.resolve({ deletedCount: 0 })
+    : mongo((db) => db
+        .collection(collection)
+        .deleteMany({ _id: { $in: refs } }, { session })
+      )
+
+/**
  * The one write here that can fail before the database is asked anything: the
  * document is parsed first, and one that does not satisfy its collection's
  * parser is never inserted.
@@ -154,6 +173,7 @@ export {
   _create,
   _deleteOneByRef,
   _deleteAllByField,
+  _deleteAllByRefIn,
 }
 ///////////////////////////////////////////////////////////////////////////////
 

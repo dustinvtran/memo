@@ -22,7 +22,7 @@
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../errors').Error} Error */
 import { ResultAsync, okAsync, errAsync } from 'neverthrow'
-import { _findOne, _findMany, _countScoresByValue, _findOneByField, _findOneByRef, _findAllByFieldIn, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _findAllUserEntriesWithMetadata } from './unsafe_functions.js'
+import { _findOne, _findMany, _countScoresByValue, _findOneByField, _findOneByRef, _findAllByFieldIn, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _deleteAllByRefIn, _findAllUserEntriesWithMetadata } from './unsafe_functions.js'
 import { compose } from 'ramda'
 import { withTransaction } from './db.js'
 import { toResponse, toResult } from './into_safe_values.js'
@@ -95,6 +95,12 @@ const deleteByRef_ = compose(toResult, _deleteOneByRef)
 /** @type {(collection: ValidCollection, field: string, value: any, session?: ClientSession) => ResultAsync<any, Error>} */
 const deleteAllByField_ = compose(toResult, _deleteAllByField)
 
+/**
+ * The delete that `findAllByFieldIn_` is the read of: a list of ids, one call.
+ * @type {(collection: ValidCollection, refs: string[], session?: ClientSession) => ResultAsync<any, Error>}
+ */
+const deleteAllByRefIn_ = compose(toResult, _deleteAllByRefIn)
+
 /** @type {(collection: ValidCollection, data: ExprArg, session?: ClientSession) => Promise<Response>} */
 const create = compose(toResponse, _create)
 
@@ -118,4 +124,5 @@ export {
   deleteByRef,
   deleteByRef_,
   deleteAllByField_,
+  deleteAllByRefIn_,
 }
