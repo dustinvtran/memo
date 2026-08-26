@@ -1,7 +1,7 @@
 const { html, escapeHtml } = Utils
 const { isLoggedIn, getUserName } = Netlify
 const { ProfileLists } = Components.Profile
-const { initComponent, WithRemoteData, Redirect } = Components
+const { initComponent, WithRemoteData, Redirect, RemoteFailure } = Components
 const { Base } = Components.UI
 const { UsernameSetter } = Components.Home
 
@@ -10,7 +10,8 @@ const HomePage = () => initComponent({
     Base("Homepage", isLoggedIn()
       ? WithRemoteData({
         remoteData: getUserName(),
-        component: ProfileListsOrUsernameSetter
+        component: ProfileListsOrUsernameSetter,
+        errorComponent: NameRequestFailed
       })
       : UnauthenticatedWelcome()
     )
@@ -20,6 +21,37 @@ const HomePage = () => initComponent({
 Components.Home.HomePage = HomePage
 
 ///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * What the page draws when `GET /api/name` does not answer, which it now says
+ * rather than swallowing: the endpoint used to report every failure as
+ * `200 {}`, and `{}` destructures to no error and no username, so the branch
+ * below drew `AuthenticatedHomePage(undefined)` — "Hi undefined!", linking to
+ * `/profile/undefined`. See #216.
+ *
+ * The 401 is the case worth naming, and the status is there to name it with
+ * as of #234. `isLoggedIn` is the presence of the `nf_jwt` cookie and nothing
+ * about whether it still verifies, so this page is where a session that ended
+ * while nobody was looking is found out, and the answer to that is to log in
+ * again rather than to try again — the same reading `sessionOver()` takes on
+ * the renewal path. Every other failure gets what it would have got anyway,
+ * from the one place that decides what a failure looks like.
+ *
+ * A link rather than `Redirect`: a token that verifies nowhere would bounce
+ * the browser between here and Auth0 with nothing on screen to stop it.
+ * @type {(err: { status: number, message?: string }) => object}
+ */
+const NameRequestFailed = (err) => err?.status === 401
+  ? SessionEnded()
+  : RemoteFailure(err)
+
+const SessionEnded = () => initComponent({
+  content: () => html`
+    <div class="row">
+      Your session has ended. <a href="${LOGIN_URL}">Log in</a> to pick up where you left off.
+    </div>
+  `
+})
 
 const ProfileListsOrUsernameSetter = ({ error, username }) => initComponent({
   content: ({ include }) => html`
@@ -58,3 +90,7 @@ const UnauthenticatedWelcome = () => initComponent({
     <div class="row">Welcome to memo. Log in to start listing.</div>
   `
 })
+
+/* Where the menu's "Log in" goes. The route sends the browser back to
+   whichever page it started from, so from here that is this one. */
+const LOGIN_URL = '/.netlify/functions/auth/login'

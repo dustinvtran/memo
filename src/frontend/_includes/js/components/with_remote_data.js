@@ -3,14 +3,21 @@ const { html, css, escapeHtml } = Utils
 const { identity } = R
 const { errorMessage } = Http
 
-const WithRemoteData = ({ remoteData, component }) => initComponent({
+/**
+ * `errorComponent` draws whatever the request failed with — `{ status, error,
+ * message }`, which is what `Http` hands on. The default shows the line the
+ * API wrote for whoever asked, and that is as much as this component can know.
+ * A caller that knows what its own failures mean passes something better: a
+ * 401 on a page only a logged-in user reaches is a session that has ended, and
+ * the answer to that is to log in again rather than to try again. See #216.
+ */
+const WithRemoteData = ({ remoteData, component, errorComponent = RemoteFailure }) => initComponent({
   content: ({ id, include }) => html`
     <div id="${id}">${include(Loader())}</div>
   `,
   initializer: ({ id }) => {
     const showComponent = (data) => setContent(`#${id}`, component(data))
-    const showError = (err) =>
-      setContent(`#${id}`, Div(`Error: ${escapeHtml(errorMessage(err))}`))
+    const showError = (err) => setContent(`#${id}`, errorComponent(err))
 
     if (remoteData instanceof NT.ResultAsync) {
       remoteData.map(showComponent).mapErr(showError)
@@ -23,6 +30,15 @@ const WithRemoteData = ({ remoteData, component }) => initComponent({
 Components.WithRemoteData = WithRemoteData
 
 ///////////////////////////////////////////////////////////////////////////////
+
+/** What a failed request draws unless the caller has something better. */
+const RemoteFailure = (err) => Div(`Error: ${escapeHtml(errorMessage(err))}`)
+
+/* Published as well as defaulted to, so that a caller with one failure of its
+   own to handle has somewhere to send all the rest. Below the definition
+   rather than beside `WithRemoteData`: this line runs while the file is being
+   read, and the `const` above is not initialised until it does. */
+Components.RemoteFailure = RemoteFailure
 
 const Loader = () => initComponent({
   content: () => html`

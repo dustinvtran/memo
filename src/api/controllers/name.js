@@ -9,7 +9,22 @@ import * as responses from '../utils/responses.js'
 import { getUserId, getReqBody, getSegment } from './utils.js'
 import * as feErrors from '../utils/frontend_errors.js'
 import { username as parseUsername } from '../utils/parsers/users.js'
-/** @type {(event: Event) => Promise<Response>} */
+/**
+ * GET /api/name
+ *
+ * The name of whoever is asking. An account that has not picked one yet gets
+ * `NoUsernameSet` as a 200: that is a real answer to a real question, and the
+ * `UsernameSetter` on the home page is drawn from it.
+ *
+ * Everything else is reported as what it is. This used to end
+ * `.mapErr(() => responses.ok({}))`, so an expired token, a tampered one and a
+ * database that did not answer all arrived as `200 {}` — which the home page
+ * read as a user with no name at all and greeted as `Hi undefined!`, linking
+ * to `/profile/undefined`. `isLoggedIn` on the frontend is the presence of the
+ * `nf_jwt` cookie and nothing about whether it still verifies, so an expired
+ * session is exactly the case that got there. See #216.
+ * @type {(event: Event) => Promise<Response>}
+ */
 const findOwnName = (event) => toPromise(
   getUserId(event)
     .andThen((userId) => findOneByField_('users', 'userId', userId))
@@ -17,7 +32,7 @@ const findOwnName = (event) => toPromise(
       ? responses.ok({ username: user.username })
       : responses.ok(feErrors.noUsernameSet())
     )
-    .mapErr(() => responses.ok({}))
+    .mapErr(responses.fromError)
 )
 
 /**

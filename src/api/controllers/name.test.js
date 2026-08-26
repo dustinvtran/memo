@@ -42,9 +42,10 @@ process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
 
 const store = {}
 
-// The connection is made once and held, so a test that wants a write to fail
+// The connection is made once and held, so a test that wants a query to fail
 // has to say so here rather than swap the client out from under it.
 let writesFail = false
+let readsFail = false
 
 /** Only the operators the queries in this module actually use. */
 const matchesValue = (value, wanted) =>
@@ -98,6 +99,7 @@ const collection = (name) => ({
     },
   }),
   findOne: async (filter, { projection } = {}) => {
+    if (readsFail) throw new Error('read failed')
     const doc = collectionOf(name).find((doc) => matches(doc, filter))
     return doc ? project(doc, projection) : null
   },
@@ -232,6 +234,58 @@ test('a write that fails is not answered with a 200', options, async () => {
   } finally {
     writesFail = false
   }
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// GET /api/name, which used to answer `200 {}` to everything that went wrong.
+// The home page reads that body as a user who has no name — neither of its
+// failure branches is taken by `{}` — and greets them as `Hi undefined!`. #216.
+
+test('a caller with no token at all is refused', options, async () => {
+  seed()
+
+  const { statusCode, body } = await call('GET', 'name')
+
+  assert.equal(statusCode, 401)
+  assert.equal(body.error, 'UnauthorizedError')
+})
+
+test('an expired token is a 401 rather than a 200 with nothing in it', options, async () => {
+  seed()
+
+  // The case the frontend cannot tell from a fresh one on its own: `isLoggedIn`
+  // is the presence of the `nf_jwt` cookie and nothing about whether it still
+  // verifies, so this answer is the only thing that knows the session is over.
+  const { statusCode, body } = await call('GET', 'name', { as: 'expired' })
+
+  assert.equal(statusCode, 401)
+  assert.equal(body.error, 'UnauthorizedError')
+})
+
+test('a database that does not answer is a 500', options, async () => {
+  seed()
+
+  readsFail = true
+
+  try {
+    const { statusCode, body } = await call('GET', 'name', { as: 'u1' })
+
+    assert.equal(statusCode, 500)
+    assert.equal(body.error, 'DBError')
+  } finally {
+    readsFail = false
+  }
+})
+
+test('an account that has not picked a name is still a 200', options, async () => {
+  // Not swept up with the failures above: `NoUsernameSet` is a real answer to
+  // a real question, and the UsernameSetter on the home page is drawn from it.
+  store.users = []
+
+  const { statusCode, body } = await call('GET', 'name', { as: 'u1' })
+
+  assert.equal(statusCode, 200)
+  assert.equal(body.error, 'NoUsernameSet')
 })
 
 ///////////////////////////////////////////////////////////////////////////////
