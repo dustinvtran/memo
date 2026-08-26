@@ -1,3 +1,23 @@
+/**
+ * The component styles already written into `#component-styles`, so that
+ * deciding whether to append one is a lookup rather than a read of the
+ * document. Both it and the tag last as long as the page: nothing removes the
+ * tag, and each navigation is a full load, so the two cannot drift apart.
+ *
+ * What this replaced was `styleTag.html().includes(componentStyle)`, which
+ * pulled the whole accumulated stylesheet into a string on every
+ * `initComponent` call — including for the components that have no style at
+ * all, which is most of them, and which were asking a growing string whether
+ * it contained `undefined`.
+ *
+ * It only bounds the tag because the styles put in it are the same text every
+ * time. A style that interpolates the instance `id` is a new string per
+ * instance, so it can never be found here and is appended again forever; that
+ * is what `#overlay-${parentId}` and the entry form's buttons used to do, and
+ * why they now name a class instead.
+ */
+const appendedStyles = new Set()
+
 /** The magic function to create and compose components */
 const initComponent = ({ content, initializer, style }) => {
   let includeList = []
@@ -30,10 +50,12 @@ const initComponent = ({ content, initializer, style }) => {
   }
   const styleTag = $('#component-styles')
 
-  // Add the component style to the site if it has not already
+  // Add the component style to the site if it has not already. The registry
+  // below answers that; what the tag already contains is not read back.
   const componentStyle = style?.({ id })
-  if (!styleTag.html().includes(componentStyle)) {
-    styleTag.first().append(componentStyle)
+  if (componentStyle && !appendedStyles.has(componentStyle)) {
+    appendedStyles.add(componentStyle)
+    styleTag.append(componentStyle)
   }
 
   return hide({
