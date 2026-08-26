@@ -113,8 +113,6 @@ const retrieve = (ref) => ResultAsync.fromPromise(
     // straight back out rather than costing two more attempts.
     if (!mainData) throwNoSuchGame(ref)
 
-    const playtime = toPlaytime(await retrieveTimeToBeat(mainData.id))
-
     // `involved_companies` carries ids and role flags; the names are a second
     // request. Everything either side of it is in ./companies.js, where the
     // suite can reach it — #214 was a hole in these two lists, and nothing
@@ -123,7 +121,19 @@ const retrieve = (ref) => ResultAsync.fromPromise(
     const studioIds = involvedCompanyIds(mainData.involved_companies, 'developer')
     const idsToLookUp = companyIdsToLookUp(studioIds, publisherIds)
 
-    const companies = await (
+    // Neither lookup takes anything but `mainData`, so they go out together
+    // and the retrieve costs two round trips rather than three — the same
+    // reason tmdb_adapter.js asks for the details and the credits as a pair.
+    // This is the wait a user sits through after picking a search result.
+    //
+    // The two are still allowed to fail differently, which is the part worth
+    // being careful with: `Promise.all` rejects the moment either half does,
+    // and only the companies half should be able to fail the retrieve.
+    // `retrieveTimeToBeat` catches its own failure and resolves to undefined,
+    // and that catch is load-bearing here rather than merely tidy — it is
+    // what keeps a game worth caching without its playtime.
+    const [timeToBeat, companies] = await Promise.all([
+      retrieveTimeToBeat(mainData.id),
       idsToLookUp.length > 0
         ? client
             .fields(['name'])
@@ -131,8 +141,10 @@ const retrieve = (ref) => ResultAsync.fromPromise(
             .limit(companyQueryLimit(idsToLookUp))
             .request('/companies')
             .then((resp) => resp.data)
-        : []
-    )
+        : [],
+    ])
+
+    const playtime = toPlaytime(timeToBeat)
 
     const publisherNames = companyNames(publisherIds, companies)
 
