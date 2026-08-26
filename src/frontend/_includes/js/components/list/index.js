@@ -3,14 +3,14 @@ const { getUserIdFromName, getUserName, getEntries } = Netlify
 const { getNameFromUrl, getEntryTypeFromUrl } = Http
 const { waitForEl } = Utils
 const { List } = Components.List
-const { typeToTitle } = Conversions
+const { isType, byType } = Conversions
 
 const ListPage = () => initComponent({
   content: ({ include }) => {
     const entryType = getEntryTypeFromUrl()
     const username = getNameFromUrl()
 
-    if (!typeToTitle[entryType]) return include(Error404())
+    if (!isType(entryType)) return include(Error404())
 
     // All three requests go out together, before any of them has answered.
     // Asked for in the order the page needs them — does this user exist, then
@@ -33,7 +33,7 @@ const ListPage = () => initComponent({
     }))
   },
   initializer: () => {
-    const typeTitle = typeToTitle[getEntryTypeFromUrl()]
+    const typeTitle = byType(getEntryTypeFromUrl())?.title
     const user = getNameFromUrl()
     document.title = typeTitle && user
       ? `${user}'s ${typeTitle.toLowerCase()} | Memo`

@@ -287,6 +287,42 @@ test("components/index.js comes before the files that populate it", () => {
   });
 });
 
+test("conversions.js comes before the files that derive from it", () => {
+  // It holds `WORK_TYPES`, the frontend's one table of work types, and these
+  // three read it as they load: `utils/netlify.js` takes the profile's list
+  // order off it, `components/router.js` destructures its membership test, and
+  // `utils/tables.js` hands it back a type to get that table's columns. #221
+  // folded four restatements into it, and the price of one table is that it
+  // has to be above everything spending it.
+  const files = plan.BUNDLED_FILES;
+  const table = files.indexOf("js/utils/conversions.js");
+
+  assert.notEqual(table, -1, "js/utils/conversions.js is no longer bundled");
+
+  [
+    "js/utils/netlify.js",
+    "js/utils/tables.js",
+    "js/components/router.js",
+    "js/components/list/index.js",
+  ].forEach((includePath) =>
+    assert.ok(
+      files.indexOf(includePath) > table,
+      `${includePath} is bundled before js/utils/conversions.js, which is ` +
+        `what defines the Conversions table it reads`
+    )
+  );
+
+  // The one backwards reference, and the reason `columns` is a function: the
+  // column lists live in conversions.js but are built out of `Columns`, which
+  // is set below it. conversions.test.js asserts the deferral that makes this
+  // legal; this asserts that it is still needed.
+  assert.ok(
+    files.indexOf("js/utils/columns.js") > table,
+    "js/utils/columns.js moved above conversions.js; the note there about " +
+      "deferring the `Columns` lookup to call time is now stale"
+  );
+});
+
 test("the concatenated bundle parses as JavaScript", () => {
   // Exactly what `_data/assets.js` hands to UglifyJS, built by the same pure
   // function. `new Function` compiles the body without running it, so this is a
