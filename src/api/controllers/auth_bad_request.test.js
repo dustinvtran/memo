@@ -45,6 +45,8 @@ const options = {
 }
 
 process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
+// The origin a route out of the login cookie is kept or discarded against.
+process.env.URL = 'https://nil.moe'
 
 const cookie = dependenciesInstalled ? await import('cookie') : undefined
 const { JSON_CONTENT_TYPE } = dependenciesInstalled
@@ -158,7 +160,10 @@ test('a real login cookie is read, not refused', options, () => {
   const login = readLoginCookie(goodCookieHeader('https://nil.moe/films'))
 
   assert.equal(login.nonce, 'a-nonce')
-  assert.equal(login.route, 'https://nil.moe/films')
+  // Cut down to a path on the way through, which is #229 — the referer this
+  // came from is ours, so the only thing lost is the origin. Where a route
+  // that is *not* ours goes is `auth_form_post.test.js`.
+  assert.equal(login.route, '/films')
 })
 
 test('the state is handed on byte for byte', options, () => {

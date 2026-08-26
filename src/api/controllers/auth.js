@@ -158,6 +158,32 @@ const generateEncodedStateString = (route, entropy) => {
   return stateBuffer.toString("base64")
 }
 
+/* The route the login is to end on, kept only if it is one of ours (#229).
+
+   It starts life as the `Referer` of the request that began the login, which
+   any page on the internet can set by linking here — so what comes back is a
+   destination an attacker may have chosen, about to be handed to a browser as
+   the last step of a real login on a domain the user trusts. Anything that is
+   not this site falls back to the home page, which is where a login with no
+   particular destination goes anyway.
+
+   Both sides are resolved and their origins compared, rather than the string
+   being tested for a leading slash: `//evil.example/x` passes that test and
+   resolves to another origin, which is exactly the case worth closing. What
+   comes back is the path rather than the whole url, so the redirect stays
+   relative and a later change to `URL` cannot send anyone off-site. A route
+   that will not parse — and an unset `URL`, which is a misconfigured site
+   rather than a place to send someone — is the home page too. */
+const toSafeRoute = (route) => {
+  try {
+    const site = new URL(process.env.URL)
+    const { origin, pathname, search, hash } = new URL(route, site)
+    return origin === site.origin ? `${pathname}${search}${hash}` : "/"
+  } catch (error) {
+    return "/"
+  }
+}
+
 /* The other end of the two above: everything `handleCallback` needs out of the
    request, or `undefined` when there is no login in progress to finish.
 
@@ -171,7 +197,9 @@ const generateEncodedStateString = (route, entropy) => {
    The state is decoded here rather than after the response check, so that the
    whole cookie is either good or refused in one place. It is our own base64
    JSON, but the route inside it starts life as a `Referer` header, so it is
-   still a stranger's string with a trip through the browser in the middle. */
+   still a stranger's string with a trip through the browser in the middle —
+   which is why it is parsed defensively here *and* constrained by
+   `toSafeRoute` before anything redirects to it. */
 const readLoginCookie = (cookieHeader) => {
   if (typeof cookieHeader !== "string") return undefined
   const value = cookie.parse(cookieHeader)[AUTH0_LOGIN_COOKIE_NAME]
@@ -180,7 +208,8 @@ const readLoginCookie = (cookieHeader) => {
     const { nonce, state } = JSON.parse(value)
     if (typeof nonce !== "string" || typeof state !== "string") return undefined
     const { route } = JSON.parse(Buffer.from(state, "base64").toString("utf8"))
-    return typeof route === "string" ? { nonce, state, route } : undefined
+    if (typeof route !== "string") return undefined
+    return { nonce, state, route: toSafeRoute(route) }
   } catch (error) {
     return undefined
   }
@@ -337,7 +366,8 @@ const handleCallback = async (event) => {
   return {
     statusCode: 302,
     headers: {
-      // Where the login started, carried through Auth0 in the state.
+      // Where the login started, carried through Auth0 in the state and cut
+      // down to a path on this site by `toSafeRoute` on the way back in.
       Location: login.route,
       "Cache-Control": "no-cache",
     },
