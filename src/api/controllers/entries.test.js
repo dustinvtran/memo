@@ -251,6 +251,55 @@ test('creating an entry answers with the entry, not with its note', options, asy
   assert.equal(body.entryRef, undefined)
 })
 
+test('an entry saved without a note is still created', options, async () => {
+  seed()
+
+  // The form always sends the field, so this is not reachable from the site —
+  // but `reviewParser` has `text: z.string()`, so `text: undefined` failed the
+  // review write, and a failed write inside the transaction took the entry
+  // with it: a 400 that created nothing. #213.
+  const { review, ...withoutReview } = form()
+  const { statusCode, body } = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: withoutReview,
+  })
+
+  assert.equal(statusCode, 200)
+  assert.equal(store.filmEntries.length, 1)
+  assert.equal(store.filmEntries[0].status, 'Completed')
+  assert.equal(body._id, store.filmEntries[0]._id)
+
+  // No note was asked for, so none was written — rather than an empty one
+  // standing in for the note the user did not leave.
+  assert.deepEqual(store.filmReviews, [])
+})
+
+test('an empty note is a note, and is written', options, async () => {
+  seed()
+
+  await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: form({ review: '' }),
+  })
+
+  assert.equal(store.filmReviews.length, 1)
+  assert.equal(store.filmReviews[0].text, '')
+})
+
+test('an entry the parser refuses is a 400 and writes neither half', options, async () => {
+  seed()
+
+  const { statusCode, body } = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: form({ status: 'Abandoned' }),
+  })
+
+  assert.equal(statusCode, 400)
+  assert.equal(body.error, 'RequestError')
+  assert.deepEqual(store.filmEntries, [])
+  assert.deepEqual(store.filmReviews, [])
+})
+
 /**
  * `updateEntry_` read the owner off the entry without checking there was one,
  * so a PATCH naming an id that isn't there threw on the miss the db module

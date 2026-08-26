@@ -18,7 +18,6 @@ import { mongo } from './db.js'
 // ES module, which is what uuid became at v13 — every route 502'd on load. Node
 // has had `randomUUID` since 14.17 and it produces the same kind of _id.
 import { randomUUID } from 'node:crypto'
-import { throwIt } from '../general.js'
 import * as parsers from '../parsers/index.js'
 import { toEntryWithMetadata } from './shapes.js'
 import { toUserEntriesPipeline, toScoreTallyPipeline, toFindOptions } from './queries.js'
@@ -80,11 +79,31 @@ const _deleteAllByField = (collection, field, value, session) =>
     .deleteMany({ [field]: value }, { session })
   )
 
-/** @type {(collection: ValidCollection, data: any, session?: ClientSession) => Promise<object>} */
+/**
+ * The one write here that can fail before the database is asked anything: the
+ * document is parsed first, and one that does not satisfy its collection's
+ * parser is never inserted.
+ *
+ * That failure is a *rejected promise* and not a throw. `Result.prototype.match`
+ * is synchronous, so throwing here left this module during the call itself,
+ * before `create_`'s `toResult` or `create`'s `toResponse` had a value to
+ * convert — and neverthrow does not catch a synchronous throw. The parser's
+ * error went past every `mapErr(responses.fromError)` above it, out of the
+ * handler, and Netlify answered an empty 502; `GET /api/works/retrieve/:type/:ref`
+ * did that for any work an adapter returned that `workParser` refused. The
+ * same shape of bug as #139 and #175, and it has the same fix: fail the way
+ * every other function in this file fails. #213.
+ *
+ * `createEntry` and `updateEntry_` were immune only because they call this
+ * from inside an `async` function wrapped in `try`/`catch`, where a throw
+ * becomes a rejection anyway — a property of those two callers rather than of
+ * this helper.
+ * @type {(collection: ValidCollection, data: any, session?: ClientSession) => Promise<object>}
+ */
 const _create = (collection, data, session) =>
   parsers[collection](data).match(
     (validDoc) => unsafeCreateDoc(collection, validDoc, session),
-    (err) => throwIt(err)
+    (err) => Promise.reject(err)
   )
 
 /**

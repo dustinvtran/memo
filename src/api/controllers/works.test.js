@@ -88,6 +88,12 @@ const retrievedFilm = (ref) => ({
   releaseYear: 1979,
 })
 
+/**
+ * What `retrieve` answers with, so that a test can hand back a work the
+ * parser will refuse. Reset by `seed`.
+ */
+let retrieved = retrievedFilm
+
 const stubAdapter = {
   search: (query) => {
     adapterCalls.push({ action: 'search', arg: query })
@@ -95,7 +101,7 @@ const stubAdapter = {
   },
   retrieve: (ref) => {
     adapterCalls.push({ action: 'retrieve', arg: ref })
-    return okAsync(retrievedFilm(ref))
+    return okAsync(retrieved(ref))
   },
 }
 
@@ -141,6 +147,7 @@ const call = async (url, { as } = {}) => {
 
 const seed = () => {
   adapterCalls.length = 0
+  retrieved = retrievedFilm
   store.films = []
 }
 
@@ -231,4 +238,42 @@ test('a logged-in request for an unknown type is a 404', options, async () => {
 
   assert.equal(statusCode, 404)
   assert.deepEqual(adapterCalls, [])
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// A work the parser refuses. `_create` used to throw this synchronously, and
+// `createWork` calls it inside an `.andThen` with nothing around it, so the
+// error left the module past every `mapErr(responses.fromError)` above it and
+// out of the handler: `await works.handler(...)` rejected, and Netlify
+// answered an empty 502. #213.
+
+test('a retrieved work the parser refuses is a 400 rather than a throw', options, async () => {
+  seed()
+  // No `englishTranslatedTitle`, which `workParser` has as
+  // `z.string().nullable()` with no `.optional()`. Any adapter that answers
+  // with an untitled work reaches this; #214 is another way in.
+  retrieved = (ref) => ({ apiRefs: [`tmdb__${ref}`], entryType: 'Film' })
+
+  const { statusCode, body } = await call('works/retrieve/films/1234', { as: 'u1' })
+
+  assert.equal(statusCode, 400)
+  // The parser's own class, and not `DBError`: the database was never asked.
+  assert.equal(body.error, 'RequestError')
+  assert.equal(body.message, 'the request body is not valid')
+
+  // Zod's account of our field layout is logged rather than sent. #105.
+  assert.equal(body.detail, undefined)
+
+  assert.deepEqual(store.films, [])
+})
+
+test('a work the parser refuses is not half-written before it is refused', options, async () => {
+  seed()
+  retrieved = (ref) => ({ apiRefs: [`tmdb__${ref}`], entryType: 'Opera' })
+
+  await call('works/retrieve/films/1234', { as: 'u1' })
+
+  // The retrieve was spent — the write is what did not happen.
+  assert.deepEqual(adapterCalls, [{ action: 'retrieve', arg: '1234' }])
+  assert.deepEqual(store.films, [])
 })
