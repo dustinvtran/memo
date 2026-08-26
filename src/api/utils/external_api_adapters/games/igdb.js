@@ -16,14 +16,22 @@
 /** @typedef {import('../../parsers/games').Game} Game */
 import { ResultAsync } from 'neverthrow'
 import * as errors from '../../errors.js'
-import igdb from 'igdb-api-node'
+import igdbModule from 'igdb-api-node'
 import axios from 'axios'
 import { TIME_TO_BEATS_URL, timeToBeatQuery, toPlaytime } from './time_to_beat.js'
 import { earliestReleaseDate } from './release_dates.js'
 import { involvedCompanyIds, companyIdsToLookUp, companyQueryLimit, companyNames } from './companies.js'
 import { throwIt } from '../../general.js'
+import { callableDefault } from '../../interop.js'
 import { retrying, describeFailure, publicFailure, statusOf } from '../retry.js'
 const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET } = process.env
+
+/**
+ * `igdb-api-node` is Babel-compiled CommonJS, so what a default import of it
+ * gives depends on who reads `__esModule` — see ../../interop.js. It is the
+ * only dependency here that is not the same either way.
+ */
+const igdb = callableDefault(igdbModule)
 
 /**
  * Checked when a request needs the credentials rather than while this module

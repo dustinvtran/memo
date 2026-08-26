@@ -122,6 +122,36 @@ obvious:
 Option 3 is what is here. `jsconfig.json` follows it, and affects nothing
 but an editor — no CI job runs `tsc`.
 
+## What a default import of a CommonJS dependency gives
+
+Every dependency this tree reaches is CommonJS, and for almost all of them
+the boundary is invisible. For a Babel-compiled package it is not. Babel
+writes the export as `exports.default` and marks the module `__esModule`,
+and that mark has two readings: Node's ESM loader has never honoured it and
+gives the default import the whole `module.exports`, while bundlers used to
+honour it and give the inner `default`.
+
+esbuild settles it by matching Node whenever the importing file is itself
+ESM — it emits `__toESM(require('pkg'), 1)`, and the `1` means "answer the
+way Node would". `src/api/package.json` is what makes these files ESM, so
+the section above is also what decides this: `node --test` and the deployed
+bundle now agree, and both hand over the namespace.
+
+That is a *change* for code written as CommonJS, and it is silent. #235 was
+`igdb-api-node`, whose factory sits at `exports.default`: `igdb(…)` became
+"igdb is not a function" on every game search and every game retrieve, the
+adapter's own lines untouched and the whole suite green, because nothing in
+it imports the real adapter. `utils/interop.js` reads the shape rather than
+trusting either answer, and
+`utils/external_api_adapters/games/igdb_client.test.js` asks the installed
+package what it actually hands over — the one question a pure test cannot.
+
+It is worth knowing which dependencies this can bite. Of the packages
+imported here only `igdb-api-node` is affected today: `axios` and
+`node-themoviedb` hand over a function either way, `cookie` and `validator`
+are used as objects, and `neverthrow`, `ramda`, `ts-pattern`, `zod`, `jose`
+and `mongodb` are reached through named imports.
+
 ## The one place CommonJS still meets this tree
 
 `src/db_maintenance` is CommonJS and requires four modules out of
