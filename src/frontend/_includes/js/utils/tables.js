@@ -9,53 +9,15 @@ const profileColumns = (status) => [
   Columns.year()
 ]
 
-const entryTypeToFullColumns = (entryType, status) => ({
-  films: [
-    Columns.index(),
-    Columns.title(),
-    Columns.score(status),
-    Columns.year(),
-    Columns.duration(),
-    Columns.directors(),
-    Columns.actors(),
-    Columns.date('Completed Date', 'completedDate'),
-  ],
-  tv: [
-    Columns.index(),
-    Columns.title(),
-    Columns.score(status),
-    Columns.year(),
-    Columns.progress(),
-    Columns.duration(),
-    Columns.directors(),
-    Columns.actors(),
-    Columns.date('Started Date', 'startedDate'),
-    Columns.date('Completed Date', 'completedDate'),
-  ],
-  games: [
-    Columns.index(),
-    Columns.title(),
-    Columns.score(status),
-    Columns.year(),
-    Columns.playtime(status),
-    Columns.platforms(),
-    Columns.studios(),
-    Columns.publishers(),
-    Columns.date('Started Date', 'startedDate'),
-    Columns.date('Completed Date', 'completedDate'),
-  ],
-  books: [
-    Columns.index(),
-    Columns.title(),
-    Columns.score(status),
-    Columns.year(),
-    Columns.pages(),
-    Columns.authors(),
-    Columns.publishers(),
-    Columns.date('Started Date', 'startedDate'),
-    Columns.date('Completed Date', 'completedDate'),
-  ],
-}[entryType])
+/**
+ * The columns a full list table shows, or undefined for a type there is no
+ * such table for — which is what the caller in `components/list/list.js` has
+ * always been handed for an unknown type, and bootstrap-table has always
+ * thrown on. The lists themselves live in `utils/conversions.js` now, with the
+ * rest of what the frontend knows about a work type. See #221.
+ */
+const entryTypeToFullColumns = (entryType, status) =>
+  Conversions.byType(entryType)?.columns(status)
 
 window.includeReview = (type, entryId) => {
   Components.setContent(`#review-${entryId}`, Components.WithRemoteData({

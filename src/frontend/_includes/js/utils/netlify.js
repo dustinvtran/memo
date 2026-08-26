@@ -56,7 +56,13 @@ const deleteDraft = (type, ref) => Http.del(ENDPOINTS.draft(type, ref))
 
 // UTILITY
 
-const entryTypes = ['games', 'films', 'books', 'tv']
+/**
+ * The types a profile page stacks lists and stats for, in the order it stacks
+ * them. Kept here under its old name for the two components that destructure
+ * it off `Netlify`; the order and the membership are `utils/conversions.js`'s
+ * to decide. See #221.
+ */
+const entryTypes = Conversions.TYPES
 
 const getToken = Http.getToken
 
