@@ -365,3 +365,48 @@ test("every file under _includes/js is bundled, or is a test", () => {
       "not in the bundle and their globals are undefined at runtime"
   );
 });
+
+test("no bundled file writes behaviour into the markup it builds", () => {
+  // `script-src` in `_headers` grants neither `'unsafe-inline'` nor
+  // `'unsafe-eval'`, so an inline handler or an inline `<script>` coming out of
+  // a formatter is a feature that stops working the day that header is
+  // enforced, silently and in the browser only. That is what #219 was: an
+  // owner's edit button, and — through a `<scr` + `ipt>` the grep for a script
+  // tag would have missed — every comment panel on the site, for every visitor.
+  //
+  // The policy and the markup are checked against each other rather than either
+  // being trusted alone: granting `'unsafe-inline'` deliberately is what would
+  // make this check wrong to keep, and it fails here rather than passing
+  // quietly.
+  const policy = read(HEADERS).replace(/^\s*#.*$/gm, "");
+  const scriptSrc = policy.match(/script-src[^;]*/)?.[0];
+
+  assert.ok(scriptSrc, "_headers declares no script-src at all");
+  assert.doesNotMatch(
+    scriptSrc,
+    /'unsafe-(inline|eval)'/,
+    "script-src has been loosened; this check is about what that would buy, " +
+      "so decide which of the two is meant to be true"
+  );
+
+  // Comments go first: the reason a file has no inline handler is usually a
+  // sentence saying so, and a check that a comment can fail is a check that
+  // gets worked around rather than read.
+  const withoutComments = (code) =>
+    code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  plan.BUNDLED_FILES.forEach((includePath) => {
+    const code = withoutComments(read(path.join(INCLUDES, includePath)));
+
+    assert.doesNotMatch(
+      code,
+      /<scr/i,
+      `${includePath} builds a script tag, which script-src refuses`
+    );
+    assert.doesNotMatch(
+      code,
+      /\son[a-z]+\s*=\s*["'`]/i,
+      `${includePath} writes an inline event handler, which script-src refuses`
+    );
+  });
+});

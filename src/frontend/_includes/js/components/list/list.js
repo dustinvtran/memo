@@ -1,5 +1,5 @@
 const { html, css, escapeHtml, waitForEl } = Utils
-const { col, initTable, detailFormatter, allColumns, statuses, entryTypeToFullColumns, editColumn, filmStatuses, searchSettings } = Tables
+const { col, initTable, detailFormatter, includeReviewIn, allColumns, statuses, entryTypeToFullColumns, editColumn, filmStatuses, searchSettings } = Tables
 const { typeToTitle, statusToTitle } = Conversions
 const { initComponent, WithRemoteData, appendContent, Nothing } = Components
 const { Modal_ } = Components.UI
@@ -57,13 +57,36 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
     // over a `dbRef` and the registry it is looked up in is shared, so what
     // each table used to install was this same closure, and only the last of
     // them survived.
-    window.editEntry = (dbRef) => {
+    const editEntry = (dbRef) => {
       appendContent('body', Modal_({
         title: "Edit an entry",
         content: EntryForm(entryType, Rows.byRef[dbRef]),
         showCloseConfirmationDialog: () => window.hasUnsavedChange === true
       }))
     }
+
+    // Both of these hang off `document` rather than off the row, which is what
+    // lets `script-src` in `_headers` keep refusing `'unsafe-inline'` and
+    // `'unsafe-eval'` (#219): the edit icon used to carry an `onclick`, and
+    // every expanded row an inline `<script>` that jQuery ran through `eval`.
+    // Delegation is also the answer to what the inline handler was for —
+    // bootstrap-table destroys a row's node and rebuilds it when the displayed
+    // columns change, and neither of these is bound to a node it can destroy.
+    //
+    // The comment panel listens for bootstrap-table's own event rather than
+    // for a click on `.detail-icon`: the library's handler on that icon ends in
+    // `return false`, which in jQuery is `stopPropagation` too, so the click
+    // never reaches `document`. `expand-row.bs.table` is triggered on the table
+    // and bubbles, it arrives after the detail row is in the DOM, and it also
+    // covers a row opened by the url anchor in `list/index.js` rather than by
+    // hand.
+    //
+    // `off` first because this initializer runs per render, and a second copy
+    // of the edit handler would open two modals on one click.
+    $(document)
+      .off('click.entryRows expand-row.bs.table')
+      .on('click.entryRows', '.edit-button', (e) => editEntry(e.currentTarget.dataset.ref))
+      .on('expand-row.bs.table', (_event, _index, _row, detail) => includeReviewIn(detail))
 
     // Show helpful image next to the first open-review-icon in the DOM. A
     // list with no rows in it never grows one, which is what the wait gives

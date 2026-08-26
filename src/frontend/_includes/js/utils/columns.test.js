@@ -279,32 +279,43 @@ test("the edit button carries the row's id and nothing else", () => {
   assert.equal(
     rendered,
     '<i id="edit-Completed-0" class="fas fa-edit edit-button" ' +
-      'onclick="window.editEntry(&quot;abc&quot;)"></i>'
+      'data-ref="abc"></i>'
   );
 });
 
-test("a quote in a dbRef stays inside the string the attribute holds", () => {
+test("the edit button carries no behaviour for a CSP to refuse", () => {
+  // The handler is delegated from `document` in `components/list/list.js`. An
+  // inline one here is a `script-src` violation, and under the policy in
+  // `_headers` that is an owner's edit button silently doing nothing (#219).
+  const rendered = Columns.edit()
+    .formatter(null, { status: "Completed", dbRef: "abc" }, 0);
+
+  assert.doesNotMatch(rendered, /\son[a-z]+=/i);
+  assert.ok(!rendered.includes("javascript:"));
+});
+
+test("a quote in a dbRef stays inside the attribute that holds it", () => {
   const rendered = Columns.edit()
     .formatter(null, { status: "Completed", dbRef: `a"b'c` }, 0)
     .trim();
-  assert.ok(rendered.includes(`onclick="window.editEntry(&quot;a\\&quot;b&#39;c&quot;)"`));
+  assert.ok(rendered.includes(`data-ref="a&quot;b&#39;c"`));
 });
 
 test("what the browser parses out of the edit attribute is the dbRef itself", () => {
-  const dbRef = `a"b'c`;
+  const dbRef = `a"b'&c`;
   const rendered = Columns.edit()
     .formatter(null, { status: "Completed", dbRef }, 0)
     .trim();
 
-  // A browser HTML-decodes an attribute value and then hands the result to the
-  // JS parser, so that is the order to undo it in. Asserting on the escaped
-  // text alone cannot tell a correct escape from one that merely looks busy.
+  // The attribute holds the id itself rather than a fragment of JS that
+  // quotes it, so HTML-decoding is the whole of what the handler gets back.
+  // Asserting on the escaped text alone cannot tell a correct escape from one
+  // that merely looks busy.
   const decoded = rendered
-    .match(/onclick="([^"]*)"/)[1]
+    .match(/data-ref="([^"]*)"/)[1]
     .replace(/&#39;/g, "'")
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, "&");
 
-  const argument = decoded.slice("window.editEntry(".length, -1);
-  assert.equal(JSON.parse(argument), dbRef);
+  assert.equal(decoded, dbRef);
 });
