@@ -61,10 +61,33 @@ const getReqBody = Result.fromThrowable(
   (err) => errors.req(err, 'the request body is not valid JSON'),
 )
 
-/** @type {(name: string) => ResultAsync<string, Error>} */
+/**
+ * The id behind a username, for a caller that has something to say about a
+ * name nobody has taken. A miss is `ok(undefined)`, so the caller must look.
+ *
+ * `export.js` is that caller: it unwraps this and answers its own 404 naming
+ * the username. Anything that would only feed the result to a query wants
+ * `findIdOfNameOrFail` below instead — an id nothing checked reaches the
+ * driver as `null` and matches on a field rather than failing. #253.
+ * @type {(name: string) => ResultAsync<string | undefined, Error>}
+ */
 const findIdOfName = (name) =>
   db.findOneByField_('users', 'username', name)
     .map((user) => user?.userId)
+
+/**
+ * The same lookup for a caller that cannot carry on without the id: a name
+ * nobody has taken is an err, so the chain stops and the `mapErr` every
+ * controller ends with turns it into a 404.
+ *
+ * `findOneByFieldOrFail_` and not a test on the result of the lenient one, so
+ * that a database that did not answer stays a `DBError` — the miss is the only
+ * thing that becomes a `NotFound` here.
+ * @type {(name: string) => ResultAsync<string, Error>}
+ */
+const findIdOfNameOrFail = (name) =>
+  db.findOneByFieldOrFail_('users', 'username', name)
+    .map((user) => user.userId)
 
 /**
  * The `:type` URL segment every entry-scoped route starts with. A segment
@@ -107,6 +130,7 @@ export {
   getUrlSegments,
   getReqBody,
   findIdOfName,
+  findIdOfNameOrFail,
   toEntryCollection,
   toEntryType,
   toReviewCollection,
