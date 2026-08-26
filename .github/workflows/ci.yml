@@ -28,6 +28,10 @@ jobs:
       # The unit-tested modules are deliberately dependency-free, so the
       # suite runs without an install. Nothing here needs a database or an
       # API key.
+      #
+      # Which also means this is not the whole suite: the files that do need
+      # the dependencies skip themselves here, and it is the `build` job that
+      # runs them, on the install it already does.
       - name: Unit tests
         run: npm test
 
@@ -80,6 +84,44 @@ jobs:
       # break this job and the Netlify build with it, which is the one thing to
       # watch if these lists are ever tidied.
       - run: npm ci --omit=dev
+
+      # The job above runs this same suite with nothing installed, which is
+      # deliberate and which leaves 118 of the 541 tests skipped — every
+      # controller test and all five `auth_*.test.js` files, so ownership
+      # checks, token verification and the transaction on a save had never run
+      # in CI on any commit until this step (#227). Those files probe for their
+      # dependencies with `import()` and skip themselves when it throws; every
+      # package they ask for is a `dependency` rather than a `devDependency`,
+      # so the install above is enough, and the whole suite takes about eight
+      # seconds with them present.
+      #
+      # The skip count is asserted rather than printed because a silent skip is
+      # the failure this step exists to catch. A probe that throws for the
+      # wrong reason — a `require.resolve` left behind in an ESM file, say —
+      # is swallowed by its own `catch`, and the file then skips itself while
+      # claiming the dependencies are missing. That is where
+      # docs/module_system.md ends, and its remedy is to run the suite with the
+      # dependencies installed and confirm nothing skips. Without the grep this
+      # step would pass just as happily on `# skipped 118`, which is the
+      # silence rather than the check.
+      #
+      # `--test-reporter=tap` is named rather than left to the default, which
+      # changes with whether stdout is a terminal and takes the summary line
+      # with it. The output goes to a file instead of through `tee` so that the
+      # status being read is `npm test`'s and not the pipe's.
+      - name: The whole suite, with the dependencies the other job does without
+        run: |
+          status=0
+          npm test -- --test-reporter=tap > "$RUNNER_TEMP/test.tap" || status=$?
+          cat "$RUNNER_TEMP/test.tap"
+          [ "$status" -eq 0 ] || exit "$status"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/test.tap" || {
+            echo "tests skipped with every dependency installed: a probe is" \
+                 "throwing for the wrong reason and swallowing it in its own" \
+                 "catch, so the file skips while claiming the dependencies" \
+                 "are missing — see docs/module_system.md"
+            exit 1
+          }
 
       # The functions runtime is started with `--no-experimental-require-module`
       # — #185 read it off `process.execArgv` on the deployed runtime, the same
