@@ -105,10 +105,20 @@ const createEntry = async ([userId, body, collection]) => {
         updatedDate: Date.now(),
       }, session))
 
-      await orThrow(db.create_(reviewCollection, {
-        text: review,
-        entryRef: created._id,
-      }, session))
+      // Only when there is a note to write. `reviewParser` insists on a
+      // string, so a body that left `review` out — which the form never does,
+      // but the route accepts — failed the second write and aborted the
+      // transaction, taking the entry with it: a 400 that created nothing,
+      // for an entry that is simply saved without a note. `updateEntry_`
+      // below already draws the same line, and draws it the same way: absent
+      // means "no note in this request", while an empty string is a real
+      // value. #213.
+      if (review !== undefined) {
+        await orThrow(db.create_(reviewCollection, {
+          text: review,
+          entryRef: created._id,
+        }, session))
+      }
 
       return created
     })
