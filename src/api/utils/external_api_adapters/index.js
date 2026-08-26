@@ -1,5 +1,5 @@
-import films from './films/tmdb.js'
-import tv from './tv_shows/tmdb.js'
+import * as films from './films/tmdb.js'
+import * as tv from './tv_shows/tmdb.js'
 import * as games from './games/igdb.js'
 import * as books from './books/google.js'
 /**
@@ -13,6 +13,11 @@ import * as books from './books/google.js'
  * loading this file costs nothing and the stubs go in through an ordinary
  * seam — which is what lets the tree be ES modules at all. See
  * `docs/module_system.md`.
+ *
+ * All four are imported as namespaces because all four export by name. That
+ * is not a style choice: src/db_maintenance requires the same four files
+ * across the CommonJS boundary, where a default export arrives wrapped and a
+ * named one does not. #252.
  */
 
 const adapters = { films, tv, games, books }

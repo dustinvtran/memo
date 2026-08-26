@@ -66,3 +66,61 @@ test("every shared work type gets its script-only fields", () => {
     );
   }
 });
+
+/**
+ * What the consumer actually calls. `require.resolve` in the descriptors
+ * proves a file is there; only requiring it proves the file holds an adapter.
+ *
+ * Two of the four used to end in `export default tmdbAdapter(…)`, and
+ * `require` of an ES module hands back the namespace without unwrapping a
+ * lone `default` — so from here films and tv were `{ __esModule, default }`,
+ * `adapter.retrieve` was `undefined`, and the backfill died on the first work
+ * it had anything to do while the two named-export adapters ran fine. #252.
+ *
+ * Needs the dependencies — the adapters import neverthrow, axios and the two
+ * API clients — so it **skips itself** when they aren't installed, which is
+ * how CI runs this suite without an install. It needs no credentials and no
+ * network: every client here is built on first use, which is the property
+ * that makes this testable at all.
+ */
+const DEPENDENCIES = [
+  "neverthrow",
+  "ramda",
+  "ts-pattern",
+  "axios",
+  "node-themoviedb",
+  "igdb-api-node",
+];
+
+const dependenciesInstalled = (() => {
+  try {
+    for (const dependency of DEPENDENCIES) require.resolve(dependency);
+    return true;
+  } catch (error) {
+    return false;
+  }
+})();
+
+const needsDependencies = {
+  skip: dependenciesInstalled ? false : "run `npm install` to run these",
+};
+
+test("every adapterModule exports the search and retrieve the scripts call", needsDependencies, () => {
+  for (const collection of COLLECTIONS) {
+    const adapter = require(collection.adapterModule);
+
+    for (const name of ["retrieve", "search"]) {
+      assert.equal(
+        typeof adapter[name],
+        "function",
+        `${collection.type}: ${collection.adapterModule} exports ` +
+          `${Object.keys(adapter).join(", ")}, so adapter.${name} is ` +
+          `${typeof adapter[name]}` +
+          (typeof adapter.default?.[name] === "function"
+            ? ` — it is at adapter.default.${name}, which is what a default ` +
+              `export looks like from CommonJS; export it by name instead`
+            : "")
+      );
+    }
+  }
+});
