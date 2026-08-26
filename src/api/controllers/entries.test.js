@@ -1,5 +1,6 @@
 /**
- * @file What saving an entry writes when one of the writes refuses, driven
+ * @file What saving an entry writes when one of the writes refuses, and what
+ * reading a list answers when the read refuses or the name is nobody's, driven
  * through the real Netlify handler against an in-memory Mongo.
  *
  * The fake here answers `hello` as a replica set, so `db.withTransaction`
@@ -84,8 +85,10 @@ const refuseIfBroken = (name, op) => {
 
 const collection = (name) => ({
   aggregate: (pipeline) => ({
-    toArray: async () =>
-      collectionOf(name).filter((doc) => matches(doc, pipeline[0].$match)),
+    toArray: async () => (
+      refuseIfBroken(name, 'aggregate'),
+      collectionOf(name).filter((doc) => matches(doc, pipeline[0].$match))
+    ),
   }),
   find: (filter, { projection, limit } = {}) => ({
     toArray: async () => {
@@ -188,6 +191,7 @@ const call = async (route, method, url, { as, body } = {}) => {
 
 const seed = () => {
   broken = null
+  store.users = [{ _id: 'u1', userId: 'u1', username: 'nil' }]
   store.filmEntries = []
   store.filmReviews = []
   store.entryRevisions = []
@@ -493,4 +497,55 @@ test('an ownership check still runs before any of this', options, async () => {
 
   assert.equal(statusCode, 401)
   assert.equal(store.filmEntries[0].status, 'InProgress')
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// GET /api/entries/:type/:username, which is public and unauthenticated — so
+// every answer below is one request away from a stranger.
+
+test('a list read answers with the entries', options, async () => {
+  seedSavedEntry()
+
+  const { statusCode, body } = await call(entries, 'GET', 'entries/films/nil')
+
+  assert.equal(statusCode, 200)
+  assert.equal(body.length, 1)
+  assert.equal(body[0].dbRef, 'e1')
+})
+
+test('a list read the database refuses is a 500, and says nothing more', options, async () => {
+  seedSavedEntry()
+  broken = { collection: 'filmEntries', op: 'aggregate' }
+
+  const { statusCode, body } = await call(entries, 'GET', 'entries/films/nil')
+
+  // This answered `200` with the error itself as the body, `detail` and all —
+  // and `detail` is the driver's account of the failure, which names every
+  // host it tried. `fromError` logs that and tells the caller the class of
+  // failure and not one word more. #250, #105.
+  assert.equal(statusCode, 500)
+  assert.equal('detail' in body, false)
+  assert.deepEqual(body, { error: 'DBError', message: 'the database did not answer' })
+})
+
+test('a username nobody has taken is a 404, not an empty list', options, async () => {
+  seedSavedEntry()
+
+  const { statusCode, body } = await call(entries, 'GET', 'entries/films/nobodyhasthisname')
+
+  // `200 []` before this — the same answer as a real user whose list happens
+  // to be empty, arrived at by sending `{ userId: null }` to the `$match`.
+  // #253.
+  assert.equal(statusCode, 404)
+  assert.equal(body.error, 'NotFound')
+  assert.equal('detail' in body, false)
+})
+
+test('a real user with an empty list is still an empty list', options, async () => {
+  seed()
+
+  const { statusCode, body } = await call(entries, 'GET', 'entries/films/nil')
+
+  assert.equal(statusCode, 200)
+  assert.deepEqual(body, [])
 })

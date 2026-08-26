@@ -7,17 +7,26 @@ import * as responses from '../utils/responses.js'
 import * as errors from '../utils/errors.js'
 import { identity } from 'ramda'
 import { ResultAsync, okAsync } from 'neverthrow'
-import { getUserId, getSegment, getReqBody, findIdOfName, toEntryCollection, toEntryType, toReviewCollection } from './utils.js'
+import { getUserId, getSegment, getReqBody, findIdOfNameOrFail, toEntryCollection, toEntryType, toReviewCollection } from './utils.js'
 import { triplet, quad, toPromise, toAsync, throwIt } from '../utils/general.js'
 import * as db from '../utils/db/index.js'
 import * as updateParsers from '../utils/parsers/updates.js'
-import { toResponse } from '../utils/db/into_safe_values.js'
 import { recordRevision, discardDraft, discardHistory } from './revisions.js'
 import { toSnapshot } from '../utils/revision_history.js'
-/** @type {(event: Event) => Promise<Response>} */
+/**
+ * GET /api/entries/:type/:username/:limit?
+ *
+ * `findIdOfNameOrFail` and not the lenient `findIdOfName`: a miss arrived here
+ * as `undefined` and went straight into `$match: { userId }`, which the driver
+ * serialises as `{ userId: null }` rather than dropping — so a name nobody has
+ * taken answered `200 []`, the same answer as a real user whose list is empty.
+ * A name that is not a user is a 404, which is the distinction export.js draws
+ * and explains. #253.
+ * @type {(event: Event) => Promise<Response>}
+ */
 const getAllEntriesForUser = (event) => toPromise(
   ResultAsync.combine(triplet([
-    findIdOfName(getSegment(1, event)),
+    findIdOfNameOrFail(getSegment(1, event)),
     toAsync(toEntryCollection(getSegment(0, event))),
     okAsync(getSegment(2, event))
   ]))
@@ -78,15 +87,30 @@ export {
 }
 ////////////////////////////////////////////////////////////////////////////////
 
-/** @type {([uid, col, limit]: [string, ValidCollection, string | undefined]) => Promise<any>} */
-const getUserEntries = ([uid, col, limit]) => toResponse(toPromise(
+/**
+ * The rows of one list, as the response that carries them.
+ *
+ * `.map(responses.ok).mapErr(responses.fromError)` inside a single
+ * `toPromise`, the way every other handler in the tree ends. This was
+ * `toResponse(toPromise(`, and the two do not compose: `toPromise` is
+ * `match(identity, identity)`, so it *resolves* with the error on the `Err`
+ * branch and `toResponse`'s `.catch` never ran. The error left through
+ * `responses.ok` — a 200 whose body was `{ error, detail }`, and `detail` is
+ * the driver's stack, which names every host it tried. `fromError` is the one
+ * place a `detail` is logged and then withheld, and it was the one thing being
+ * skipped. #250, #105.
+ * @type {([uid, col, limit]: [string, ValidCollection, string | undefined]) => Promise<Response>}
+ */
+const getUserEntries = ([uid, col, limit]) => toPromise(
   db.findAllUserEntriesWithMetadata_(col, uid, parseInt(limit ?? '') || undefined)
     .map((rows) => rows.map(({ entry, work }) => ({
       ...entry,
       commonMetadata: work,
       dbRef: entry._id
     })))
-))
+    .map(responses.ok)
+    .mapErr(responses.fromError)
+)
 
 /** @type {([userId, body, collection]: [string, any, ValidCollection]) => Promise<Response>} */
 const createEntry = async ([userId, body, collection]) => {
