@@ -50,9 +50,12 @@ We use:
   (#198).
 - [Eleventy](https://11ty.io) for static site generation
 - A tiny JS pipeline with a [component-based architecture](https://medium.com/@dan.shapiro1210/understanding-component-based-architecture-3ff48ec0c238)
-  — no module system, just globals. `src/frontend/js/bundle.njk` lists every
-  frontend JS file, wraps each in its own IIFE, and concatenates and minifies
-  them into `/js/bundle.js`, which `layouts/base.njk` loads by url.
+  — no module system, just globals. `BUNDLED_FILES` in
+  `src/frontend/_includes/js/asset_plan.js` lists every frontend JS file, and
+  `_data/assets.js` wraps each in its own IIFE, concatenates and minifies them
+  into `/js/bundle.<hash>.js`, which `layouts/base.njk` loads by url. The hash
+  is a digest of the bytes served, and is what lets `_headers` serve `/js/*`
+  `immutable` for a year (#142).
 - Serverless (FaaS) development pipeline with [Netlify Dev](https://www.netlify.com/products/dev) and [Netlify Functions](https://www.netlify.com/products/functions)
 
 **Credentials.**

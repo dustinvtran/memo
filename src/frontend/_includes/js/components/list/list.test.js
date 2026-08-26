@@ -22,7 +22,7 @@ const context = vm.createContext({
   Components: { UI: {}, List: {} },
 });
 
-// The `js()` macro in bundle.njk wraps each bundled file in its own IIFE,
+// `wrapInIife` in `asset_plan.js` wraps each bundled file in its own IIFE,
 // which is what keeps two files' `const`s from colliding. Loading it the same
 // way here keeps that difference visible.
 const { byEnglishTitle } = vm.runInContext(
