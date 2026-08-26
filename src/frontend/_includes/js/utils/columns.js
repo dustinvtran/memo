@@ -87,21 +87,23 @@ const edit = () =>
   col('<i class="fas fa-edit"></i>', 'editCol', {
     searchable: false,
     formatter: (_, row, i) => {
-      // We use `onclick` and a global (window.xx) function instead of binding
-      // an event, because bootstrap-table destroys the node and rebuilds it
-      // when changing displayed columns.
-      //
       // The attribute names the row rather than holding it: an owner's list
       // used to write a JSON copy of every entry — metadata, overrides and
       // all — into the markup, which on a long list was more bytes of DOM
       // than the visible table. `Rows.byRef` is filled in by `initFullTable`.
       //
-      // The id goes through `JSON.stringify` and then `escapeHtml`, in that
-      // order: the browser un-escapes an attribute before the JS parser sees
-      // it, so a quote in the id has to arrive as a JS escape rather than an
-      // HTML one to still be inside the string by then.
+      // It is a `data-` attribute rather than an inline handler calling a
+      // global, which is a `script-src` violation and would have stopped the
+      // button working under the policy in `_headers` (#219). The handler is
+      // delegated from `document` in `components/list/list.js` — which is also
+      // the reason the inline one was here: bootstrap-table destroys a row's
+      // node and rebuilds it when the displayed columns change, and a handler
+      // on `document` never notices that.
+      //
+      // Nothing is interpolated into JS any more, so the id needs `escapeHtml`
+      // and nothing else: it is a string in an attribute like any other.
       return html`
-        <i id="edit-${escapeHtml(row.status)}-${i}" class="fas fa-edit edit-button" onclick="window.editEntry(${escapeHtml(JSON.stringify(String(row.dbRef)))})"></i>
+        <i id="edit-${escapeHtml(row.status)}-${i}" class="fas fa-edit edit-button" data-ref="${escapeHtml(row.dbRef)}"></i>
       `
     },
     cellStyle: () => ({ css: { 'width': '20px' } }),

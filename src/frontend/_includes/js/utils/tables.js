@@ -57,9 +57,34 @@ const entryTypeToFullColumns = (entryType, status) => ({
   ],
 }[entryType])
 
-window.includeReview = (type, entryId) => {
-  Components.setContent(`#review-${entryId}`, Components.WithRemoteData({
-    remoteData: Netlify.getReview(type, entryId),
+/**
+ * Fills in the comment panel of a row that has just been expanded, from the
+ * ids the panel itself carries.
+ *
+ * This used to be an inline `<script>` that `detailFormatter` returned inside
+ * the row's markup: jQuery sees `<script` on the way in and runs the text
+ * through `eval` rather than parsing it as markup, so what the policy in
+ * `_headers` refuses it for is `'unsafe-eval'`, which it grants no more than
+ * `'unsafe-inline'`. Enforced, that is an `EvalError` and an empty panel on
+ * every row of every list, for every visitor (#219).
+ * `components/list/list.js` calls this from one handler bound to `document`
+ * instead.
+ *
+ * The element rather than a `#review-${dbRef}` selector: the handler has it in
+ * hand, and an id built out of stored data is a thing that would have to be
+ * escaped again on its way into a selector.
+ */
+const includeReviewIn = (detail) => {
+  const panel = $(detail).find('[data-review-ref]')[0]
+  if (!panel) return
+
+  // `dataset` rather than jQuery's `.data()`, which is not a plain attribute
+  // read: it converts anything shaped like a number, `true`, `null` or JSON
+  // into that value, and these two are ids to be handed back verbatim.
+  const { reviewType, reviewRef } = panel.dataset
+
+  Components.setContent(panel, Components.WithRemoteData({
+    remoteData: Netlify.getReview(reviewType, reviewRef),
     component: (review) => Components.Markdown(review?.data?.text || '*None yet...*'),
   }))
 }
@@ -77,17 +102,15 @@ const detailFormatter = (_, row) => {
 
   const type = Conversions.apiTypeToType[row.commonMetadata.entryType]
 
-  const scriptTag = (content) => '<scr' + 'ipt>' + content + '</scr'+'ipt>'
-
-  // The review text is included by mutation observer in `js/components/list/list.js`
+  // The panel names the entry rather than carrying a script that fetches it;
+  // `includeReviewIn` above is what reads these back, off the expand event.
   return html`
     <div class="review">
       <p>
         <b><a href="#${escapeHtml(anchorId)}"><i class="fas fa-link"></i></a> Comments:</b>
           ${cover}
-          <div id="review-${escapeHtml(row.dbRef)}">
+          <div id="review-${escapeHtml(row.dbRef)}" data-review-type="${escapeHtml(type)}" data-review-ref="${escapeHtml(row.dbRef)}">
           </div>
-          ${scriptTag(`includeReview(${JSON.stringify(String(type))}, ${JSON.stringify(String(row.dbRef))})`)}
         </p>
     </div>
   `
@@ -144,6 +167,7 @@ const freeTextFields = (columns) =>
 Tables = {
   initTable,
   detailFormatter,
+  includeReviewIn,
   profileColumns,
   statuses,
   filmStatuses,
