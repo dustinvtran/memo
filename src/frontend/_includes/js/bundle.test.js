@@ -301,3 +301,31 @@ test("the concatenated bundle parses as JavaScript", () => {
     "the bundle does not parse, so every page on the site would be blank"
   );
 });
+
+test("every file under _includes/js is bundled, or is a test", () => {
+  // The failure this catches is the quiet one: a file nobody added to
+  // BUNDLED_FILES is not in the bundle, and nothing says so. The build is
+  // green, the deploy is green, and whatever reached for its globals is
+  // `undefined` in the browser. `asset_plan.js` is the one exception because
+  // it is what builds the bundle rather than something in it.
+  const walk = (directory) =>
+    fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(directory, entry.name);
+      return entry.isDirectory() ? walk(full) : [full];
+    });
+
+  const bundled = new Set(plan.BUNDLED_FILES);
+  const missing = walk(path.join(INCLUDES, "js"))
+    .map((full) => path.relative(INCLUDES, full).split(path.sep).join("/"))
+    .filter((includePath) => includePath.endsWith(".js"))
+    .filter((includePath) => !includePath.endsWith(".test.js"))
+    .filter((includePath) => includePath !== "js/asset_plan.js")
+    .filter((includePath) => !bundled.has(includePath));
+
+  assert.deepEqual(
+    missing,
+    [],
+    "these files are in _includes/js but not in BUNDLED_FILES, so they are " +
+      "not in the bundle and their globals are undefined at runtime"
+  );
+});
