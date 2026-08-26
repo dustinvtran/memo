@@ -6,9 +6,9 @@
  * actually per-type is ./tmdb_mapping.js's two mappings and the three client
  * calls each file hands `tmdbAdapter` below.
  *
- * The client is built here, at require time, which is why neither this module
- * nor anything requiring it can be reached by the test suite. The mapping is
- * next door and dependency-free for that reason.
+ * The client is built on the first request rather than while this module is
+ * read, so the suite can load this file and the two adapters over it without
+ * a key. The mapping is next door and dependency-free, and needs none of that.
  */
 /** @typedef {import('./types').Adapter} Adapter */
 /** @typedef {import('./types').SearchFunction} SearchFunction */
