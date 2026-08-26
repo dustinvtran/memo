@@ -2,6 +2,7 @@ const { getUserName, setBio } = Netlify
 const { html, css, escapeHtml } = Utils
 const { initComponent, setContent } = Components
 const { Button, showNotification } = Components.UI
+const { errorMessage } = Http
 
 const Biography = (userdata) => initComponent({
   content: ({ include }) => html`
@@ -65,7 +66,7 @@ const BiographyInput = (currentBio) => initComponent({
       onClick: () => setBio($('#biography-input').val())
         .map(() => location.reload())
         .mapErr((err) =>
-          showNotification(`Error saving biography: ${err}`)
+          showNotification(`Error saving biography: ${escapeHtml(errorMessage(err))}`)
         )
     }))}
   `,

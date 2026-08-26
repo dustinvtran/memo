@@ -1,7 +1,8 @@
-const { html, css } = Utils;
+const { html, css, escapeHtml } = Utils;
 const { Button, showNotification } = Components.UI;
 const { updateEntry, createEntry, deleteEntry } = Netlify;
 const { readForm } = EntryFormIO;
+const { errorMessage } = Http;
 
 const DeleteButton = (type, data) =>
   Button({
@@ -19,7 +20,9 @@ const DeleteButton = (type, data) =>
         deleteEntry(type, data.dbRef)
           .map(() => location.reload())
           .mapErr((err) =>
-            showNotification(`Error deleting this entry: ${err}`)
+            showNotification(
+              `Error deleting this entry: ${escapeHtml(errorMessage(err))}`
+            )
           );
       }
     },
@@ -42,7 +45,9 @@ const SubmitButton = (type, data, isEdit) =>
         .map(() => location.reload())
         .mapErr((err) =>
           showNotification(
-            `Error ${isEdit ? "editing" : "adding"} this entry: ${err}`
+            `Error ${isEdit ? "editing" : "adding"} this entry: ${escapeHtml(
+              errorMessage(err)
+            )}`
           )
         ),
   });
