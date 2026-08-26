@@ -40,7 +40,19 @@
        reaches for while it is being parsed: jQuery, Ramda, and the libraries
        the first render calls into. #}
     <!-- JavaScript -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/2.3.5/purify.min.js" integrity="sha384-WZ/cvv60fkg/bYYTqKUM6ajmPsWZkH9EdbcGFlhlMrppxqeav5I5zj5VBzTkIavz" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    {# DOMPurify is the only thing between another user's markdown and this
+       page's DOM, and this page holds their reader's `nf_jwt` — so it is the
+       one version here that is worth keeping at the newest clean release
+       rather than the newest convenient one. 2.3.5 was four years and a major
+       behind, with a critical prototype pollution (GHSA-p3vf-v8qc-cwcr, fixed
+       in 2.4.2) and a nesting mXSS (GHSA-gx9m-whjm-85jf, fixed in 2.5.0)
+       against it. Every 3.x below 3.4.13 is reported against too, which is
+       why this lands on the newest rather than somewhere comfortable.
+       The call is `DOMPurify.sanitize(html)` with no configuration, in
+       `components/common.js` and `components/profile/biography.js`, and that
+       signature is unchanged across the major — 3.0 dropped IE, which is the
+       whole of what it broke. #}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.14/purify.min.js" integrity="sha384-46dPGH1XlTmj7bc50bqLjTdORXs/3EP2QpA/6EWbelYWOY9VGp+87RT61S3Mcslb" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     {# Only the profile page's charts and the entry form's date fields, both
        of which are drawn long after the page is. Both urls used to name no
        version at all, so the code the site ran changed whenever either
@@ -52,7 +64,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.1/jquery.min.js" integrity="sha384-UM1JrZIpBwVf5jj9dTKVvGiiZPZTLVoq4sfdvIe9SBumsvCuv6AHDNtEiIb5h1kU" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.1/js/bootstrap.min.js" integrity="sha384-Nud2SriDt2fZ+u85IBC48Yn9p+l4AGlapnX1EGA2KrnZjYJx8sxKnw/CIxc1wU1B" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.js" integrity="sha384-ClQpQScPqQSyD6GCOejtBWJ/GwscJaHjNtqDcG3/JmeQ1VBuzQCeZy0zNBQtuhiH" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js" integrity="sha384-pF+2qz7eFoUyrCTPr8gVboYJ7fNpmJKJzl0vPX6w3XDML+Of8bMSyd6fZIRJdwo7" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    {# 4.0.2 carried two high ReDoS advisories, both fixed in 4.0.10 — which
+       cdnjs lists but has no files for, so the 4.x line here stops at 4.3.0
+       and the choice was that or the current major. This is the current one.
+       `marked.parse(md)` is the entire API this site uses and it is unchanged;
+       what 9.0 removed is `headerIds` and `mangle`, neither of them passed
+       here, so a note's headings no longer carry an `id` nobody linked to and
+       an email address in a biography is no longer entity-mangled. The file
+       moved to `lib/marked.umd.min.js` in 5.0; the plain `marked.min.js` name
+       is gone, not merely a redirect, so the path is part of this bump. #}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/18.0.10/lib/marked.umd.min.js" integrity="sha384-2sZoZkY0dSopyVhL5X3bLyTfz4k3kFJVK7yoEHdbYOlt85O2vHQTT2uVOPxIlsmb" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     {# The frontend's own forty files, concatenated and minified into one file
        by `_data/assets.js` — which is where the list and, more to the point,
