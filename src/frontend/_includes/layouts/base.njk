@@ -60,7 +60,20 @@
     <script defer src="https://cdn.jsdelivr.net/npm/apexcharts@6.8.0" integrity="sha384-nLD6rKRJ1yssfWSVXJJaNpF3g7f2F5/5qnJ6rRBt/KjLrJ5H/ch4uI80FwqxknkC" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/litepicker@2.0.12/dist/litepicker.js" integrity="sha384-TwHJTusQtbcoEHJcrF5aeo0MHBgj8lt8onFRrG7wKk8Q/LG9EphkEsqNRiVWzIP9" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ramda/0.25.0/ramda.min.js" integrity="sha384-RNR54SeCxp1FhiUnPGrGYpNaZn5q8/Fn7tZe7I17lN8cZ1HK/3AzE4KSoFXu6bl2" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.24.0/axios.min.js" integrity="sha384-I2unte9Y12QMna3v071F1Nka0u7+32War1ddTq53DRJ7CSNfyRctw9b7oHce7hey" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    {# 0.24.0 was four years and a major behind, with 23 advisories against
+       it — several high, including SSRF and prototype pollution. 1.19.0 is
+       the newest cdnjs serves and nothing is reported against it. The major
+       is cheap here because the site's whole use of axios is two calls in
+       `utils/http.js`: `axios({ method, url, data, headers })` and
+       `axios.get(url, { headers })`, both read as `({ data }) => data`, with
+       `toRequestError` and `renewToken` reading `error.response.status` and
+       `error.response.data`. Every one of those is unchanged in 1.x, and the
+       file is still the UMD that defines a bare `axios` global. What 1.0
+       reworked — form-data serialization, the params serializer, the XSRF
+       defaults — this site passes none of. Not the `axios` that
+       `check_audit.js` accepts: that one is nested under igdb-api-node, runs
+       server-side, and no bump to this tag touches it. #}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.19.0/axios.min.js" integrity="sha384-Pv+e3/1mh9OFEtc+8HN8zptpUVh+IpZ9Gi43dKH8jkibjckMfQ1fsETUYG1Qdwdb" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.1/jquery.min.js" integrity="sha384-UM1JrZIpBwVf5jj9dTKVvGiiZPZTLVoq4sfdvIe9SBumsvCuv6AHDNtEiIb5h1kU" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.1/js/bootstrap.min.js" integrity="sha384-Nud2SriDt2fZ+u85IBC48Yn9p+l4AGlapnX1EGA2KrnZjYJx8sxKnw/CIxc1wU1B" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.js" integrity="sha384-ClQpQScPqQSyD6GCOejtBWJ/GwscJaHjNtqDcG3/JmeQ1VBuzQCeZy0zNBQtuhiH" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
