@@ -9,11 +9,20 @@
  * had accumulated: seven of the nine carried published advisories, one of them
  * critical, against a page that holds the reader's `nf_jwt`.
  *
- * The versions are written down in exactly one place — as `integrity`-carrying
- * `<script>` and `<link>` tags in `layouts/base.njk`, which is what #106 left
- * behind — so this parses that file rather than keeping a list that can drift,
- * and asks registry.npmjs.org what is known against each. No install and no
- * token: the bulk advisory endpoint is a plain POST.
+ * The versions are written down where the browser is told to fetch them and
+ * nowhere else — as `integrity`-carrying `<script>` and `<link>` tags in
+ * `layouts/base.njk`, which is what #106 left behind, and as the pinned
+ * constants in `js/utils/load_script.js` for the one library that is fetched
+ * on demand rather than by a tag. So this parses those files rather than
+ * keeping a list that can drift, and asks registry.npmjs.org what is known
+ * against each. No install and no token: the bulk advisory endpoint is a plain
+ * POST.
+ *
+ * Both files are read because this check counts what it finds and fails on
+ * nothing else. A pin that moved somewhere it could not see would not have
+ * failed anything: the count would have gone from 8 to 7, quietly, and that
+ * library would be unwatched — which is the situation this whole file exists
+ * to end. #269 moved the first one, so the second source is not hypothetical.
  *
  * SRI answers a different question, and it is worth being clear about which.
  * `integrity` guarantees the bytes are the bytes that version published. It
@@ -29,8 +38,22 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
-/** The one file that names a version, relative to the repo root. */
-const SOURCE = 'src/frontend/_includes/layouts/base.njk'
+/**
+ * The files that name a version, relative to the repo root, each with the way
+ * a pinned url is written in it. The two readers are wrapped rather than named
+ * because they are defined below this, and this list is built as the file is
+ * read.
+ */
+const SOURCES = [
+  {
+    path: 'src/frontend/_includes/layouts/base.njk',
+    pinnedUrls: (text) => urlsInMarkup(text),
+  },
+  {
+    path: 'src/frontend/_includes/js/utils/load_script.js',
+    pinnedUrls: (text) => urlsInScript(text),
+  },
+]
 
 /** This file, for the messages that tell a reader where to come and edit. */
 const SELF = `.github/scripts/${path.basename(__filename)}`
@@ -84,48 +107,105 @@ const ACCEPTED = {
 const BLOCKING = new Set(['moderate', 'high', 'critical'])
 
 /**
- * The pinned name and version behind every CDN url in `base.njk`.
+ * Every pinned url in `base.njk`: the `src` or `href` of a tag carrying
+ * `integrity`.
  *
- * Only tags carrying `integrity`: that attribute is the marker of a pinned
- * third-party url, and keying on it keeps the site's own content-hashed `/js`
- * and `/css` links out without naming them. Both CDN shapes in the file are
- * matched:
+ * That attribute is the marker of a pinned third-party url, and keying on it
+ * keeps the site's own content-hashed `/js` and `/css` links out without
+ * naming them.
+ */
+const urlsInMarkup = (text) => ({
+  urls: (text.match(/<(?:script|link)\b[^>]*>/g) ?? [])
+    .filter((tag) => /\sintegrity=/.test(tag))
+    .map((tag) => tag.match(/\s(?:src|href)="([^"]+)"/)?.[1])
+    .filter(Boolean),
+  unhashed: [],
+})
+
+/**
+ * Every pinned url in a module that injects its own tag: a `url` in an object
+ * literal, immediately followed by the `integrity` it is loaded with.
+ *
+ * Adjacency is the rule, and it is the same rule as above — a url is watched
+ * here because it is hashed, and the two belong to each other. A CDN url in
+ * that file that is *not* half of such a pair is reported rather than skipped:
+ * an unhashed third-party script is both unverified and unwatched, and this is
+ * the only place either would be noticed.
+ *
+ * Comments go first, so that a url quoted in one is neither of those things.
+ */
+const urlsInScript = (text) => {
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+  const urls = [
+    ...code.matchAll(/\burl:\s*'([^']+)'\s*,\s*integrity:\s*'[^']+'/g),
+  ].map(([, url]) => url)
+
+  const hashed = new Set(urls)
+  const unhashed = [...code.matchAll(/'(https:\/\/[^']+)'/g)]
+    .map(([, url]) => url)
+    .filter((url) => !hashed.has(url))
+
+  return { urls, unhashed }
+}
+
+/**
+ * The pinned name and version behind one CDN url. Both shapes are matched:
  *
  *   cdnjs     .../ajax/libs/<library>/<version>/<file>
  *   jsDelivr  .../npm/<package>@<version>[/<file>]
  *
- * A url that carries `integrity` and matches neither is a hard failure rather
- * than a skip, because quietly ignoring one is how a library ends up unwatched
- * — which is the situation this whole file exists to end.
+ * A pinned url matching neither is a hard failure rather than a skip, because
+ * quietly ignoring one is how a library ends up unwatched — which is the
+ * situation this whole file exists to end.
  */
-const parsePins = (text) => {
+const toPin = (url) => {
+  const cdnjs = url.match(
+    /^https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/([^/]+)\/([^/]+)\//
+  )
+  const jsdelivr = url.match(
+    /^https:\/\/cdn\.jsdelivr\.net\/npm\/((?:@[^/@]+\/)?[^/@]+)@([^/]+)/
+  )
+  const matched = cdnjs ?? jsdelivr
+  if (!matched) return undefined
+
+  const [, library, version] = matched
+  const name = cdnjs ? (NPM_NAME[library] ?? library) : library
+  return { name, version, url }
+}
+
+/**
+ * Every pin in every source, deduplicated.
+ *
+ * `empty` is per source rather than over the total: each of these files is
+ * supposed to pin something, so one of them going quiet is the parser and the
+ * file having stopped matching — and a check over nothing passes every time.
+ */
+const readPins = (root) => {
   const pins = new Map()
   const unrecognised = []
+  const unhashed = []
+  const empty = []
 
-  for (const tag of text.match(/<(?:script|link)\b[^>]*>/g) ?? []) {
-    if (!/\sintegrity=/.test(tag)) continue
-    const url = tag.match(/\s(?:src|href)="([^"]+)"/)?.[1]
-    if (!url) continue
+  for (const { path: source, pinnedUrls } of SOURCES) {
+    const found = pinnedUrls(fs.readFileSync(path.join(root, source), 'utf8'))
+    unhashed.push(...found.unhashed.map((url) => ({ url, source })))
 
-    const cdnjs = url.match(
-      /^https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/([^/]+)\/([^/]+)\//
-    )
-    const jsdelivr = url.match(
-      /^https:\/\/cdn\.jsdelivr\.net\/npm\/((?:@[^/@]+\/)?[^/@]+)@([^/]+)/
-    )
-    const matched = cdnjs ?? jsdelivr
-    if (!matched) {
-      unrecognised.push(url)
-      continue
+    let count = 0
+    for (const url of found.urls) {
+      const pin = toPin(url)
+      if (!pin) {
+        unrecognised.push({ url, source })
+        continue
+      }
+      /* Two tags for one library — Bootstrap's CSS and its JS — are one pin. */
+      pins.set(`${pin.name}@${pin.version}`, pin)
+      count += 1
     }
-
-    const [, library, version] = matched
-    const name = cdnjs ? (NPM_NAME[library] ?? library) : library
-    /* Two tags for one library — Bootstrap's CSS and its JS — are one pin. */
-    pins.set(`${name}@${version}`, { name, version, url })
+    if (count === 0) empty.push(source)
   }
 
-  return { pins: [...pins.values()], unrecognised }
+  return { pins: [...pins.values()], unrecognised, unhashed, empty }
 }
 
 /** Whether npm has this exact version, so that a bad NPM_NAME cannot pass. */
@@ -173,21 +253,33 @@ const worstOf = (advisories) =>
 
 const main = async () => {
   const root = path.resolve(__dirname, '..', '..')
-  const { pins, unrecognised } = parsePins(
-    fs.readFileSync(path.join(root, SOURCE), 'utf8')
-  )
+  const { pins, unrecognised, unhashed, empty } = readPins(root)
 
   if (unrecognised.length) {
-    console.log(`These urls in ${SOURCE} are pinned and hashed, but this check`)
-    console.log('cannot read a package and a version out of them, so nothing is')
-    console.log(`watching them. Teach parsePins the shape, in ${SELF}:`)
-    for (const url of unrecognised) console.log(`  ${url}`)
+    console.log('These urls are pinned and hashed, but this check cannot read a')
+    console.log('package and a version out of them, so nothing is watching them.')
+    console.log(`Teach toPin the shape, in ${SELF}:`)
+    for (const { url, source } of unrecognised) {
+      console.log(`  ${url}`)
+      console.log(`    in ${source}`)
+    }
     process.exit(1)
   }
-  if (!pins.length) {
-    console.log(`Found no pinned CDN urls in ${SOURCE} at all, which cannot be`)
-    console.log('right: the parser and the file have stopped matching, and a')
-    console.log('check over nothing passes every time.')
+  if (unhashed.length) {
+    console.log('These CDN urls carry no integrity hash beside them, so the')
+    console.log('browser runs whatever the host serves and this check cannot')
+    console.log('see the version either. Pin and hash them where they load:')
+    for (const { url, source } of unhashed) {
+      console.log(`  ${url}`)
+      console.log(`    in ${source}`)
+    }
+    process.exit(1)
+  }
+  if (empty.length) {
+    console.log('Found no pinned CDN urls at all in these, which cannot be right:')
+    console.log('the parser and the file have stopped matching, and a check over')
+    console.log('nothing passes every time.')
+    for (const source of empty) console.log(`  ${source}`)
     process.exit(1)
   }
 
@@ -218,7 +310,9 @@ const main = async () => {
   const stale = Object.keys(ACCEPTED).filter((name) => !affected.has(name))
 
   console.log(
-    `${pins.length} pinned CDN libraries in ${SOURCE}; npm reports against ${affected.size}.`
+    `${pins.length} pinned CDN libraries in ${SOURCES.map((s) => s.path).join(
+      ' and '
+    )}; npm reports against ${affected.size}.`
   )
   console.log('`known` is listed below in ACCEPTED; `NEW` is not and is at')
   console.log('moderate or above; unmarked is not listed but is under that line.')
@@ -251,8 +345,8 @@ const main = async () => {
       console.log(`    ${a.url}`)
     }
     console.log('')
-    console.log(`Bump the version in ${SOURCE} and recompute its \`integrity\` —`)
-    console.log('the recipe is in the comment at the top of that file — or, if it')
+    console.log('Bump the version where it is pinned and recompute the hash')
+    console.log('beside it — the recipe is in the comment there — or, if it')
     console.log(`cannot be bumped yet, add it to ACCEPTED in ${SELF} with the`)
     console.log('reason and the issue tracking it, and say so in the pull request.')
   }

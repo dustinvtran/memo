@@ -24,6 +24,7 @@ const BUNDLED_FILES = [
   "js/utils/general.js",
   "js/utils/nullable.js",
   "js/utils/deep_equal.js",
+  "js/utils/load_script.js",
   "js/utils/conversions.js",
   "js/utils/http.js",
   "js/utils/netlify.js",

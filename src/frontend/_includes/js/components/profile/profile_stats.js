@@ -22,7 +22,18 @@ const ProfileStats = (username) => initComponent({
           `
         })
       }))}
-  `
+  `,
+  initializer: () => {
+    // The charts below are the only thing on this site that wants ApexCharts,
+    // and they cannot draw before the stats have arrived either — so the 862 KB
+    // starts here, alongside the request for the numbers, rather than after it.
+    // All five of them then await this one load.
+    //
+    // The result is dropped: `drawChart` is what waits for it and what reports
+    // it failing. This `catch` is here so that a failure is not *also* an
+    // unhandled rejection.
+    loadApexCharts().catch(() => undefined)
+  }
 })
 
 
@@ -74,12 +85,7 @@ const ProfileStatsOfType = (username, type, stats) => initComponent({
     }
   `,
   initializer: ({ id }) => {
-    const relevantStats = stats.scores[type]
-    new ApexCharts(
-      document.querySelector(`#${id}`),
-      toChartOptions(relevantStats)
-    )
-      .render()
+    drawChart(id, toChartOptions(stats.scores[type]))
   }
 })
 
@@ -130,11 +136,7 @@ const GlobalStats = (stats) => initComponent({
     </div>
   `,
   initializer: ({ id }) => {
-    new ApexCharts(
-      document.querySelector(`#${id}`),
-      toChartOptions(aggregateStats(stats))
-    )
-      .render()
+    drawChart(id, toChartOptions(aggregateStats(stats)))
   },
   style: () => css`
     #profile-global-stats {
@@ -148,6 +150,69 @@ const GlobalStats = (stats) => initComponent({
     }
   `
 })
+
+const { loadApexCharts } = LoadScript
+
+/**
+ * Draws one histogram into `#id`, once there is something to draw it with and
+ * somewhere with a width to draw it in.
+ *
+ * ApexCharts is fetched on demand — see `utils/load_script.js` for why 862 KB
+ * is no longer in `base.njk` — so this is asynchronous where it used to be a
+ * constructor call. `loadApexCharts` hands every caller the same load, so the
+ * five charts on this page are one request and one <script>.
+ *
+ * A failure leaves an empty container and nothing else: the tally under each
+ * chart is markup rather than a chart, the lists above it are their own
+ * requests, and the promise settles either way. A profile with no charts is a
+ * worse page than one with them; a profile that hangs is a broken one.
+ */
+const drawChart = async (id, options) => {
+  try {
+    const ApexCharts = await loadApexCharts()
+    const element = document.querySelector(`#${id}`)
+    if (!element) return
+    await whenLaidOut(element)
+    // 862 KB is long enough to navigate away in, and this component is drawn
+    // by `setContent`, which replaces what was there rather than emptying it.
+    if (element.isConnected) new ApexCharts(element, options).render()
+  } catch (error) {
+    console.error(`a score histogram could not be drawn: ${error.message}`)
+  }
+}
+
+/**
+ * The element once the browser has given it a width — or after a couple of
+ * frames, if it is never going to have one.
+ *
+ * `.render()` measures the container at the instant it is called and writes
+ * that number into the SVG's `width`, where it stays. #268 caught all five
+ * charts rendered at `width="0"` in containers that were 392px wide, and
+ * awaiting the script is not on its own a fix for that: the await can resolve
+ * in the same frame the container was inserted in, which is exactly the case
+ * that used to fail. Reading `offsetWidth` forces the layout rather than
+ * waiting for one, so the usual case costs nothing and the frames below are
+ * only ever spent when the answer really is zero.
+ *
+ * An element that is not displayed at all is told apart from one that has
+ * simply not been measured yet, and is not waited for: the Global stats tab is
+ * `display: none` until it is clicked, so its container has no boxes and will
+ * not get one until then. That chart is drawn zero-wide here exactly as it was
+ * before — redrawing it when its tab is shown is a separate change — rather
+ * than waiting on frames, which a document in a background tab does not hand
+ * out at all. The frame bound is the backstop under that.
+ */
+const whenLaidOut = (element, frames = 2) =>
+  new Promise((resolve) => {
+    const attempt = (left) =>
+      !element.isConnected ||
+      element.offsetWidth > 0 ||
+      element.getClientRects().length === 0 ||
+      left === 0
+        ? resolve(element)
+        : requestAnimationFrame(() => attempt(left - 1))
+    attempt(frames)
+  })
 
 // The buckets `getTallyOfScore` counts, in the order the chart draws them —
 // top bar first. The bars and their labels are both derived from this one

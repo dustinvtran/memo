@@ -257,7 +257,8 @@ jobs:
       # reader's `nf_jwt`, and nothing here could have said so.
       #
       # It needs neither the install nor the build — the versions are read out
-      # of `layouts/base.njk` and the advisories come from a plain POST to
+      # of the two files that pin one, `layouts/base.njk` and
+      # `js/utils/load_script.js`, and the advisories come from a plain POST to
       # registry.npmjs.org — so it could sit in the job above. It is here
       # instead, next to the check it is the counterpart of, for the same
       # reason that one runs last: a bundle that will not parse is more urgent
