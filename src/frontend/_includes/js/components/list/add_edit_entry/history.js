@@ -11,7 +11,7 @@
  * Collapsed by default and one row at a time: an entry saved fifty times
  * should still be readable in a modal.
  */
-const { html, css, timeAgo, dateTime, dateOnly, escapeHtml } = Utils
+const { html, css, timeAgo, dateTime, dateOnly } = Utils
 const { initComponent, setContent, WithRemoteData } = Components
 const { showNotification } = Components.UI
 const { getVersions } = Netlify
@@ -70,11 +70,11 @@ const Versions = (type, data, versions) => initComponent({
       `
       : html`
         <ol class="version-list">
-          ${versions
-            .map((version, index) =>
-              include(Version(type, data, version, versions[index + 1]))
+          ${include(
+            versions.map((version, index) =>
+              Version(type, data, version, versions[index + 1])
             )
-            .join('')}
+          )}
         </ol>
       `,
 })
@@ -87,7 +87,7 @@ const Version = (type, data, version, older) => initComponent({
         <span class="version-when" title="${dateTime(version.createdDate)}">
           ${timeAgo(version.createdDate)}
         </span>
-        ${version.isCurrent ? '<span class="version-tag">current</span>' : ''}
+        ${version.isCurrent ? html`<span class="version-tag">current</span>` : ''}
         <span class="version-chips">${chipsHtml(version, older)}</span>
         <i id="${id}-caret" class="fas fa-chevron-down version-caret"></i>
       </div>
@@ -136,7 +136,7 @@ const Version = (type, data, version, older) => initComponent({
 /** The fields a version touched, as chips — the summary you scan. */
 const chipsHtml = (version, older) => {
   if (version.changes.length === 0) {
-    return `<span class="version-chip is-quiet">${
+    return html`<span class="version-chip is-quiet">${
       older ? 'no change' : 'first version'
     }</span>`
   }
@@ -144,15 +144,14 @@ const chipsHtml = (version, older) => {
   const shown = version.changes.slice(0, MAX_CHIPS)
   const rest = version.changes.length - shown.length
 
-  return [
-    ...shown.map((field) => `<span class="version-chip">${fieldLabel(field)}</span>`),
-    rest > 0 ? `<span class="version-chip is-quiet">+${rest} more</span>` : '',
-  ].join('')
+  return html`${shown.map((field) => html`<span class="version-chip">${fieldLabel(field)}</span>`)}${
+    rest > 0 ? html`<span class="version-chip is-quiet">+${rest} more</span>` : ''
+  }`
 }
 
 const changesHtml = (version, older) => {
   if (version.changes.length === 0) {
-    return `<div class="version-note">${
+    return html`<div class="version-note">${
       older
         ? 'This save changed none of the fields kept in the history.'
         : 'The earliest version recorded. What came before it is unknown.'
@@ -162,14 +161,13 @@ const changesHtml = (version, older) => {
   const fields = version.changes.filter((field) => field !== 'review')
   const hasReview = version.changes.includes('review')
 
-  return [
+  return html`${
     fields.length > 0
-      ? `<table class="field-changes">${fields
-          .map((field) => fieldRowHtml(field, version, older))
-          .join('')}</table>`
-      : '',
-    hasReview ? reviewDiffHtml(version, older) : '',
-  ].join('')
+      ? html`<table class="field-changes">${
+          fields.map((field) => fieldRowHtml(field, version, older))
+        }</table>`
+      : ''
+  }${hasReview ? reviewDiffHtml(version, older) : ''}`
 }
 
 const fieldRowHtml = (field, version, older) => html`
@@ -193,7 +191,7 @@ const reviewDiffHtml = (version, older) => {
         <span class="diff-removed">&minus;${removed}</span>
       </div>
       <div class="review-diff-body">
-        ${withCollapsedContext(lines).map(diffLineHtml).join('')}
+        ${withCollapsedContext(lines).map(diffLineHtml)}
       </div>
     </div>
   `
@@ -240,9 +238,9 @@ const diffLineHtml = (line) =>
     : html`
       <div class="diff-line is-${line.type}">
         <span class="diff-gutter">${
-          line.type === 'added' ? '+' : line.type === 'removed' ? '&minus;' : ''
+          line.type === 'added' ? '+' : line.type === 'removed' ? html`&minus;` : ''
         }</span>
-        <span class="diff-text">${escapeHtml(line.text) || '&nbsp;'}</span>
+        <span class="diff-text">${line.text || html`&nbsp;`}</span>
       </div>
     `
 
@@ -285,13 +283,18 @@ const valueOf = (snapshot, field) =>
     ? snapshot?.overrides?.[field.replace('overrides.', '')]
     : snapshot?.[field]
 
+/**
+ * One side of a change. Everything but the "empty" marker comes back as a
+ * plain string, which is the point: `fieldRowHtml` interpolates it, and a
+ * plain string interpolated into an `html` template is text.
+ */
 const formatValue = (field, value) => {
   if (value == null || value === '' || (Array.isArray(value) && !value.length)) {
-    return '<span class="value-empty">empty</span>'
+    return html`<span class="value-empty">empty</span>`
   }
-  if (Array.isArray(value)) return escapeHtml(value.join(', '))
+  if (Array.isArray(value)) return value.join(', ')
   if (field.endsWith('Date')) return dateOnly(value)
-  return escapeHtml(String(value))
+  return String(value)
 }
 
 const historyStyle = css`

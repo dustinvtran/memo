@@ -1,4 +1,4 @@
-const { html, css } = Utils
+const { html, css, toSafeUrl } = Utils
 const { initComponent, setContent, WithRemoteData } = Components
 const { retrieveWork } = Netlify
 const { EntryForm } = Components.List
@@ -7,8 +7,8 @@ const SearchResults = (type, results) => initComponent({
   content: ({ include }) => html`
     <div id="search-results">
       ${results.length > 0
-        ? results.map((r) => include(Result(type, r))).join('')
-        : '<i>No results found for this query...</i>'
+        ? include(results.map((r) => Result(type, r)))
+        : html`<i>No results found for this query...</i>`
       }
     </div>
   `
@@ -21,7 +21,7 @@ Components.List.SearchResults = SearchResults
 const Result = (type, { title, year, imageUrl, ref }) => initComponent({
   content: ({ id }) => html`
     <div id="${id}" class="search-result">
-      <div class="search-result-img"><img src="${imageUrl || '/img/mawaru.png'}"></div>
+      <div class="search-result-img"><img src="${toSafeUrl(imageUrl) || '/img/mawaru.png'}"></div>
       <div class="search-result-title">${title}${year ? ' (' + year + ')' : ''}</div>
     </div>
   `,

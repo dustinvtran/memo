@@ -1,7 +1,7 @@
 const { entryTypes, getStats } = Netlify
 const { col } = Tables
 const { typeToTitle } = Conversions
-const { html, css, timeAgo, dateTime, escapeHtml } = Utils
+const { html, css, timeAgo, dateTime } = Utils
 const { initComponent, WithRemoteData } = Components
 const { Tabbed } = Components.UI
 
@@ -54,7 +54,7 @@ const SubStats = (username, stats) => initComponent({
 const ProfileStatsOfType = (username, type, stats) => initComponent({
   content: ({ id, include }) => html`
     <div class="profile-stats">
-      <h3><a href="/${type}/${escapeHtml(encodeURIComponent(username))}">${typeToTitle[type]}</a></h3>
+      <h3><a href="/${type}/${encodeURIComponent(username)}">${typeToTitle[type]}</a></h3>
       <div id=${id}></div>
       ${include(AdditionalStats(stats.scores[type]))}
     </div>

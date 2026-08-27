@@ -18,6 +18,8 @@
  */
 const appendedStyles = new Set()
 
+const { html, raw } = Utils
+
 /** The magic function to create and compose components */
 const initComponent = ({ content, initializer, style }) => {
   let includeList = []
@@ -25,15 +27,23 @@ const initComponent = ({ content, initializer, style }) => {
   // Include the component HTML inside another, but also remember to
   // include that component's JS/initializer inside the parent's
   // This function is provided as a parameter to `content`
+  //
+  // `raw`, because what comes back is markup and the parent is about to
+  // interpolate it into an `html` template that escapes anything unbranded.
+  // Each `content` below has already been through `html` itself, so a child's
+  // own data was escaped when it was drawn; this only says that the drawing is
+  // finished.
   const include = (componentOrComponents) =>
-    [componentOrComponents]
-      .flat()
-      .map((component) => {
-        const unwrapped = access(component)
-        includeList = [...includeList, unwrapped]
-        return unwrapped.content
-      })
-      .join('')
+    raw(
+      [componentOrComponents]
+        .flat()
+        .map((component) => {
+          const unwrapped = access(component)
+          includeList = [...includeList, unwrapped]
+          return String(unwrapped.content)
+        })
+        .join('')
+    )
 
   // Generate a identifier unique to that component's instance
   // This is passed to `content`, `initializer` and `style`
@@ -60,7 +70,11 @@ const initComponent = ({ content, initializer, style }) => {
 
   return hide({
     id,
-    content: content({ id, include }),
+    // Through `html` rather than taken as it comes: a `content` that returns a
+    // plain string is returning text, and text goes into the page as text.
+    // `Markdown` in `common.js` is the one component whose content is markup
+    // from outside a template, and it says so with `raw`.
+    content: html`${content({ id, include })}`,
     // We create a new initializer that also contains the child initializers
     initializer: () => {
       // This component's initializer, with the unique id passed into it
@@ -77,8 +91,11 @@ const initComponent = ({ content, initializer, style }) => {
 /** Imperative way to replace an element inner HTML with a component */
 const setContent = (selector, component) => {
   const { content, initializer, id } = access(component)
-  // Set the inner HTML to the component's content
-  $(selector).html(content)
+  // Set the inner HTML to the component's content. `String`, because content
+  // is markup rather than a string now, and jQuery's `.html()` branches on
+  // `typeof value === "string"` — an object goes down the path meant for a
+  // callback and silently does something else.
+  $(selector).html(String(content))
   // Run the component's initializer
   initializer?.()
   return id
@@ -87,8 +104,9 @@ const setContent = (selector, component) => {
 /** Imperative way to append a component to element inner HTML*/
 const appendContent = (selector, component) => {
   const { content, initializer, id } = access(component)
-  // Set the inner HTML to the component's content
-  $(selector).append(content)
+  // Set the inner HTML to the component's content. `String` for the same
+  // reason as `setContent` above.
+  $(selector).append(String(content))
   // Run the component's initializer
   initializer?.()
   return id

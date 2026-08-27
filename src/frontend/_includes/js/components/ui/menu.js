@@ -1,5 +1,5 @@
 const { initComponent } = Components
-const { html, css, escapeHtml } = Utils
+const { html, css } = Utils
 
 const Menu = () => initComponent({
   content: ({ include }) => html`
@@ -19,17 +19,19 @@ const Menu = () => initComponent({
   `,
   initializer: () => {
     const isLoggedIn = Netlify.getToken()
+    // `String` on both of these: jQuery's `.after()` takes a string of markup
+    // or a node, and markup is neither of those until it is asked for.
     const menuAuthLink = isLoggedIn
-      ? `<a href="/.netlify/functions/auth/logout">Log out</a>`
-      : `<a href="/.netlify/functions/auth/login">Log in</a>`
-    $('#home-menu-item').after(`<li>${menuAuthLink}</li>`)
+      ? html`<a href="/.netlify/functions/auth/logout">Log out</a>`
+      : html`<a href="/.netlify/functions/auth/login">Log in</a>`
+    $('#home-menu-item').after(String(html`<li>${menuAuthLink}</li>`))
 
     Netlify.getUserName()
       .map(({ username }) => {
         if (username) {
-          $('#home-menu-item').after(html`
-            <li id="home-menu-item"><a href="/profile/${escapeHtml(encodeURIComponent(username))}">Profile</a></li>
-          `)
+          $('#home-menu-item').after(String(html`
+            <li id="home-menu-item"><a href="/profile/${encodeURIComponent(username)}">Profile</a></li>
+          `))
         }
       })
       .mapErr(console.log)

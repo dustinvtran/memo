@@ -1,4 +1,4 @@
-const { html, css, escapeHtml } = Utils;
+const { css } = Utils;
 const { Button, showNotification } = Components.UI;
 const { updateEntry, createEntry, deleteEntry } = Netlify;
 const { readForm } = EntryFormIO;
@@ -22,7 +22,7 @@ const DeleteButton = (type, data) =>
           .map(() => location.reload())
           .mapErr((err) =>
             showNotification(
-              `Error deleting this entry: ${escapeHtml(errorMessage(err))}`
+              `Error deleting this entry: ${errorMessage(err)}`
             )
           );
       }
@@ -47,9 +47,7 @@ const SubmitButton = (type, data, isEdit) =>
         .map(() => location.reload())
         .mapErr((err) =>
           showNotification(
-            `Error ${isEdit ? "editing" : "adding"} this entry: ${escapeHtml(
-              errorMessage(err)
-            )}`
+            `Error ${isEdit ? "editing" : "adding"} this entry: ${errorMessage(err)}`
           )
         ),
   });

@@ -9,9 +9,83 @@ const noOpTagFunction = function (t) {
   return s
 }
 
-/** A tag`function` that does nothing, for syntax-highlighting purposes */
-const html = noOpTagFunction
+/**
+ * The brand on markup, as opposed to text that happens to be in a string.
+ *
+ * A tagged template is handed its literal fragments and its interpolated
+ * values separately, so it knows which half the developer wrote and which half
+ * came from a database. That is the whole idea: `html` escapes the values and
+ * leaves the literals alone, so a component author who thinks about none of
+ * this still gets it right. What it costs is that the result can no longer be
+ * a bare string — markup and text would be the same type otherwise, and
+ * composing two templates would escape the inner one's tags.
+ *
+ * So `html` returns a branded object and passes branded values straight
+ * through. Nested `${html`…`}` and `${include(…)}` are therefore trusted with
+ * no annotation, which is what makes this survivable across forty components;
+ * everything else is escaped whether or not anyone thought about it.
+ *
+ * A `Symbol` rather than a name a value could carry: everything interpolated
+ * here has been through `JSON.parse`, and `{"__safe": true}` is a thing a
+ * stored override can say.
+ */
+const SAFE_HTML = Symbol('safe html')
 
+const markSafe = (markup) => ({
+  [SAFE_HTML]: true,
+  toString: () => markup,
+})
+
+const isSafeHtml = (value) =>
+  typeof value === 'object' && value !== null && value[SAFE_HTML] === true
+
+/**
+ * What an interpolated value contributes.
+ *
+ * `null` and `undefined` are nothing rather than the words "null" and
+ * "undefined": a template says `${data.progress}` about a field that is often
+ * absent, and the old tag function wrote the word into the page.
+ *
+ * An array is each of its elements in turn, so `${rows.map(Row)}` composes
+ * without a `.join('')` — and a `.join('')` left behind flattens branded
+ * values into a plain string, which this would then escape. That is the loud
+ * failure to look for after a refactor.
+ */
+const interpolate = (value) =>
+  value === null || value === undefined ? ''
+  : Array.isArray(value) ? value.map(interpolate).join('')
+  : isSafeHtml(value) ? value.toString()
+  : escapeHtml(value)
+
+/**
+ * Markup, with every interpolated value escaped unless it is markup itself.
+ * @type {(strings: TemplateStringsArray, ...values: any[]) => object}
+ */
+const html = (strings, ...values) => {
+  let markup = strings[0]
+  for (let i = 0; i < values.length; i++) {
+    markup += interpolate(values[i]) + strings[i + 1]
+  }
+  return markSafe(markup)
+}
+
+/**
+ * Markup from somewhere else, vouched for by the caller.
+ *
+ * Three call sites, and they are the ones worth having: the two sanitised
+ * markdown fields — a note and a biography, both out of `marked` and
+ * `DOMPurify` — and `include` in `components/index.js`, which is handing back
+ * markup an `html` template already produced. Anything else reaching for this
+ * is a template that should have been an `html` one.
+ * @type {(markup: any) => object}
+ */
+const raw = (markup) => markSafe(String(markup ?? ''))
+
+/**
+ * Still a no-op, and it has to stay one. A stylesheet is not markup, and `>`
+ * is the child combinator: `main.css` writes `.table > thead > tr > th` and
+ * two component styles write one of their own. Escaping those corrupts them.
+ */
 const css = noOpTagFunction
 
 const noOp = () => undefined
@@ -115,6 +189,10 @@ const dateOnly = (timestamp) =>
  * does rather than a fix for something live — but the whole value of an
  * escaper is that a caller does not have to know which quote its template
  * happened to use.
+ *
+ * `html` above is what calls this now. Still published, because escaping into
+ * something that is not an `html` template — markdown source, on its way to
+ * `marked` — is a different job that the tag function cannot do.
  */
 /** @type {(text: any) => string} */
 const escapeHtml = (text) =>
@@ -146,6 +224,7 @@ const toSafeUrl = (url) => {
 
 Utils = {
   html,
+  raw,
   css,
   noOp,
   waitForEl,

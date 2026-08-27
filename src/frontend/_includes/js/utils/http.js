@@ -26,8 +26,9 @@ const getToken = () => cookies().nf_jwt
  * for the plain `Error`s `WithRemoteData` also accepts, whose `message` this
  * reads just as happily.
  *
- * A message can carry text out of the request (`no such user: <name>`), so
- * escape it wherever it is interpolated into html.
+ * A message can carry text out of the request (`no such user: <name>`). It is
+ * text wherever it is interpolated, and `Utils.html` is what sees to that —
+ * the callers used to wrap each one in `escapeHtml` by hand.
  */
 const errorMessage = (err) => err?.message ?? 'something went wrong'
 

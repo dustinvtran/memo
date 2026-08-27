@@ -1,7 +1,7 @@
 const { entryTypes, getEntries } = Netlify
 const { col, initTable, profileColumns } = Tables
 const { typeToTitle } = Conversions
-const { html, css, escapeHtml } = Utils
+const { html, css } = Utils
 const { UsernameSetter } = Components.Profile
 const { initComponent, WithRemoteData } = Components
 
@@ -9,10 +9,7 @@ const ProfileLists = (username) => initComponent({
   content: ({ include }) => html`
     <h2>Recent updates</h2>
     <div style="display: flex; flex-wrap: wrap; justify-content: space-between;">
-      ${entryTypes
-        .map(type => include(ProfileList(username, type)))
-        .join('')
-      }
+      ${include(entryTypes.map((type) => ProfileList(username, type)))}
     </div>
     <hr>
   `
@@ -26,7 +23,7 @@ Components.Profile.ProfileLists = ProfileLists
 const ProfileList = (username, type) => initComponent({
   content: ({ include }) => html`
     <div class="profile-list">
-      <h3><a href="/${type}/${escapeHtml(encodeURIComponent(username))}">${typeToTitle[type]}</a></h3>
+      <h3><a href="/${type}/${encodeURIComponent(username)}">${typeToTitle[type]}</a></h3>
       ${include(WithRemoteData({
         remoteData: getEntries(type, username, 5),
         component: (entries) => ProfileTable(type, entries)

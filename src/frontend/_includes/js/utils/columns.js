@@ -1,4 +1,4 @@
-const { html, escapeHtml, toSafeUrl } = Utils
+const { html, toSafeUrl } = Utils
 const { round } = Math
 const { apiTypeToType, statusToTitle } = Conversions
 
@@ -100,11 +100,15 @@ const edit = () =>
       // node and rebuilds it when the displayed columns change, and a handler
       // on `document` never notices that.
       //
-      // Nothing is interpolated into JS any more, so the id needs `escapeHtml`
-      // and nothing else: it is a string in an attribute like any other.
-      return html`
-        <i id="edit-${escapeHtml(row.status)}-${i}" class="fas fa-edit edit-button" data-ref="${escapeHtml(row.dbRef)}"></i>
-      `
+      // Nothing is interpolated into JS any more, so the id is a string in an
+      // attribute like any other and `html` escapes it like any other.
+      //
+      // `String`, and the same on every formatter below: bootstrap-table puts
+      // what a formatter returns into the cell itself, and it wants a string.
+      // An object arrives as `[object Object]`, quietly, in every row.
+      return String(html`
+        <i id="edit-${row.status}-${i}" class="fas fa-edit edit-button" data-ref="${row.dbRef}"></i>
+      `)
     },
     cellStyle: () => ({ css: { 'width': '20px' } }),
   })
@@ -149,7 +153,7 @@ const progress = () =>
       const seen = row.status === 'Completed'
         ? totalEps
         : progress ?? '-'
-      return `${escapeHtml(seen)}/${escapeHtml(totalEps)}`
+      return String(html`${seen}/${totalEps}`)
     }
   })
 
@@ -237,26 +241,30 @@ const titleFormatter = (_, row) => {
   // them sixteen pixels wide. The browser now fetches the handful that are
   // actually on screen. `.mini-thumb` fixes the size, so nothing shifts as
   // the rest arrive.
-  return `<span id="${escapeHtml(anchorId)}" class="title-with-cover"><img class="mini-thumb" src="${escapeHtml(cover)}" loading="lazy" decoding="async" alt=""><a href="${escapeHtml(url)}">${escapeHtml(label)}</a></span>`
+  return String(html`<span id="${anchorId}" class="title-with-cover"><img class="mini-thumb" src="${cover}" loading="lazy" decoding="async" alt=""><a href="${url}">${label}</a></span>`)
 }
 
 const englishTitleAndLastUpdatedFormatter = (_, row) => {
   const { englishTranslatedTitle } = get(row, ['englishTranslatedTitle'])
   const link = toWikipediaLink(englishTranslatedTitle, englishTranslatedTitle)
-  return row.updatedDate
-    ? `${link}<i style="font-size:.85em; float: right; position: relative; top: 3px;">${escapeHtml(statusToTitle(apiTypeToType[row.commonMetadata.entryType], row.status))} ${relativeTime(row.updatedDate)}</i>`
-    : link
+  return String(row.updatedDate
+    ? html`${link}<i style="font-size:.85em; float: right; position: relative; top: 3px;">${statusToTitle(apiTypeToType[row.commonMetadata.entryType], row.status)} ${relativeTime(row.updatedDate)}</i>`
+    : link)
 }
 
+// The separator is what keeps this a `join` rather than an interpolated array:
+// `html` puts nothing between the elements it is handed, and these want a
+// comma. Each link is already markup by then, so the join is the boundary at
+// which the cell becomes a string.
 const listOfLinksFormatter = (prop, toLink) => (_, row) => {
   const containerOfVal = get(row, [prop])
   const val = containerOfVal[prop]
   const transformer = toLink ?? toWikipediaLink
-  return val?.map((el) => transformer(el)).join(', ') ?? ''
+  return val?.map((el) => String(transformer(el))).join(', ') ?? ''
 }
 
 const toWikipediaLink = (name, label) =>
-  `<a href="${escapeHtml(toWikipediaUrl(name))}">${escapeHtml(label ?? name)}</a>`
+  html`<a href="${toWikipediaUrl(name)}">${label ?? name}</a>`
 
 // A genre or a studio name is metadata like any other, and it is being put
 // into a query string: without `encodeURIComponent` an `&` in it silently
@@ -282,20 +290,22 @@ const playtimeFormatter = (_, row) => {
   const { duration: durationInMin } = get(row, ['duration'])
   const hours = Math.floor(durationInMin/60)
   const rawMins = durationInMin % 60
+  // The fractions are entities, so they are written as literals in an `html`
+  // template rather than interpolated as text — which is what makes
+  // `durationText` markup, and what carries it through the link below intact.
+  // The url is metadata, so it is escaped like everything else.
   const minsAsHrFraction =
     rawMins < 10 ? ''
     : rawMins < 20 ? '¼'
-    : rawMins < 40 ?  '&frac12'
-    : '&frac34'
-  const durationText = `${hours}h${minsAsHrFraction}`
-  // `durationText` is ours and carries `&frac12` on purpose, so it is the one
-  // thing here that must not be escaped. The url is metadata, so it is.
+    : rawMins < 40 ? html`&frac12`
+    : html`&frac34`
+  const durationText = html`${hours}h${minsAsHrFraction}`
   const url = toSafeUrl(toPlaytimeUrl(row))
-  return durationInMin && url
-    ? `<a href="${escapeHtml(url)}">${durationText}</a>`
+  return String(durationInMin && url
+    ? html`<a href="${url}">${durationText}</a>`
     : durationInMin
     ? durationText
-    : '-'
+    : '-')
 }
 
 /**
@@ -410,8 +420,20 @@ const relativeTime = (ts) => {
 
 const indexFormatter = (_, __, index) => index + 1
 
+/**
+ * A stored value straight into a cell — which is to say straight into
+ * innerHTML, since that is what bootstrap-table does with what a formatter
+ * returns. These two were the columns with no escaping at all: an owner's
+ * `overrides.duration` is whatever they typed, and a list is public.
+ *
+ * Absent stays absent rather than becoming the empty string, because
+ * bootstrap-table draws `undefinedText` — a dash — for a cell with nothing in
+ * it, and a book with no page count has always shown one.
+ */
+const escaped = (value) => value == null ? value : String(html`${value}`)
+
 const getOverrideOrMetadata = (prop) => (_, row) =>
-  row.overrides?.[prop] ?? row.commonMetadata?.[prop]
+  escaped(row.overrides?.[prop] ?? row.commonMetadata?.[prop])
 
 const getOverrideOrMetadataPreserveNull = (prop) => (_, row) =>
-  row.overrides?.[prop] === null ? null : (row.overrides?.[prop] ?? row.commonMetadata?.[prop])
+  row.overrides?.[prop] === null ? null : escaped(row.overrides?.[prop] ?? row.commonMetadata?.[prop])

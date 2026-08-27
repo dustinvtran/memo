@@ -1,4 +1,3 @@
-const { escapeHtml } = Utils
 const { initComponent } = Components
 const { InputWithAction, showNotification } = Components.UI
 
@@ -41,7 +40,7 @@ const UsernameSetter = () => initComponent({
              would have been reported as this one. Its `context` is the same
              sentence with the name in it, which is the reason it is built. */
           if (resp.error === 'NameTaken') {
-            showNotification(resp.context ?? `${escapeHtml(newName)} is already taken.`)
+            showNotification(resp.context ?? `${newName} is already taken.`)
           } else if (resp.error) {
             showNotification(resp.context ?? COULD_NOT_SET)
           } else {
@@ -64,8 +63,8 @@ Components.Home.UsernameSetter = UsernameSetter
  * getting it wrong, each of them carrying the whole rule: the point is that
  * the next attempt succeeds, not that this one is diagnosed.
  *
- * The name is never interpolated into these — `Utils.html` does not escape,
- * and the value here is by definition one that failed the alphanumeric check.
+ * The name is never interpolated into these: the value here is by definition
+ * one that failed the alphanumeric check, so there is nothing to quote back.
  * @type {(name: string) => string | undefined}
  */
 const whyNotAUsername = (name) => {
@@ -103,7 +102,7 @@ const whyNotAUsername = (name) => {
 const requestFailed = (err) => {
   const detail = typeof err === 'string' ? err : err?.message
   return typeof detail === 'string' && detail
-    ? `Could not set your username: ${escapeHtml(detail)}`
+    ? `Could not set your username: ${detail}`
     : COULD_NOT_SET
 }
 

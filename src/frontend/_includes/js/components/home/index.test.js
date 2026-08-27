@@ -50,14 +50,22 @@ const context = vm.createContext({
 const load = (source, exports) =>
   vm.runInContext(`(() => {\n${source}\n;return ${exports}\n})()`, context);
 
-load(generalSource, "undefined");
+const { raw } = load(generalSource, "Utils");
 
 const { HomePage } = load(source, "({ HomePage })");
 
 /** Stands in for the `ResultAsync` the page would really be handed. */
 const REMOTE_DATA = Symbol("getUserName()");
 
-const render = (component) => component.content({ id: "x", include: render });
+/**
+ * `content` is markup rather than a string now, so it is asked for one. And
+ * `include` hands the parent a `raw`, which is what the real one does: a
+ * child's markup is markup, and a parent that interpolated it as text would
+ * escape it. The stubs above stand in for drawn components, so they go through
+ * the same door.
+ */
+const render = (component) =>
+  String(component.content({ id: "x", include: (child) => raw(render(child)) }));
 
 /**
  * What `HomePage` hands `WithRemoteData` — the wiring is the point rather than
