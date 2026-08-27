@@ -66,7 +66,7 @@ const entryTypes = Conversions.TYPES
 
 const getToken = Http.getToken
 
-const isLoggedIn = () => !R.isNil(getToken())
+const isLoggedIn = () => getToken() != null
 
 Netlify = {
   getToken,

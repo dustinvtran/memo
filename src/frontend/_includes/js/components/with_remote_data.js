@@ -1,6 +1,5 @@
 const { initComponent, setContent, Div } = Components
 const { html, css, escapeHtml } = Utils
-const { identity } = R
 const { errorMessage } = Http
 
 /**

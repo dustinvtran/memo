@@ -37,8 +37,16 @@
     {# The page cannot draw until every script below has been fetched and run,
        so anything not needed to draw it carries `defer` and gets out of the
        way. What is left is what the block of app code at the end of this head
-       reaches for while it is being parsed: jQuery, Ramda, and the libraries
-       the first render calls into. #}
+       reaches for while it is being parsed: jQuery and the libraries the first
+       render calls into.
+
+       Two of these are gone rather than deferred. Ramda was 44,743 bytes for
+       four calls — three `R.equals` and one `R.isNil` — and axios 65,099 for
+       the two in `utils/http.js`; `utils/deep_equal.js` and `fetch` are what
+       do that work now, so 110 KB stopped blocking the first paint of every
+       page on the site. #269. The `ramda` in `package.json` is a different
+       thing and stays: `src/api` imports it in four files and nothing here
+       loads that copy. #}
     <!-- JavaScript -->
     {# DOMPurify is the only thing between another user's markdown and this
        page's DOM, and this page holds their reader's `nf_jwt` — so it is the
@@ -59,21 +67,6 @@
        package published. These are the versions that resolved to. #}
     <script defer src="https://cdn.jsdelivr.net/npm/apexcharts@6.8.0" integrity="sha384-nLD6rKRJ1yssfWSVXJJaNpF3g7f2F5/5qnJ6rRBt/KjLrJ5H/ch4uI80FwqxknkC" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/litepicker@2.0.12/dist/litepicker.js" integrity="sha384-TwHJTusQtbcoEHJcrF5aeo0MHBgj8lt8onFRrG7wKk8Q/LG9EphkEsqNRiVWzIP9" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ramda/0.25.0/ramda.min.js" integrity="sha384-RNR54SeCxp1FhiUnPGrGYpNaZn5q8/Fn7tZe7I17lN8cZ1HK/3AzE4KSoFXu6bl2" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    {# 0.24.0 was four years and a major behind, with 23 advisories against
-       it — several high, including SSRF and prototype pollution. 1.19.0 is
-       the newest cdnjs serves and nothing is reported against it. The major
-       is cheap here because the site's whole use of axios is two calls in
-       `utils/http.js`: `axios({ method, url, data, headers })` and
-       `axios.get(url, { headers })`, both read as `({ data }) => data`, with
-       `toRequestError` and `renewToken` reading `error.response.status` and
-       `error.response.data`. Every one of those is unchanged in 1.x, and the
-       file is still the UMD that defines a bare `axios` global. What 1.0
-       reworked — form-data serialization, the params serializer, the XSRF
-       defaults — this site passes none of. Not the `axios` that
-       `check_audit.js` accepts: that one is nested under igdb-api-node, runs
-       server-side, and no bump to this tag touches it. #}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.19.0/axios.min.js" integrity="sha384-Pv+e3/1mh9OFEtc+8HN8zptpUVh+IpZ9Gi43dKH8jkibjckMfQ1fsETUYG1Qdwdb" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     {# 1.11.1 was from 2014. 1.12.2 is the one release on the whole 1.x
        line where CVE-2015-9251 is fixed — a cross-origin ajax response typed
        `text/javascript` went to `jQuery.globalEval` whatever the request had

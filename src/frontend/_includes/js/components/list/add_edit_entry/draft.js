@@ -14,6 +14,7 @@ const { html, css, waitForEl, timeAgo, dateTime } = Utils
 const { initComponent } = Components
 const { getDraft, saveDraft, deleteDraft } = Netlify
 const { readForm, writeForm } = EntryFormIO
+const { deepEqual } = DeepEqual
 
 /** Long enough not to save on every keystroke, short enough to lose little. */
 const AUTOSAVE_DELAY_MS = 2500
@@ -146,7 +147,7 @@ const offerExistingDraft = ({ id, type, data, saved }) => {
     .map(({ draft }) => {
       // A draft that says exactly what the entry already says has nothing to
       // offer: the last autosave simply happened after the last save.
-      if (!draft || R.equals(comparable(draft.snapshot), comparable(saved))) {
+      if (!draft || deepEqual(comparable(draft.snapshot), comparable(saved))) {
         return
       }
 
@@ -175,7 +176,7 @@ const offerExistingDraft = ({ id, type, data, saved }) => {
 const summarise = (draft, saved) => {
   const fields = Object.keys({ ...comparable(draft), ...comparable(saved) })
     .filter((field) => field !== 'review')
-    .filter((field) => !R.equals(comparable(draft)[field], comparable(saved)[field]))
+    .filter((field) => !deepEqual(comparable(draft)[field], comparable(saved)[field]))
 
   const noteChanged = (draft.review ?? '') !== (saved.review ?? '')
   const parts = [
@@ -195,7 +196,7 @@ const autosaveWhileEditing = ({ id, type, data, saved }) => {
     if ($(`#${id}`).closest('body').length === 0) return
 
     const current = readForm(data, type)
-    if (R.equals(comparable(current), comparable(saved))) return
+    if (deepEqual(comparable(current), comparable(saved))) return
 
     saveDraft(type, data.dbRef, current)
       .map(() => {

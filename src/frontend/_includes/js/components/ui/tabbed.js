@@ -1,6 +1,5 @@
 const { initComponent, setContent, Div } = Components
 const { html, css } = Utils
-const { identity } = R
 
 /**
  * pages = [

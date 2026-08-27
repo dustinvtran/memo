@@ -65,8 +65,8 @@
 # `<style id="component-styles">` and every component writes its rules into it
 # at runtime, and litepicker and apexcharts inject their own on top of that.
 # `script-src` does not get it, which is the whole point of the exercise — the
-# scripts are eight pinned CDN files and one hashed same-origin bundle, every
-# one of them loaded by `src`. The known exception is the `onclick` that
+# scripts are the pinned CDN files and one hashed same-origin bundle, every one
+# of them loaded by `src`. The known exception is the `onclick` that
 # `utils/columns.js` writes into each row's edit icon: an inline handler is a
 # `script-src` violation, so an owner viewing their own list is what
 # report-only is here to measure.
