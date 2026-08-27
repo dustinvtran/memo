@@ -316,6 +316,38 @@ for (const [what, newName] of Object.entries(refusedNames)) {
   })
 }
 
+/**
+ * `event.body` is `string | null`, and `JSON.parse(null)` is `null` rather
+ * than a parse error — so a POST with nothing in it reached `({ newName })`
+ * and threw where neverthrow does not catch, out of the handler and out as
+ * an empty 502. #259.
+ */
+test('a rename with no body at all is a 400 rather than a 502', options, async () => {
+  seed()
+
+  const { statusCode, body } = await call('POST', 'name', { as: 'u1' })
+
+  assert.equal(statusCode, 400)
+  assert.equal(body.error, 'RequestError')
+  assert.equal(store.users[0].username, 'oldname')
+})
+
+test('a rename whose body is not an object at all is a 400 too', options, async () => {
+  seed()
+
+  // Valid JSON, and nothing a destructure can be taken from either. This
+  // one never threw — `({ newName })` off a number is `undefined`, which
+  // the users parser refuses a step later — so it is the message being
+  // asserted: the body is turned away for its shape, before any route has
+  // read a field off it.
+  const { statusCode, body } = await call('POST', 'name', { as: 'u1', body: 5 })
+
+  assert.equal(statusCode, 400)
+  assert.equal(body.error, 'RequestError')
+  assert.equal(body.message, 'the request body must be a JSON object')
+  assert.equal(store.users[0].username, 'oldname')
+})
+
 test('a rename refuses a value that is not a string at all', options, async () => {
   seed()
 
@@ -385,5 +417,17 @@ test('a biography of the wrong type is refused', options, async () => {
   const { statusCode } = await callBio({ newBio: { $ne: null } })
 
   assert.equal(statusCode, 400)
+  assert.equal(store.users[0].biography, 'what was there before')
+})
+
+test('a biography POST with no body at all is a 400 rather than a 502', options, async () => {
+  seed()
+  store.users[0].biography = 'what was there before'
+
+  // The same null body as the rename above, one destructure along. #259.
+  const { statusCode, body } = await callBio()
+
+  assert.equal(statusCode, 400)
+  assert.equal(body.error, 'RequestError')
   assert.equal(store.users[0].biography, 'what was there before')
 })
