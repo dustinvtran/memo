@@ -92,6 +92,12 @@ const SEARCH_PARAM = 'q'
  * class, so an answer from our own API always carries one — and the status is
  * kept because a 401 is the case where the answer is "log in again" rather
  * than "try again" (#216).
+ *
+ * It reads an error carrying a `response`, which is the shape `request` below
+ * throws and the shape axios used to. The mapper also has to answer for the
+ * failures that never reached the API at all — a dropped connection arrives
+ * as a plain `Error` with no `response` on it — and that is what the 500
+ * fallback is for, rather than a case that no longer happens.
  */
 const toRequestError = (error) => ({
   status: error.response?.status ?? 500,
@@ -104,16 +110,72 @@ const toAuthHeader = (token) => ({ Authorization: `Bearer ${token}` })
 const makeRequest = (method, url, data) => (
   NT.ResultAsync.fromPromise(
     refreshTokenIfNecessary().then((jwt) =>
-      axios({ method, url, data, ...tokenIfLoggedIn(jwt) })
-        .then(({ data }) => data),
+      request(method, url, data, tokenIfLoggedIn(jwt))
     ),
     toRequestError
   )
 )
 
-const tokenIfLoggedIn = (jwt) => ({
-  headers: Nullable.map(jwt ?? getToken(), toAuthHeader) ?? {}
-})
+/**
+ * One request, as a promise that resolves with the body or rejects the way
+ * `toRequestError` reads.
+ *
+ * The rejecting is the part to keep hold of. `fetch` resolves for a 404 and a
+ * 500 alike — the status is on `ok` and nothing is thrown — where axios
+ * rejected, and everything downstream of here is built on the rejection: the
+ * `mapErr` of every `ResultAsync`, every failure message `WithRemoteData`
+ * draws, and the fallback in `renewToken`. So a failed status is turned back
+ * into a throw here, and the whole of the difference between the two clients
+ * lives in these four lines.
+ */
+const request = async (method, url, data, headers) => {
+  const response = await fetch(url, {
+    method: method.toUpperCase(),
+    headers: {
+      ...headers,
+      ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    ...(data === undefined ? {} : { body: JSON.stringify(data) }),
+  })
+
+  const body = await readBody(response)
+  if (!response.ok) throw toResponseError(response, body)
+  return body
+}
+
+/**
+ * A failed status, as an error carrying what came back with it.
+ *
+ * `toRequestError` reads `error.response.status` and `error.response.data`, so
+ * that is what this fills in. Keeping the shape rather than rewriting the
+ * mapper is the smaller change of the two, and it leaves the mapper's other
+ * case — a plain `Error` from a request that got no answer at all — reading
+ * exactly as it did.
+ */
+const toResponseError = (response, body) =>
+  Object.assign(new Error(`${response.status} ${response.statusText}`.trim()), {
+    response: { status: response.status, data: body },
+  })
+
+/**
+ * The body, parsed if it is JSON. Three answers have to come out of here: our
+ * own API's `{ error, message }` and its data; an empty 200, which `del` gets
+ * and which `response.json()` throws on rather than answering `undefined`;
+ * and whatever a proxy or a CDN writes its own error page in, which is html
+ * and must reach the 500 fallback rather than throwing on the way to it.
+ */
+const readBody = async (response) => {
+  const text = await response.text()
+  if (!text) return undefined
+  try {
+    return JSON.parse(text)
+  } catch (e) {
+    return text
+  }
+}
+
+const tokenIfLoggedIn = (jwt) =>
+  Nullable.map(jwt ?? getToken(), toAuthHeader) ?? {}
 
 const getLastPathnameSegment = () => {
   const segments = window.location.pathname?.split?.('/').filter(s => s)
@@ -184,10 +246,23 @@ const secondsUntilExpiry = (jwt) => {
 }
 
 /* Falls back to the current token: it is still valid for a while, so a failed
-   renewal should not break the request that triggered it. */
+   renewal should not break the request that triggered it.
+
+   That fallback has to be reachable, and under `fetch` it is not for free. A
+   renewal fails with a 401, which axios rejected on and `fetch` does not, so a
+   literal port never runs the `catch`: it reads `token` off the *error* body,
+   finds nothing, and resolves `undefined` — a renewal that reports success and
+   hands back nothing. What that costs is smaller than it looks, and only
+   because of a `??` in another function: `tokenIfLoggedIn` falls back to
+   `getToken()`, so the request still goes out on the cookie rather than as
+   `Bearer undefined`. That is one edit away from not being true, in a file
+   that has no reason to know this one leans on it, so both halves are explicit
+   here instead. `request` throwing on `!ok` is what keeps the `catch`
+   reachable; the `?? token` is the same answer for a 200 that somehow carries
+   no token. Neither path resolves undefined. */
 const renewToken = (token) =>
-  axios.get(RENEWAL_URL, { headers: toAuthHeader(token) })
-    .then(({ data }) => data.token)
+  request('get', RENEWAL_URL, undefined, toAuthHeader(token))
+    .then((body) => body?.token ?? token)
     .catch(() => token)
     .finally(() => { pendingRenewal = null })
 
