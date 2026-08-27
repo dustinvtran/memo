@@ -1,12 +1,24 @@
 {
   // `src/api` is ES modules — `src/api/package.json` sets the type for that
   // subtree, and nothing outside it. This only affects what an editor
-  // reports: nothing in CI or on Netlify runs tsc, and the pinned
-  // `typescript` predates `"nodenext"`, hence `esnext` plus classic
-  // resolution rather than the pair you would reach for today.
+  // reports: nothing in CI or on Netlify runs tsc.
+  //
+  // There is no pinned `typescript` any more (#182). Nothing consumed it,
+  // and 4.9.5 could not parse zod 4's or ts-pattern's type definitions at
+  // all — 665 syntax errors that `skipLibCheck` does not suppress, because
+  // parsing happens before it applies. So the version reading this file is
+  // whichever one the editor brings, and that is what chooses `bundler`
+  // below: `"node"` was removed outright in TypeScript 7, which rejects the
+  // whole config rather than warning about the one option, and `"nodenext"`
+  // would flag every extensionless relative import in the tree. `bundler`
+  // is the mode 5.x and 7 both accept.
+  //
+  // `checkJs` is aspirational. Nothing has ever run it, and a real tsc pass
+  // reports about a thousand findings against the JSDoc — mostly implicit
+  // `any` and missing `@types/node`. Worth doing, but on its own.
   "compilerOptions": {
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "target": "es2020",
     "checkJs": true,
     "strictNullChecks": true
