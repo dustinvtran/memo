@@ -6,7 +6,7 @@
  * critical is new, and new is the only thing worth stopping a build for.
  *
  * Why not just `npm audit --audit-level=high`, which is one line: it exits 1
- * on the eight advisories the production tree carries today, so it would be
+ * on the seven advisories the production tree carries today, so it would be
  * red on the commit that added it and red on every commit after, which is the
  * same as having no check at all. The list below is what makes it green now
  * and red the day something arrives.
@@ -27,14 +27,16 @@
 
 /** Package name -> why an advisory against it does not stop the build today. */
 const ACCEPTED = {
-  axios:
-    'apicalypse pins axios ^0.21.1, and apicalypse is igdb-api-node\'s. ' +
-    'The top-level axios is 1.19.0 and clean — every one of these is the ' +
-    'nested copy, which no bump to our own dependency can reach. #182.',
   'http-cache-semantics': 'Under got, under node-themoviedb. #182.',
   'js-yaml': 'Under gray-matter, which is Eleventy\'s front matter. Build-time only. #182.',
   got: 'node-themoviedb pins got ^11.8.2. #182.',
-  uuid: 'Under better-queue, under node-themoviedb. #182.',
+  uuid:
+    'Under better-queue, under apicalypse, under igdb-api-node. This ' +
+    'entry used to say node-themoviedb, which has never depended on ' +
+    'either — the path was wrong before #261 and is unchanged by it. ' +
+    'apicalypse 1.0.5 is what cleared the nested axios, but it still ' +
+    'pins better-queue ^3.8.10, so this one has no forward fix: npm ' +
+    'offers only a downgrade to igdb-api-node@3.1.7. #182.',
 }
 
 /** Severities that stop the build. Matches `--audit-level=high`. */
