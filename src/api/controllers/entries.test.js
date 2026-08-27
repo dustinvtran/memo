@@ -305,6 +305,25 @@ test('an entry the parser refuses is a 400 and writes neither half', options, as
 })
 
 /**
+ * `event.body` is `string | null`, and `JSON.parse(null)` is `null` rather
+ * than a parse error — so a POST with nothing in it reached
+ * `{ review, ...entryWithoutReview }` and threw where neverthrow does not
+ * catch, out of the handler and out as an empty 502. #259.
+ */
+test('a create with no body at all is a 400 rather than a 502', options, async () => {
+  seed()
+
+  const { statusCode, body } = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+  })
+
+  assert.equal(statusCode, 400)
+  assert.equal(body.error, 'RequestError')
+  assert.deepEqual(store.filmEntries, [])
+  assert.deepEqual(store.filmReviews, [])
+})
+
+/**
  * `updateEntry_` read the owner off the entry without checking there was one,
  * so a PATCH naming an id that isn't there threw on the miss the db module
  * reported — a rejected promise out of the handler, and a 502. The revisions
@@ -497,6 +516,22 @@ test('an ownership check still runs before any of this', options, async () => {
 
   assert.equal(statusCode, 401)
   assert.equal(store.filmEntries[0].status, 'InProgress')
+})
+
+test('an update with no body at all is a 400 rather than a 502', options, async () => {
+  seedSavedEntry()
+
+  // The same null body as the create, on the path that spreads it into
+  // `{ review, ...rest }` instead. #259.
+  const { statusCode, body } = await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+  })
+
+  assert.equal(statusCode, 400)
+  assert.equal(body.error, 'RequestError')
+  assert.equal(store.filmEntries[0].status, 'InProgress')
+  assert.equal(store.filmEntries[0].score, 7)
+  assert.equal(store.filmReviews[0].text, 'the note as it was')
 })
 
 ///////////////////////////////////////////////////////////////////////////////

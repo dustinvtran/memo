@@ -55,11 +55,41 @@ const getUrlSegments = (event) =>
     .split('/')
     .filter((s) => s)
 
-/** @type {(event: Event) => Result<any, Error>} */
-const getReqBody = Result.fromThrowable(
-  (event) => JSON.parse(event.body),
-  (err) => errors.req(err, 'the request body is not valid JSON'),
-)
+/**
+ * The parsed request body, which every route that takes one goes straight on
+ * to destructure — so it has to be an object by the time it leaves here.
+ *
+ * `event.body` is `string | null`, and `JSON.parse(null)` is
+ * `JSON.parse('null')` is `null`. So a request sent with no body at all
+ * parsed perfectly well, and the `ok(null)` reached `({ newName })`,
+ * `({ newBio })` and `{ review, ...rest }` as a value none of them can be
+ * destructured from. neverthrow does not catch a synchronous throw, so the
+ * `TypeError` went out of the controller, out of the async handler, and
+ * Netlify answered an empty 502 — to a request whose only fault was being
+ * empty. #259, and the same shape of bug as the `Result.map` that did not
+ * catch in `getUserId` above.
+ *
+ * Checked here rather than at each of the four destructures because all four
+ * want the same thing of the body and would all answer the same 400. That is
+ * already what `PUT /api/revisions/:type/:ref/draft` answers, by luck rather
+ * than by design: its parser runs first and refuses a `null` snapshot.
+ *
+ * An array, or a bare `5`, is refused for the same reason rather than left to
+ * destructure into a set of `undefined` fields and fail a parser further in.
+ * Every caller builds an object literal — see `frontend/_includes/js/utils/
+ * netlify.js` — so the only requests this turns away are ones no route here
+ * could have served.
+ * @type {(event: Event) => Result<any, Error>}
+ */
+const getReqBody = (event) =>
+  parseReqBody(event).andThen((body) =>
+    body !== null && typeof body === 'object' && !Array.isArray(body)
+      ? ok(body)
+      : err(errors.req(
+          `the body parsed as ${describeBody(body)}`,
+          'the request body must be a JSON object',
+        ))
+  )
 
 /**
  * The id behind a username, for a caller that has something to say about a
@@ -135,3 +165,22 @@ export {
   toEntryType,
   toReviewCollection,
 }
+
+///////////////////////////////////////////////////////////////////////////////
+
+/** @type {(event: Event) => Result<any, Error>} */
+const parseReqBody = Result.fromThrowable(
+  (event) => JSON.parse(event.body),
+  (err) => errors.req(err, 'the request body is not valid JSON'),
+)
+
+/**
+ * What the body turned out to be, for the log and for nowhere else: its shape
+ * and never its contents, since a `detail` here is written out of whatever a
+ * stranger sent.
+ * @type {(body: any) => string}
+ */
+const describeBody = (body) =>
+  body === null ? 'null'
+    : Array.isArray(body) ? 'an array'
+    : `a ${typeof body}`
