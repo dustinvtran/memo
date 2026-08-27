@@ -1,6 +1,5 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('@netlify/functions').HandlerContext} Context */
-/** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../utils/errors').Error} Error */
 /** @typedef {import('../utils/responses').Response} Response */
 import * as responses from '../utils/responses.js'
@@ -9,6 +8,7 @@ import { getSegment } from './utils.js'
 import { toPromise } from '../utils/general.js'
 import * as db from '../utils/db/index.js'
 import { toScoreTally, toStats } from '../utils/score_tallies.js'
+import { WORK_TYPES } from '../utils/work_types.js'
 /**
  * GET /api/stats/:username
  *
@@ -44,9 +44,6 @@ const getUserStats = (event) => toPromise(
 export {
   getUserStats,
 }
-/** @type {ValidCollection[]} */
-const entryCollections = ['gameEntries', 'tvShowEntries', 'filmEntries', 'bookEntries']
-
 /**
  * Recomputes the histograms and stores them before answering.
  *
@@ -57,23 +54,38 @@ const entryCollections = ['gameEntries', 'tvShowEntries', 'filmEntries', 'bookEn
  * entries, so whichever `updateByRef_` lands second writes what the first one
  * wrote. It is worth knowing before anyone treats the double write as a bug.
  *
- * The counting itself is four `$group`s — see `toScoreTallyPipeline` in
- * ../utils/db/queries.js. This used to download every non-Planned entry the
- * user had, four lists of them, to read one field off each.
+ * The counting itself is one `$group` per work type — see
+ * `toScoreTallyPipeline` in ../utils/db/queries.js. This used to download every
+ * non-Planned entry the user had, four lists of them, to read one field off
+ * each.
+ *
+ * Which collections are counted and which key each tally is stored under both
+ * come off `WORK_TYPES`, and #262 is why. This named the four entry
+ * collections again here, in a fourth order, and joined them to the score keys
+ * by destructuring position. Reorder that array or append a fifth type to it
+ * and every tally was written under the wrong name: `scoreTallyParser` accepts
+ * it because all eleven-bucket shapes are identical, `users` validates, and
+ * the profile draws the games histogram under "Films" for the 48 hours the
+ * wrong numbers stand. Keying on each row's own `type` has no position left to
+ * get wrong.
  *
  * @type {(userDocument: any) => ResultAsync<Response, Error>}
  */
 const refreshStats = (userDocument) =>
   ResultAsync.combine(
-    entryCollections.map((collection) =>
+    WORK_TYPES.map((workType) =>
       db
-        .countScoresByValue_(collection, userDocument.userId)
+        .countScoresByValue_(workType.entries, userDocument.userId)
         // A `$group` returns a row only for a score somebody used, and the
         // stored shape needs all eleven buckets or `users` fails validation.
         .map(toScoreTally)
     )
   )
-    .map(([games, tv, films, books]) => ({ games, tv, films, books }))
+    .map((tallies) =>
+      Object.fromEntries(
+        WORK_TYPES.map((workType, index) => [workType.type, tallies[index]])
+      )
+    )
     .map((scores) => toStats(scores, Date.now()))
     // The stats that are answered with are the stats that were stored, down to
     // the one object: the response used to omit `updatedDate` entirely, and

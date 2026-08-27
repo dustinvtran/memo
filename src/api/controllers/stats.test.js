@@ -18,6 +18,13 @@
  * turns it into an err, but the endpoint is what has to answer 404, so the
  * test stays here.
  *
+ * The middle pair is #262: the four tallies used to be paired with the four
+ * score keys by destructuring position, so reordering the collection list would
+ * have stored every histogram under a neighbour's name without failing
+ * anything. They assert the pairing by name, against a table written out here
+ * rather than read from `WORK_TYPES` — derived from the table, it would agree
+ * with the controller instead of checking it.
+ *
  * That needs the actual dependencies, so the file **skips itself** when they
  * aren't installed (which is how CI runs the suite). The same shape is pinned
  * without them on `toStats` in ../utils/score_tallies.test.js.
@@ -167,6 +174,9 @@ const seed = ({ statsAge, extraStoredFields = {} } = {}) => {
     },
   ]
 
+  /* Each collection counts to something no other one counts to — two 8s, one
+     unrated, nothing at all, one 3 — which is what lets the test below tell a
+     tally stored under the right name from one stored under a neighbour's. */
   store.gameEntries = [
     { _id: 'g1', userId: 'u1', status: 'Completed', score: 8 },
     { _id: 'g2', userId: 'u1', status: 'Completed', score: 8 },
@@ -235,6 +245,39 @@ test('the recompute counts the entries and skips the Planned one', options, asyn
   assert.equal(body.scores.tv.unrated, 1)
   assert.equal(body.scores.books['3'], 1)
   assert.deepEqual(body.scores.films, emptyTally())
+})
+
+/**
+ * What each seeded collection counts to, under the key that collection's tally
+ * has to be stored as. A literal, not `WORK_TYPES.map(...)`: derived from the
+ * table, this would pass however the controller paired the two.
+ */
+const FINGERPRINTS = {
+  games: { ...emptyTally(), 8: 2 },
+  tv: { ...emptyTally(), unrated: 1 },
+  films: emptyTally(),
+  books: { ...emptyTally(), 3: 1 },
+}
+
+test('each tally is stored under its own type, not its position', options, async () => {
+  seed({ statsAge: 3 * MS_IN_DAY })
+
+  const { body } = await getStats('reader')
+
+  for (const [type, tally] of Object.entries(FINGERPRINTS)) {
+    assert.deepEqual(body.scores[type], tally, `scores.${type}`)
+  }
+})
+
+test('the four keys are the four scoreTallyParser requires', options, async () => {
+  // Named for `type` in work_types.js, and required by name in parsers/users.js
+  // — so a key that stopped matching would fail validation on the way into
+  // `users` rather than here.
+  seed({ statsAge: 3 * MS_IN_DAY })
+
+  const { body } = await getStats('reader')
+
+  assert.deepEqual(Object.keys(body.scores).sort(), ['books', 'films', 'games', 'tv'])
 })
 
 test('a field stored beside the two is not published with them', options, async () => {
