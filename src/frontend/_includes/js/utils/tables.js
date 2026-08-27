@@ -83,15 +83,38 @@ const statuses = ['InProgress', 'Completed', 'Dropped', 'Planned']
 const filmStatuses = ['Completed', 'Planned']
 
 /**
- * bootstrap-table 1.12's `customSearch` is the *name of a global function*
- * rather than a function — it calls `window[options.customSearch]` — so this
- * has to be on `window` and its name has to be worth having there.
+ * The search itself, called once per keystroke and again whenever a column is
+ * shown or hidden.
  *
- * It is called with the table as `this`, once per keystroke and again whenever
- * a column is shown or hidden, and leaves the surviving rows in `this.data`
- * the way the search it replaces does.
+ * bootstrap-table 1.12 took `customSearch` as the *name of a global function*
+ * and called `window[options.customSearch]` with the table as `this` and the
+ * search text as its one argument, expecting the surviving rows to be left in
+ * `this.data`. 1.21 takes the function itself, calls it with
+ * `(data, searchText, filterColumns)` and `this` set to the *options* object,
+ * and assigns `this.data` from the return value. All three moved at once, so
+ * the old shape does not degrade into a worse search — it hands `searchText`
+ * an array of rows and then blanks the table by returning `undefined`.
+ *
+ * `this.columns` on the options is the nested `[[column, ...]]` that
+ * `initColumns` rewrites it into, one inner array per header row, rather than
+ * the flat list of the same objects the table itself keeps. The objects are
+ * shared, so `visible` is still live as the column dropdown toggles it; only
+ * the shape needs flattening.
  */
-const CUSTOM_SEARCH = 'searchListRows'
+const searchListRows = function (data, searchText) {
+  const rows = EntrySearch.filterEntries(
+    data,
+    searchText,
+    freeTextFields(this.columns.flat())
+  )
+  // A pattern that backtracks is abandoned rather than run to the end, and an
+  // empty list nobody explains looks exactly like a search that found nothing
+  // (#228).
+  if (this.searchState) {
+    this.searchState.abandoned = EntrySearch.wasAbandoned(rows)
+  }
+  return rows
+}
 
 /**
  * The settings that put `utils/entry_search.js` in charge of a table's search
@@ -107,7 +130,7 @@ const searchSettings = () => {
   const searchState = { abandoned: false }
   return {
     search: true,
-    customSearch: CUSTOM_SEARCH,
+    customSearch: searchListRows,
     formatSearch: () => 'Search, e.g. director:nolan',
     searchState,
     formatNoMatches: () =>
@@ -115,21 +138,6 @@ const searchSettings = () => {
         ? 'That search was too slow to finish, so it was stopped'
         : 'No matching records found',
   }
-}
-
-window[CUSTOM_SEARCH] = function (searchText) {
-  const rows = EntrySearch.filterEntries(
-    this.options.data,
-    searchText,
-    freeTextFields(this.columns)
-  )
-  // A pattern that backtracks is abandoned rather than run to the end, and an
-  // empty list nobody explains looks exactly like a search that found nothing
-  // (#228).
-  if (this.options.searchState) {
-    this.options.searchState.abandoned = EntrySearch.wasAbandoned(rows)
-  }
-  this.data = rows
 }
 
 /**

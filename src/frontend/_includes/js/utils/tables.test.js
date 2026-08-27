@@ -22,13 +22,14 @@ const vm = require("node:vm");
 const source = fs.readFileSync(path.join(__dirname, "tables.js"), "utf8");
 const generalSource = fs.readFileSync(path.join(__dirname, "general.js"), "utf8");
 
-// `window` because the file puts bootstrap-table's `customSearch` there as it
-// loads; the real `Utils`, because `escapeHtml` is what the attributes below
-// are being asked about and a stand-in for it would be testing the stand-in.
+// The real `Utils`, because `escapeHtml` is what the attributes below are
+// being asked about and a stand-in for it would be testing the stand-in. No
+// `window`: the file used to hang bootstrap-table's `customSearch` off it,
+// because 1.12 resolved that option as a global name, and 1.21 takes the
+// function itself.
 const context = vm.createContext({
   URL,
   console,
-  window: {},
   Conversions: { apiTypeToType: { Game: "games" } },
 });
 const load = (js, exports) =>

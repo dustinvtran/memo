@@ -14,7 +14,7 @@
        if you change a version, and check the page still draws: a wrong hash
        blocks the file silently, and the whole page is drawn by these. #}
     <!-- CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.1/css/bootstrap.min.css" integrity="sha384-8+rznmq/k0KZkJlZhnuPEVkbRD7tA0wcFEjY48dajGWn3Xc1MasJwS8/tJ7OEsKW" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous" referrerpolicy="no-referrer">
     {# Font Awesome 6 only. It defines the `fa`, `fas` and `far` prefixes the
        markup uses, so the 4.7.0 stylesheet that used to sit alongside it was
        being overridden for every icon on the page. The one thing that did
@@ -22,8 +22,8 @@
        for the collapsible arrows; that now names this file's family. #}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="sha384-nRgPTkuX86pH8yjPJUAFuASXQSSl2/bBUiNV47vSYpKFxHJhbcrGnmlYpYJMeD7a" crossorigin="anonymous" referrerpolicy="no-referrer">
 
-    {# 1.12.1, matching the bootstrap-table script below. #}
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.css" integrity="sha384-HyusOcKCYSnjwC8jY4YvjZAwLgeqDPWFDu2/AFf5OrZd7ykufk0gwxexoqmg5W8N" crossorigin="anonymous" referrerpolicy="no-referrer">
+    {# 1.21.2, matching the bootstrap-table script below. #}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.21.2/bootstrap-table.min.css" integrity="sha384-rOuL3fofnnH7GPPPb2f67WUfBKYs133VKgf8XdxjPIlS5/YgJf/dly+Rs2KAZ/24" crossorigin="anonymous" referrerpolicy="no-referrer">
     <link rel="icon" href="/img/favicon.ico" type="image/x-icon"/>
     {# `_includes/css/main.css`, emitted at this url by `css/main.njk`. #126
        dropped a <link> here because nothing emitted the file and every page
@@ -74,9 +74,43 @@
        `check_audit.js` accepts: that one is nested under igdb-api-node, runs
        server-side, and no bump to this tag touches it. #}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.19.0/axios.min.js" integrity="sha384-Pv+e3/1mh9OFEtc+8HN8zptpUVh+IpZ9Gi43dKH8jkibjckMfQ1fsETUYG1Qdwdb" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.1/jquery.min.js" integrity="sha384-UM1JrZIpBwVf5jj9dTKVvGiiZPZTLVoq4sfdvIe9SBumsvCuv6AHDNtEiIb5h1kU" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.1/js/bootstrap.min.js" integrity="sha384-Nud2SriDt2fZ+u85IBC48Yn9p+l4AGlapnX1EGA2KrnZjYJx8sxKnw/CIxc1wU1B" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.js" integrity="sha384-ClQpQScPqQSyD6GCOejtBWJ/GwscJaHjNtqDcG3/JmeQ1VBuzQCeZy0zNBQtuhiH" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    {# 1.11.1 was from 2014. 1.12.2 is the one release on the whole 1.x
+       line where CVE-2015-9251 is fixed — a cross-origin ajax response typed
+       `text/javascript` went to `jQuery.globalEval` whatever the request had
+       asked for. The fix regressed in 1.12.3 and was not made again until
+       3.0, which the advisory range states out loud as
+       `<1.12.2 || >=1.12.3 <3.0.0`: the rest of the 1.x line is no better
+       than 1.11.1 was, and 1.12.4 is strictly worse.
+
+       It is a swap rather than a clearance. 1.12.0 is where CVE-2020-11022
+       begins, so the count stays at three. What the swap buys beyond the
+       trade is that jQuery's own documented workaround for 11022 and 11023 —
+       reassigning `jQuery.htmlPrefilter` — cannot be applied at all before
+       1.12. Clearing those two outright needs 3.5.0, and 1.x to 3.x is not a
+       drop-in on a page that leans on jQuery this heavily. #254. #}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.2/jquery.min.js" integrity="sha384-o6l2EXLcx4A+q7ls2O2OP2Lb2W7iBgOsYvuuRI6G+Efbjbk6J4xbirJpHZZoHbfs" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    {# 3.3.1 carried seven moderate XSS and 3.4.1 clears six of them. What
+       is left is CVE-2024-6485, `data-loading-text` in the button plugin, and
+       CVE-2025-1647, popover and tooltip, reported against 3.4.1 exactly.
+       Neither has a patched release anywhere on the 3.x line, so they are the
+       floor for as long as this page is on Bootstrap 3 — both need markup
+       this site writes itself to carry an attacker's `data-*`. Bootstrap 3 to
+       5 renames every class in every template and is its own change. #254. #}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.4.1/js/bootstrap.min.js" integrity="sha384-aJ21OjlMXNL5UyIl/XNwTMqvzeRMZH2w8c5cRVpzpU8Y5bApTppSuUkhZXN0VxHd" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    {# 1.21.2 clears both of 1.12.1's — the moderate is fixed in 1.20.2, the
+       low in 1.19.1 — and is the last release still declaring
+       `jquery: "1.9.1 - 3"`, where 1.21.3 moves to `jquery: "3"`. Bootstrap 3
+       theming survives the entire 1.x line, so it is the jQuery pin above and
+       not the Bootstrap one that sets this ceiling, whatever the pairing in
+       the stylesheet comment suggests.
+
+       The bump changes `customSearch`, which is why `utils/tables.js` moves
+       with it: 1.12 looked the option up as `window[name]`, called it with the
+       table as `this` and one argument, and read the surviving rows back off
+       `this.data`. 1.21 calls it with `(data, searchText, filterColumns)` and
+       `this` set to the options object, and assigns `this.data` from what it
+       returns. #}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.21.2/bootstrap-table.min.js" integrity="sha384-8at6Iy2orlmk4xawCuXCOocKf2kQnZakSdUUy/uZVpllyY9QSUgo5JWNlMAugFBu" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     {# 4.0.2 carried two high ReDoS advisories, both fixed in 4.0.10 — which
        cdnjs lists but has no files for, so the 4.x line here stops at 4.3.0
        and the choice was that or the current major. This is the current one.
