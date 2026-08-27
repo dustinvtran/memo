@@ -15,8 +15,13 @@ const source = fs.readFileSync(path.join(__dirname, "entry_search.js"), "utf8");
 // files' `const`s from colliding and what makes an assignment with no keyword
 // (`EntrySearch = …`) the only thing that crosses between them. Loading it the
 // same way here keeps that difference visible.
-const { EntrySearch, searchFields } = vm.runInContext(
-  `(() => {\n${source}\n;return ({ EntrySearch, searchFields })\n})()`,
+// `hasExplosiveShape` comes out of the same scope as the rest, and is not part
+// of `EntrySearch`: what it decides is visible through `filterEntries` either
+// way, but only as the difference between a regex and a substring test. Asking
+// it directly is what lets the tests below assert on the classification of a
+// pattern that would take a minute to run, without running it.
+const { EntrySearch, searchFields, hasExplosiveShape } = vm.runInContext(
+  `(() => {\n${source}\n;return ({ EntrySearch, searchFields, hasExplosiveShape })\n})()`,
   vm.createContext({})
 );
 
@@ -230,6 +235,113 @@ test("a pattern that cannot blow up is still a regex", () => {
     "The The Prestige",
     "Twelve Monkeys (1995)",
   ]);
+});
+
+test("an interleaved repeat is refused, not only an adjacent one", () => {
+  // #260: the check used to ask whether the *previous* atom was the same atom
+  // quantified, so interleaving two of them walked straight around it. Both of
+  // these were measured against the real module, on a single row: the first
+  // spent 90 seconds on a 30-character title of `a`, and the second — 63
+  // characters, needing no knowledge of the list it is pointed at — spent 51
+  // seconds on the one ordinary title `The Lord of the Rings: The Fellowship
+  // of the Ring`. The exponent is the title's length, and `?q=` puts the
+  // pattern in a link (#156), so one of these is a tab someone else loses.
+  assert.equal(hasExplosiveShape("a*b*".repeat(11) + "c"), true);
+  assert.equal(hasExplosiveShape(".*[^~]*".repeat(8) + "~"), true);
+  // The smallest version of each, so a failure here says which rule broke
+  // rather than which pattern grew long enough to trip a different one.
+  assert.equal(hasExplosiveShape("a*b*a*b*c"), true);
+  assert.equal(hasExplosiveShape(".*[^~]*.*[^~]*~"), true);
+});
+
+test("what stands between the two halves has to be able to match nothing", () => {
+  // Which is the whole of what replaced adjacency. Two quantified atoms trade
+  // characters only while nothing in between has to match one, so a nullable
+  // group, an alternation with an empty branch, a zero-width assertion and a
+  // lookaround are each as good as standing side by side.
+  assert.equal(hasExplosiveShape("a*(b*)a*c"), true);
+  assert.equal(hasExplosiveShape("a*(x|)a*c"), true);
+  assert.equal(hasExplosiveShape("a*\\ba*c"), true);
+  assert.equal(hasExplosiveShape("a*(?=x)a*c"), true);
+  assert.equal(hasExplosiveShape("a*b{0,3}a*c"), true);
+
+  // An atom that does have to match a character pins where the first
+  // quantifier ends, which is the difference between the square of the title's
+  // length and two to its power. Refusing these as well would have cost the
+  // ordinary search something and bought nothing.
+  assert.equal(hasExplosiveShape("a*b+a*c"), false);
+  assert.equal(hasExplosiveShape("a*ba*c"), false);
+  assert.equal(hasExplosiveShape("a*\\da*c"), false);
+  assert.equal(hasExplosiveShape("a*b{1,3}a*c"), false);
+});
+
+test("two quantified atoms in different alternatives never meet", () => {
+  // `a*|a*` is two ways of matching, not one way of matching twice: the engine
+  // walks one branch or the other, so neither can hand the other anything
+  // back. Splitting on `|` before looking for a repeat is what keeps a search
+  // like `actor:"connery|nolan north"` from being read as text.
+  assert.equal(hasExplosiveShape("a*|a*"), false);
+  assert.equal(hasExplosiveShape("^(a*|b*)$"), false);
+  // …and a group that alternates is still refused when something repeats it.
+  assert.equal(hasExplosiveShape("(a*|b*)+"), true);
+});
+
+test("the shapes the file says it over-refuses are still over-refused", () => {
+  // `hasExplosiveShape` documents these two as read-as-text although neither
+  // can take any real time — the answer a pattern that does not compile
+  // already gets, for patterns nobody types. Written down so that widening the
+  // check has to be a decision about them rather than an accident.
+  assert.equal(hasExplosiveShape("(nolan|villeneuve)+"), true);
+  assert.equal(hasExplosiveShape("\\d+\\d+"), true);
+
+  // And the ordinary search the widening had to keep, named in the same
+  // comment: `e M` has to match, so the two `.*` cannot trade.
+  assert.equal(hasExplosiveShape("^t.*e M.*$"), false);
+});
+
+test("a newly refused shape falls back to text, like every other refusal", () => {
+  // A refusal is never an empty result. The regex would have matched the bare
+  // `c` with everything before it taking nothing; the text does not, and the
+  // title that holds the pattern literally is what comes back instead.
+  const rows = [
+    entry({ title: "Interleaved a*b*a*b*c Atoms" }),
+    entry({ title: "c" }),
+  ];
+  const kept = filterEntries(rows, "title:a*b*a*b*c", visibleFilmFields);
+
+  assert.deepEqual(titlesOf(kept), ["Interleaved a*b*a*b*c Atoms"]);
+  // Refused as a shape, not given up on partway: the reader is owed the "no
+  // matching records" message here rather than "too slow to finish".
+  assert.equal(wasAbandoned(kept), false);
+});
+
+test("the budget is read before every row, not every thirty-second one", () => {
+  // #260 again, and the other half of it. Sampling the clock is at its least
+  // accurate exactly where it is load-bearing, because the row a budget cannot
+  // interrupt is the row that costs seconds. Rows that each cost more than the
+  // whole budget make the difference plain: one of them is an overrun, and the
+  // thirty-one after it are a freeze.
+  let read = 0;
+  const slowRow = () => ({
+    commonMetadata: {
+      get englishTranslatedTitle() {
+        read += 1;
+        const until = Date.now() + 30;
+        while (Date.now() < until) {}
+        return "Inception";
+      },
+    },
+  });
+  const rows = Array.from({ length: 400 }, slowRow);
+
+  const kept = filterEntries(rows, "title:inception", visibleFilmFields);
+
+  assert.equal(wasAbandoned(kept), true);
+  // A 250 ms budget at 30 ms a row is nine rows and the one that carries the
+  // pass past the deadline. The bound is loose enough for a slow machine —
+  // where the rows only cost more and the count only falls — and still well
+  // under the thirty-two the old check ran before looking at the clock again.
+  assert.ok(read < 24, `read ${read} rows before giving up`);
 });
 
 test("a pass that runs out of budget returns no rows, and says so", () => {

@@ -148,16 +148,22 @@ const filterEntries = (rows, text, freeTextFields) => {
 
   const deadline = Date.now() + FILTER_BUDGET_MS
   let abandoned = false
-  const kept = rows.filter((row, index) => {
+  const kept = rows.filter((row) => {
     // The clock bounds how many rows the pass matches, not how long one
     // `RegExp.test` takes — a catastrophic test runs to completion however
     // long that is, because nothing can interrupt it. That is the other half
     // of why `toRegexTest` refuses the explosive shapes: the budget keeps a
     // slow pattern from being minutes, and the shape check keeps a single row
     // from being minutes on its own.
-    if (!abandoned && index % BUDGET_CHECK_ROWS === 0 && Date.now() > deadline) {
-      abandoned = true
-    }
+    //
+    // It is read before *every* row rather than every 32nd, which is what
+    // makes the overrun one row's worth instead of thirty-one more of them
+    // (#260). That mattered by a factor of 32 in the case it is there for: a
+    // row the clock cannot interrupt is exactly the row that costs seconds,
+    // so sampling the clock is at its least accurate precisely when it is
+    // load-bearing. A `Date.now()` against a row that reads and lowercases
+    // several strings is not a cost worth sampling to avoid.
+    if (!abandoned && Date.now() > deadline) abandoned = true
     return abandoned ? false : matchesQuery(row, terms, freeTextFields)
   })
   return abandoned ? abandonedPass() : kept
@@ -183,13 +189,6 @@ EntrySearch = {
  * a second is short enough to read as a pause rather than as a freeze.
  */
 const FILTER_BUDGET_MS = 250
-
-/**
- * The clock is read every 32nd row rather than every row: `Date.now()` is
- * cheap, but so is a row that matches nothing, and the pass runs again on
- * every keystroke.
- */
-const BUDGET_CHECK_ROWS = 32
 
 /**
  * The empty result of a pass that gave up, told apart from an honest empty
@@ -268,33 +267,99 @@ const toRegexTest = (value) => {
  * The two shapes that make the engine try every way of dividing a string
  * rather than one way:
  *
- *   (a+)+   a quantifier on a group that repeats or alternates inside it
- *   a*a*b   the same atom quantified twice over, so that what one takes the
- *           other can give back
+ *   (a+)+       a quantifier on a group that repeats or alternates inside it
+ *   a*a*b       the same atom quantified twice over, so that what one takes
+ *               the other can give back
+ *   a*b*a*b*c   the same, with the two halves of the trade interleaved rather
+ *               than side by side — `b*` matches the empty string, so it does
+ *               not stand between the two `a*` any more than nothing does
  *
- * Both are refused before they are compiled and read as text instead. This is
- * the half of #228 that answers instantly, and it is also the only half that
- * covers a pattern slow enough to hang on a single row: the budget in
- * `filterEntries` can stop a pass between rows, but nothing can interrupt one
- * `RegExp.test`, and `a*a*a*a*a*a*a*a*a*a*a*a*b` over a 40-character title
- * does not return this week.
+ * All of them are refused before they are compiled and read as text instead.
+ * This is the half of #228 that answers instantly, and it is also the only
+ * half that covers a pattern slow enough to hang on a single row: the budget
+ * in `filterEntries` can stop a pass between rows, but nothing can interrupt
+ * one `RegExp.test`, and `a*a*a*a*a*a*a*a*a*a*a*a*b` over a 40-character
+ * title does not return this week.
  *
- * It over-refuses a little. `(nolan|villeneuve)+` and `\d+\d+` cannot take any
- * real time and are read as text — the answer a pattern that does not compile
- * already gets, for patterns nobody types.
+ * The third shape is #260, and it is why the pair no longer has to be
+ * adjacent. Requiring adjacency made the check trivial to walk around by
+ * interleaving: `.*[^~]*.*[^~]*.*[^~]*.*[^~]*~` is 63 characters, needs no
+ * knowledge of the list it is aimed at, and spent 51 seconds on the single
+ * title `The Lord of the Rings: The Fellowship of the Ring` — one row, and
+ * the exponent is the title's length.
+ *
+ * What replaces adjacency is `isNullable`, and the distinction it draws is
+ * the one that decides the question. Two quantified atoms trade characters
+ * only while nothing between them has to match something, so
+ * `title:^t.*e M.*$` is still a regex — the literal `e M` pins where the
+ * first `.*` ends, and the cost is the square of the title's length rather
+ * than two to its power. Refusing that as well would have cost the ordinary
+ * search something and bought nothing.
+ *
+ * It over-refuses a little. `(nolan|villeneuve)+` and `\d+\d+` cannot take
+ * any real time and are read as text — the answer a pattern that does not
+ * compile already gets, for patterns nobody types.
  */
 const hasExplosiveShape = (value) => isExplosive(toAtoms(String(value)))
 
+/**
+ * A sequence is explosive if any one of its alternatives trades characters
+ * with itself, or holds a group that is explosive in its own right.
+ * Alternatives are taken apart first because `a*|a*` is two ways of matching,
+ * not one way of matching twice: only atoms the engine walks through in the
+ * same pass can hand each other characters back.
+ */
 const isExplosive = (atoms) =>
-  atoms.some((atom, index) => {
-    const previous = atoms[index - 1]
-    if (previous?.text === atom.text && previous.quantifier && atom.quantifier) {
-      return true
-    }
-    if (!isGroup(atom)) return false
-    const body = bodyOf(atom)
-    return (REPEATING.test(atom.quantifier) && repeats(body)) || isExplosive(body)
-  })
+  alternativesOf(atoms).some(
+    (alternative) => trades(alternative) || alternative.some(isExplosiveGroup)
+  )
+
+const isExplosiveGroup = (atom) => {
+  if (!isGroup(atom)) return false
+  const body = bodyOf(atom)
+  return (REPEATING.test(atom.quantifier) && repeats(body)) || isExplosive(body)
+}
+
+/**
+ * Whether a quantified atom in this sequence repeats one that came earlier
+ * with nothing mandatory in between — the shape where a character either of
+ * them could have matched can be given up by one and taken by the other, and
+ * the number of ways to divide the subject between them is a power rather
+ * than a product.
+ *
+ * The atoms still in play are the ones since the last atom that has to match
+ * something, because that atom fixes a point the division cannot cross.
+ * Comparing `text` is the same equality the adjacent check used: it does not
+ * ask whether `[a-z]` and `\w` overlap, only whether the pattern says the
+ * same thing twice, which is what an interleaved attack has to do to be one.
+ */
+const trades = (atoms) => {
+  let sinceMandatory = new Set()
+  for (const atom of atoms) {
+    if (atom.quantifier !== '' && sinceMandatory.has(atom.text)) return true
+    if (!isNullable(atom)) sinceMandatory = new Set()
+    if (atom.quantifier !== '') sinceMandatory.add(atom.text)
+  }
+  return false
+}
+
+/**
+ * Whether an atom can match nothing at all, so that two quantified atoms on
+ * either side of it are still each other's neighbours. A quantifier with a
+ * lower bound of zero says so, a zero-width assertion consumes nothing to
+ * begin with, and a group is as nullable as its emptiest alternative.
+ */
+const isNullable = (atom) =>
+  OPTIONAL.test(atom.quantifier) ||
+  ZERO_WIDTH.test(atom.text) ||
+  (isGroup(atom) &&
+    alternativesOf(bodyOf(atom)).some((body) => body.every(isNullable)))
+
+/** A quantifier that is happy to take nothing: `*`, `?`, `{0,3}`, `{0}`. */
+const OPTIONAL = /^(?:[*?]|\{0*[,}])/
+
+/** An atom that matches a position rather than a character. */
+const ZERO_WIDTH = /^(?:[$^]|\\[bB]|\(\?<?[=!])/
 
 /** A quantifier that can take what it follows more than once. */
 const REPEATING = /^[*+{]/
@@ -303,6 +368,20 @@ const isGroup = (atom) => atom.text.startsWith('(')
 
 const bodyOf = (atom) =>
   toAtoms(atom.text.replace(/^\(/, '').replace(/\)$/, ''))
+
+/**
+ * The alternatives of a sequence, split on the `|` atoms belonging to it
+ * rather than to a group inside it — `toAtoms` has already swallowed those.
+ */
+const alternativesOf = (atoms) =>
+  atoms.reduce(
+    (alternatives, atom) => {
+      if (atom.text === '|') alternatives.push([])
+      else alternatives[alternatives.length - 1].push(atom)
+      return alternatives
+    },
+    [[]]
+  )
 
 /** Whether anything in there can match a given string in more than one way. */
 const repeats = (atoms) =>
