@@ -5,11 +5,16 @@
  * one this repo already knows about and is tracking; anything else at high or
  * critical is new, and new is the only thing worth stopping a build for.
  *
- * Why not just `npm audit --audit-level=high`, which is one line: it exits 1
- * on the seven advisories the production tree carries today, so it would be
- * red on the commit that added it and red on every commit after, which is the
- * same as having no check at all. The list below is what makes it green now
- * and red the day something arrives.
+ * Why not just `npm audit --audit-level=high`, which is one line: when
+ * this check was written it exited 1 on the eight advisories the
+ * production tree carried then, so it would have been red from the commit
+ * that added it and red on every commit after. That is no longer the
+ * reason it is here. #265 and #267 between them cleared every high, and
+ * the four that remain are all moderate, so the one-liner would pass
+ * today. What it still cannot do is the other half of this script: going
+ * red when an entry below stops being reported, which is what keeps an
+ * accepted advisory from outliving its fix, and what made both of those
+ * clean-ups land as clean-ups rather than as a list nobody revisited.
  *
  * Why `--omit=dev`: `netlify-cli` is a few thousand packages of build tooling
  * and it accounts for 83 of the 118 advisories GitHub reports on this repo,
@@ -27,9 +32,6 @@
 
 /** Package name -> why an advisory against it does not stop the build today. */
 const ACCEPTED = {
-  'http-cache-semantics': 'Under got, under node-themoviedb. #182.',
-  'js-yaml': 'Under gray-matter, which is Eleventy\'s front matter. Build-time only. #182.',
-  got: 'node-themoviedb pins got ^11.8.2. #182.',
   uuid:
     'Under better-queue, under apicalypse, under igdb-api-node. This ' +
     'entry used to say node-themoviedb, which has never depended on ' +
