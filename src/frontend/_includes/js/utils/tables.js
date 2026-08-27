@@ -1,4 +1,4 @@
-const { html, escapeHtml, toSafeUrl } = Utils
+const { html, toSafeUrl } = Utils
 
 const initTable = (selector, data, settings) =>
   $(selector).bootstrapTable({ ...settings, data })
@@ -54,28 +54,31 @@ const includeReviewIn = (detail) => {
 const detailFormatter = (_, row) => {
   const anchorId = `entry-${row.dbRef}`
   // Same treatment as the cover in `titleFormatter`: the url is metadata, so
-  // its scheme is checked before it is allowed near a `src` and it is escaped
-  // before it is allowed near an attribute.
+  // its scheme is checked before it is allowed near a `src`. The escaping is
+  // the tag function's now, here and on every attribute below.
   const coverUrl = toSafeUrl(row.commonMetadata.imageUrl)
   const cover =
     coverUrl
-      ? `<img src="${escapeHtml(coverUrl)}" class="review-cover" style="float:right;">`
+      ? html`<img src="${coverUrl}" class="review-cover" style="float:right;">`
       : ''
 
   const type = Conversions.apiTypeToType[row.commonMetadata.entryType]
 
   // The panel names the entry rather than carrying a script that fetches it;
   // `includeReviewIn` above is what reads these back, off the expand event.
-  return html`
+  //
+  // `String` because bootstrap-table inserts a detail row's markup itself,
+  // exactly as it does a cell's.
+  return String(html`
     <div class="review">
       <p>
-        <b><a href="#${escapeHtml(anchorId)}"><i class="fas fa-link"></i></a> Comments:</b>
+        <b><a href="#${anchorId}"><i class="fas fa-link"></i></a> Comments:</b>
           ${cover}
-          <div id="review-${escapeHtml(row.dbRef)}" data-review-type="${escapeHtml(type)}" data-review-ref="${escapeHtml(row.dbRef)}">
+          <div id="review-${row.dbRef}" data-review-type="${type}" data-review-ref="${row.dbRef}">
           </div>
         </p>
     </div>
-  `
+  `)
 }
 
 const statuses = ['InProgress', 'Completed', 'Dropped', 'Planned']

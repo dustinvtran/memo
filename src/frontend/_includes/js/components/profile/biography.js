@@ -1,18 +1,23 @@
 const { getUserName, setBio } = Netlify
-const { html, css, escapeHtml } = Utils
+const { html, css, raw, escapeHtml } = Utils
 const { initComponent, setContent } = Components
 const { Button, showNotification } = Components.UI
 const { errorMessage } = Http
 
 const Biography = (userdata) => initComponent({
   content: ({ include }) => html`
-    <h2 id="biography-heading">About ${escapeHtml(userdata.username)}</h2>
+    <h2 id="biography-heading">About ${userdata.username}</h2>
     <div id="biography-content">
-      ${DOMPurify.sanitize(
-        marked.parse(
-          userdata.biography ?? `*${escapeHtml(userdata.username)} has not written anything yet!*`
-        )
-      )}
+      ${/* Markdown, and `raw` is what says so: the sanitiser is the boundary
+            here, not the tag function, which cannot tell a heading the author
+            wrote from one they were sent. The `escapeHtml` inside it stays —
+            that one escapes into markdown *source*, before `marked` reads it,
+            which is a different job. */
+        raw(DOMPurify.sanitize(
+          marked.parse(
+            userdata.biography ?? `*${escapeHtml(userdata.username)} has not written anything yet!*`
+          )
+        ))}
     </div>
     <hr>
   `,
@@ -43,7 +48,7 @@ Components.Profile.Biography = Biography
 
 const BiographyInput = (currentBio) => initComponent({
   content: ({ include }) => html`
-    <textarea id="biography-input">${escapeHtml(currentBio ?? '')}</textarea><br>
+    <textarea id="biography-input">${currentBio ?? ''}</textarea><br>
     ${include(Button({
       label: "Save",
       // TODO: the style is duplicated with add entry button, deduplicate
@@ -67,7 +72,7 @@ const BiographyInput = (currentBio) => initComponent({
       onClick: () => setBio($('#biography-input').val())
         .map(() => location.reload())
         .mapErr((err) =>
-          showNotification(`Error saving biography: ${escapeHtml(errorMessage(err))}`)
+          showNotification(`Error saving biography: ${errorMessage(err)}`)
         )
     }))}
   `,

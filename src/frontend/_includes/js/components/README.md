@@ -96,6 +96,38 @@ The magic of the `include` function is that if your child component
 contains an initializer, it will automatically be added to the
 parent component's initializer.
 
+## `html` escapes, and that is the whole of the rule
+
+`Utils.html` is a real tag function, not a no-op. It is handed the literal
+fragments and the interpolated values separately, so it knows which of the two
+you wrote, and it escapes every value. `${username}` above is therefore safe
+whatever the username turns out to be, and there is nothing to remember.
+
+What it returns is markup rather than a string, and that is what makes
+composition work: an interpolated value that is already markup — another
+`html` template, or an `include(...)` — passes through untouched, while
+everything else is text. So a component can be built out of components without
+anyone annotating anything.
+
+Three things follow, and they are the only three:
+
+- **Don't `.join('')` an array of templates.** `${rows.map(Row)}` already
+  concatenates. Joining first flattens the markup back into a string, which
+  the parent then escapes — the tags come out visible on the page.
+- **Coerce with `String(...)` at a boundary that wants a string.** jQuery's
+  `.html()`, `.append()`, `.before()` and `.after()` all check for one, and so
+  does bootstrap-table for what a `formatter` or a `detailFormatter` returns.
+  `setContent` and `appendContent` do this for you.
+- **`Utils.raw(...)` is for markup that came from somewhere else**, which here
+  means the output of `DOMPurify.sanitize`. There are three call sites and
+  there should not be a fourth: anything else reaching for it is a template
+  that should have been an `html` one.
+
+`Utils.css` is still a no-op, deliberately — escaping a stylesheet would
+corrupt it. And `Utils.toSafeUrl` is still needed on every `href` and `src`,
+because escaping says nothing about a scheme: `javascript:alert(1)` contains
+no character to escape and still runs when clicked.
+
 Last piece of advice. If `username` happens to be inside a promise
 (for example if you have to fetch it from the network), I wrote
 a helper to use this data declaratively (rather than manually

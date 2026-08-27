@@ -19,7 +19,6 @@ const PersonalFields = (data, type) => {
                     ${statusToTitle(type, status)}
                   </option>
                 `)
-                .join('')
             }
           </select>
         </div>
@@ -33,7 +32,6 @@ const PersonalFields = (data, type) => {
                     ${num}
                   </option>
                 `)
-                .join('')
             }
           </select>
         </div>

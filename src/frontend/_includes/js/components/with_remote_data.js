@@ -1,5 +1,5 @@
 const { initComponent, setContent, Div } = Components
-const { html, css, escapeHtml } = Utils
+const { html, css } = Utils
 const { errorMessage } = Http
 
 /**
@@ -31,7 +31,7 @@ Components.WithRemoteData = WithRemoteData
 ///////////////////////////////////////////////////////////////////////////////
 
 /** What a failed request draws unless the caller has something better. */
-const RemoteFailure = (err) => Div(`Error: ${escapeHtml(errorMessage(err))}`)
+const RemoteFailure = (err) => Div(`Error: ${errorMessage(err)}`)
 
 /* Published as well as defaulted to, so that a caller with one failure of its
    own to handle has somewhere to send all the rest. Below the definition

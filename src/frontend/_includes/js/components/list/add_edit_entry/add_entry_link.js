@@ -1,4 +1,4 @@
-const { html, css, escapeHtml } = Utils
+const { html, css } = Utils
 const { initComponent, setContent, WithRemoteData } = Components
 const { Modal, InputWithAction, showNotification, Button } = Components.UI
 const { searchWorks } = Netlify
@@ -55,7 +55,7 @@ const AddEntryModal = (type) => initComponent({
             .map((results) =>
               setContent('#search-results', SearchResults(type, results))
             )
-            .mapErr((err) => showNotification(escapeHtml(errorMessage(err))))
+            .mapErr((err) => showNotification(errorMessage(err)))
         }
       }))}
       ${include(Button({

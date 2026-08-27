@@ -1,4 +1,4 @@
-const { html, css, escapeHtml, waitForEl } = Utils
+const { html, css, waitForEl } = Utils
 const { col, initTable, detailFormatter, includeReviewIn, allColumns, statuses, entryTypeToFullColumns, editColumn, filmStatuses, searchSettings } = Tables
 const { typeToTitle, statusToTitle } = Conversions
 const { initComponent, WithRemoteData, appendContent, Nothing } = Components
@@ -108,9 +108,10 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
           .parent()
           .parent()
           .parent()
-          .before(html`
+          // `String`: jQuery's `.before()` wants a string of markup.
+          .before(String(html`
             <div id="click-to-see-comments">Click here to<br>read comments! <i class="fas fa-location-arrow" style="opacity:.7;"></i></div>
-          `)
+          `))
       }, 200)
     })
   },
@@ -150,7 +151,7 @@ Components.List.List = List
 const ListPageHeader = (title, username) => initComponent({
   content: () => html`
     <div class="row">
-      <h1><a href="/profile/${escapeHtml(encodeURIComponent(username))}"><i class="fa fa-home"></i></a> ${escapeHtml(title)}</h1>
+      <h1><a href="/profile/${encodeURIComponent(username)}"><i class="fa fa-home"></i></a> ${title}</h1>
     </div>
     <hr>
   `
@@ -158,10 +159,10 @@ const ListPageHeader = (title, username) => initComponent({
 
 const SubLists = (entryType, isOwner, data) => initComponent({
   content: ({ include }) => html`
-    ${(entryType === 'films' ? filmStatuses : statuses)
-      .map((status) => include(SubList(status, entryType, isOwner, data)))
-      .join('')
-    }
+    ${include(
+      (entryType === 'films' ? filmStatuses : statuses)
+        .map((status) => SubList(status, entryType, isOwner, data))
+    )}
     <div id="global-stats">
       <hr>
       ${toStats(data.filter((e) => e.status !== 'Planned'), entryType)}
@@ -311,7 +312,9 @@ const onSearched = (selector, text) => {
 }
 
 const toStats = (entries, entryType) => {
-  const icon = ' <i class="fas fa-wave-square"></i> '
+  // Markup, so it is written as an `html` literal rather than a string: the
+  // two templates below interpolate it, and an interpolated string is text.
+  const icon = html` <i class="fas fa-wave-square"></i> `
   const totalEpsSeen = entries
     .map(e => e.progress ?? 0)
     .reduce((a,b) => a + b, 0)
@@ -335,7 +338,7 @@ const toStats = (entries, entryType) => {
         .reduce((mins, e) => mins + (get(e, 'duration') ?? 0), 0)
       ) / 60 / 24
 
-  return `Total entries: ${entries.length}${entryType === 'tv' ? ` ${icon} Episodes seen: ${totalEpsSeen}` : ''} ${icon} Days spent: ${days.toFixed(2)} ${icon} Mean score: ${meanScore.toFixed(2)}`
+  return html`Total entries: ${entries.length}${entryType === 'tv' ? html` ${icon} Episodes seen: ${totalEpsSeen}` : ''} ${icon} Days spent: ${days.toFixed(2)} ${icon} Mean score: ${meanScore.toFixed(2)}`
 }
 
 /**
