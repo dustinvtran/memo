@@ -30,6 +30,10 @@ const context = vm.createContext({
     timeAgo: () => "",
     dateTime: () => "",
   },
+  // The charts are drawn by `drawChart`, which is not what this file is
+  // about — but the script it fetches them with is destructured at load time,
+  // the way everything above is.
+  LoadScript: { loadApexCharts: () => {} },
   Components: {
     initComponent: () => {},
     WithRemoteData: () => {},

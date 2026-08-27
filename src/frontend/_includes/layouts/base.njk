@@ -61,11 +61,19 @@
        signature is unchanged across the major — 3.0 dropped IE, which is the
        whole of what it broke. #}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.14/purify.min.js" integrity="sha384-46dPGH1XlTmj7bc50bqLjTdORXs/3EP2QpA/6EWbelYWOY9VGp+87RT61S3Mcslb" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    {# Only the profile page's charts and the entry form's date fields, both
-       of which are drawn long after the page is. Both urls used to name no
-       version at all, so the code the site ran changed whenever either
-       package published. These are the versions that resolved to. #}
-    <script defer src="https://cdn.jsdelivr.net/npm/apexcharts@6.8.0" integrity="sha384-nLD6rKRJ1yssfWSVXJJaNpF3g7f2F5/5qnJ6rRBt/KjLrJ5H/ch4uI80FwqxknkC" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    {# The entry form's two date fields, drawn long after the page is. The
+       url used to name no version at all, so the code the site ran changed
+       whenever the package published; this is the version that resolved to.
+
+       ApexCharts was here on the same reasoning and is not any more. It is
+       862,713 bytes — more than every render-blocking file above it put
+       together — for four histograms on `/profile/:name`, and this layout is
+       every page: `_redirects` rewrites every url to this one document, so
+       every list and every entry form downloaded all of it to draw nothing
+       with it. `defer` keeps a file from blocking the parser and does nothing
+       whatever about fetching it. The profile asks for it when it mounts now,
+       and `js/utils/load_script.js` is where the url, the hash and the reason
+       live. #269. #}
     <script defer src="https://cdn.jsdelivr.net/npm/litepicker@2.0.12/dist/litepicker.js" integrity="sha384-TwHJTusQtbcoEHJcrF5aeo0MHBgj8lt8onFRrG7wKk8Q/LG9EphkEsqNRiVWzIP9" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     {# 1.11.1 was from 2014. 1.12.2 is the one release on the whole 1.x
        line where CVE-2015-9251 is fixed — a cross-origin ajax response typed
@@ -134,8 +142,8 @@
 
        The CDN scripts above are what the bundle reaches for while it runs.
        They stay ahead of it either way: the ones without `defer` run as the
-       parser reaches them, and the two with it are earlier in the document, so
-       they run first. #}
+       parser reaches them, and the one with it is earlier in the document, so
+       it runs first. #}
     <script defer src="{{ assets.js.url }}"></script>
   </head>
   <body>
