@@ -19,7 +19,6 @@ const crypto = require("node:crypto");
  * it creates the `Components` object that every component below assigns into.
  */
 const BUNDLED_FILES = [
-  "js/old_main.js",
   "js/packages/neverthrow.js",
   "js/utils/general.js",
   "js/utils/nullable.js",
@@ -32,7 +31,9 @@ const BUNDLED_FILES = [
   "js/utils/entry_form_io.js",
   "js/utils/review_template.js",
   "js/utils/entry_search.js",
+  "js/utils/table_model.js",
   "js/utils/columns.js",
+  "js/utils/table_view.js",
   "js/utils/tables.js",
   "js/components/index.js",
   "js/components/common.js",

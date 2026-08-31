@@ -22,8 +22,6 @@
        for the collapsible arrows; that now names this file's family. #}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="sha384-nRgPTkuX86pH8yjPJUAFuASXQSSl2/bBUiNV47vSYpKFxHJhbcrGnmlYpYJMeD7a" crossorigin="anonymous" referrerpolicy="no-referrer">
 
-    {# 1.21.2, matching the bootstrap-table script below. #}
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.21.2/bootstrap-table.min.css" integrity="sha384-rOuL3fofnnH7GPPPb2f67WUfBKYs133VKgf8XdxjPIlS5/YgJf/dly+Rs2KAZ/24" crossorigin="anonymous" referrerpolicy="no-referrer">
     <link rel="icon" href="/img/favicon.ico" type="image/x-icon"/>
     {# `_includes/css/main.css`, emitted at this url by `css/main.njk`. #126
        dropped a <link> here because nothing emitted the file and every page
@@ -40,13 +38,25 @@
        reaches for while it is being parsed: jQuery and the libraries the first
        render calls into.
 
-       Two of these are gone rather than deferred. Ramda was 44,743 bytes for
-       four calls — three `R.equals` and one `R.isNil` — and axios 65,099 for
-       the two in `utils/http.js`; `utils/deep_equal.js` and `fetch` are what
-       do that work now, so 110 KB stopped blocking the first paint of every
-       page on the site. #269. The `ramda` in `package.json` is a different
+       Three of these are gone rather than deferred. Ramda was 44,743 bytes
+       for four calls — three `R.equals` and one `R.isNil` — and axios 65,099
+       for the two in `utils/http.js`; `utils/deep_equal.js` and `fetch` are
+       what do that work now, so 110 KB stopped blocking the first paint of
+       every page on the site. The `ramda` in `package.json` is a different
        thing and stays: `src/api` imports it in four files and nothing here
-       loads that copy. #}
+       loads that copy.
+
+       bootstrap-table was the third, at 145,282 bytes of js and css to draw
+       every list on the site. What it actually supplied was the table markup,
+       sort-on-header-click, the Columns dropdown, expand/collapse of a detail
+       row, and a pagination nothing used; the search, the columns and every
+       cell formatter were already ours. `js/utils/table_model.js` decides those
+       four things and `js/utils/table_view.js` draws them. It is also what
+       unblocks the next two steps. bootstrap-table is a jQuery plugin and has
+       no jQuery-free build at any version it has ever published, so it was the
+       one thing here that jQuery could not have been removed from underneath;
+       and it was the only caller `bootstrap.min.js` had, for the Columns
+       dropdown. The site's own 113 jQuery calls are step 5. #269. #}
     <!-- JavaScript -->
     {# DOMPurify is the only thing between another user's markdown and this
        page's DOM, and this page holds their reader's `nf_jwt` — so it is the
@@ -98,20 +108,6 @@
        this site writes itself to carry an attacker's `data-*`. Bootstrap 3 to
        5 renames every class in every template and is its own change. #254. #}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.4.1/js/bootstrap.min.js" integrity="sha384-aJ21OjlMXNL5UyIl/XNwTMqvzeRMZH2w8c5cRVpzpU8Y5bApTppSuUkhZXN0VxHd" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    {# 1.21.2 clears both of 1.12.1's — the moderate is fixed in 1.20.2, the
-       low in 1.19.1 — and is the last release still declaring
-       `jquery: "1.9.1 - 3"`, where 1.21.3 moves to `jquery: "3"`. Bootstrap 3
-       theming survives the entire 1.x line, so it is the jQuery pin above and
-       not the Bootstrap one that sets this ceiling, whatever the pairing in
-       the stylesheet comment suggests.
-
-       The bump changes `customSearch`, which is why `utils/tables.js` moves
-       with it: 1.12 looked the option up as `window[name]`, called it with the
-       table as `this` and one argument, and read the surviving rows back off
-       `this.data`. 1.21 calls it with `(data, searchText, filterColumns)` and
-       `this` set to the options object, and assigns `this.data` from what it
-       returns. #}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.21.2/bootstrap-table.min.js" integrity="sha384-8at6Iy2orlmk4xawCuXCOocKf2kQnZakSdUUy/uZVpllyY9QSUgo5JWNlMAugFBu" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     {# 4.0.2 carried two high ReDoS advisories, both fixed in 4.0.10 — which
        cdnjs lists but has no files for, so the 4.x line here stops at 4.3.0
        and the choice was that or the current major. This is the current one.

@@ -1,8 +1,5 @@
 const { html, toSafeUrl } = Utils
 
-const initTable = (selector, data, settings) =>
-  $(selector).bootstrapTable({ ...settings, data })
-
 const profileColumns = (status) => [
   Columns.englishTitleAndLastUpdated(),
   Columns.profileScores(status),
@@ -12,9 +9,9 @@ const profileColumns = (status) => [
 /**
  * The columns a full list table shows, or undefined for a type there is no
  * such table for — which is what the caller in `components/list/list.js` has
- * always been handed for an unknown type, and bootstrap-table has always
- * thrown on. The lists themselves live in `utils/conversions.js` now, with the
- * rest of what the frontend knows about a work type. See #221.
+ * always been handed for an unknown type. The lists themselves live in
+ * `utils/conversions.js` now, with the rest of what the frontend knows about a
+ * work type. See #221.
  */
 const entryTypeToFullColumns = (entryType, status) =>
   Conversions.byType(entryType)?.columns(status)
@@ -29,8 +26,8 @@ const entryTypeToFullColumns = (entryType, status) =>
  * `_headers` refuses it for is `'unsafe-eval'`, which it grants no more than
  * `'unsafe-inline'`. Enforced, that is an `EvalError` and an empty panel on
  * every row of every list, for every visitor (#219).
- * `components/list/list.js` calls this from one handler bound to `document`
- * instead.
+ * `utils/table_view.js` calls this from the handler on the table's container
+ * once the panel is in the DOM.
  *
  * The element rather than a `#review-${dbRef}` selector: the handler has it in
  * hand, and an id built out of stored data is a thing that would have to be
@@ -65,11 +62,12 @@ const detailFormatter = (_, row) => {
   const type = Conversions.apiTypeToType[row.commonMetadata.entryType]
 
   // The panel names the entry rather than carrying a script that fetches it;
-  // `includeReviewIn` above is what reads these back, off the expand event.
+  // `includeReviewIn` above is what reads these back, off the expand.
   //
-  // `String` because bootstrap-table inserts a detail row's markup itself,
-  // exactly as it does a cell's.
-  return String(html`
+  // Markup rather than a string: `utils/table_view.js` interpolates this into
+  // the detail row's `html` template, which escapes anything that is not
+  // already markup.
+  return html`
     <div class="review">
       <p>
         <b><a href="#${anchorId}"><i class="fas fa-link"></i></a> Comments:</b>
@@ -78,7 +76,7 @@ const detailFormatter = (_, row) => {
           </div>
         </p>
     </div>
-  `)
+  `
 }
 
 const statuses = ['InProgress', 'Completed', 'Dropped', 'Planned']
@@ -86,78 +84,22 @@ const statuses = ['InProgress', 'Completed', 'Dropped', 'Planned']
 const filmStatuses = ['Completed', 'Planned']
 
 /**
- * The search itself, called once per keystroke and again whenever a column is
- * shown or hidden.
- *
- * bootstrap-table 1.12 took `customSearch` as the *name of a global function*
- * and called `window[options.customSearch]` with the table as `this` and the
- * search text as its one argument, expecting the surviving rows to be left in
- * `this.data`. 1.21 takes the function itself, calls it with
- * `(data, searchText, filterColumns)` and `this` set to the *options* object,
- * and assigns `this.data` from the return value. All three moved at once, so
- * the old shape does not degrade into a worse search — it hands `searchText`
- * an array of rows and then blanks the table by returning `undefined`.
- *
- * `this.columns` on the options is the nested `[[column, ...]]` that
- * `initColumns` rewrites it into, one inner array per header row, rather than
- * the flat list of the same objects the table itself keeps. The objects are
- * shared, so `visible` is still live as the column dropdown toggles it; only
- * the shape needs flattening.
- */
-const searchListRows = function (data, searchText) {
-  const rows = EntrySearch.filterEntries(
-    data,
-    searchText,
-    freeTextFields(this.columns.flat())
-  )
-  // A pattern that backtracks is abandoned rather than run to the end, and an
-  // empty list nobody explains looks exactly like a search that found nothing
-  // (#228).
-  if (this.searchState) {
-    this.searchState.abandoned = EntrySearch.wasAbandoned(rows)
-  }
-  return rows
-}
-
-/**
  * The settings that put `utils/entry_search.js` in charge of a table's search
- * box, for a table that wants one. The placeholder is where the field syntax
- * is advertised: a query language nothing mentions is a query language nobody
- * types.
+ * box, for a table that wants one.
+ *
+ * There is nothing left to wire: `utils/table_model.js` runs the filter itself,
+ * over the fields of the columns the table is showing, and tells the renderer
+ * whether the pass was abandoned (#228). What is left here is the two lines a
+ * caller has to opt into.
  */
-const searchSettings = () => {
-  // The search and the empty-list message happen at different moments, so the
-  // one hands the other a box rather than a value. bootstrap-table copies its
-  // options shallowly, which is what makes `this.options.searchState` below
-  // this same object.
-  const searchState = { abandoned: false }
-  return {
-    search: true,
-    customSearch: searchListRows,
-    formatSearch: () => 'Search, e.g. director:nolan',
-    searchState,
-    formatNoMatches: () =>
-      searchState.abandoned
-        ? 'That search was too slow to finish, so it was stopped'
-        : 'No matching records found',
-  }
-}
-
-/**
- * A bare term is tried against the columns the table is showing. Hidden ones
- * are what made `nolan` return films no Nolan worked on — the cast column is
- * hidden by default — and a row that matches on something the reader cannot
- * see is indistinguishable from a bug. The column dropdown can bring one back,
- * and bootstrap-table re-runs the search when it does.
- */
-const freeTextFields = (columns) =>
-  columns
-    .filter((column) => column.visible && column.searchable !== false)
-    .map((column) => EntrySearch.fieldFor(column.field))
-    .filter((field) => field !== undefined)
+const searchSettings = () => ({
+  search: true,
+  // Every sublist opens on whatever the url asked for, which is what makes a
+  // searched list a thing you can link someone.
+  searchText: Http.getSearchFromUrl(),
+})
 
 Tables = {
-  initTable,
   detailFormatter,
   includeReviewIn,
   profileColumns,

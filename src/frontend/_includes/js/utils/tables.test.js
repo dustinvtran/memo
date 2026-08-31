@@ -22,11 +22,11 @@ const vm = require("node:vm");
 const source = fs.readFileSync(path.join(__dirname, "tables.js"), "utf8");
 const generalSource = fs.readFileSync(path.join(__dirname, "general.js"), "utf8");
 
-// The real `Utils`, because `escapeHtml` is what the attributes below are
-// being asked about and a stand-in for it would be testing the stand-in. No
-// `window`: the file used to hang bootstrap-table's `customSearch` off it,
-// because 1.12 resolved that option as a global name, and 1.21 takes the
-// function itself.
+// The real `Utils`, because the escaping is what the attributes below are
+// being asked about and a stand-in for it would be testing the stand-in.
+// `detailFormatter` answers with markup rather than a string now — the
+// renderer interpolates it into an `html` template — so each assertion coerces
+// it at the boundary the way `components/README.md` describes.
 const context = vm.createContext({
   URL,
   console,
@@ -48,7 +48,7 @@ const row = (dbRef = "abc") => ({
 });
 
 test("the expanded row names its entry rather than carrying a script", () => {
-  const rendered = detailFormatter(null, row());
+  const rendered = String(detailFormatter(null, row()));
 
   assert.ok(rendered.includes('data-review-ref="abc"'));
   assert.ok(rendered.includes('data-review-type="games"'));
@@ -57,7 +57,7 @@ test("the expanded row names its entry rather than carrying a script", () => {
 });
 
 test("an id in the panel is escaped like any other attribute value", () => {
-  const rendered = detailFormatter(null, row(`a"b'c`));
+  const rendered = String(detailFormatter(null, row(`a"b'c`)));
 
   assert.ok(rendered.includes(`data-review-ref="a&quot;b&#39;c"`));
 });
@@ -112,7 +112,7 @@ test("the attribute the handler looks for is the one the markup writes", () => {
   includeReviewIn({});
 
   const attribute = selector.replace(/[[\]]/g, "");
-  assert.ok(detailFormatter(null, row()).includes(`${attribute}="abc"`));
+  assert.ok(String(detailFormatter(null, row())).includes(`${attribute}="abc"`));
 });
 
 test("a detail view with no panel in it asks for nothing", () => {

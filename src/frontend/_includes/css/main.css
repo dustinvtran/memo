@@ -162,3 +162,123 @@ textarea {
 button {
   box-shadow: unset;
 }
+
+/* The list tables, drawn by `js/utils/table_view.js`.
+ *
+ * bootstrap-table's stylesheet used to supply all of this. What is here is what
+ * the site actually used out of it: a scrolling container, a toolbar, a Columns
+ * menu and a sort indicator on the header. The table element itself still
+ * carries Bootstrap 3's `.table .table-bordered .table-hover`, exactly as it
+ * did, so the rows and borders are unchanged; #269 step 6 is what replaces
+ * those.
+*/
+.entry-table table {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.entry-table-scroll {
+  overflow-x: auto;
+}
+
+.entry-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.entry-table-search {
+  width: 200px;
+  max-width: 100%;
+}
+
+/* A `<details>`, so the menu opens and closes without a line of JavaScript --
+ * which is the point, because Bootstrap's dropdown plugin was the only thing
+ * on this page that ever called into `bootstrap.min.js`. The summary is styled
+ * like the site's own inputs rather than like a `.btn`, for the same reason.
+*/
+.entry-table-columns {
+  position: relative;
+}
+
+.entry-table-columns > summary {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  box-shadow: 0px 0px 3px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.entry-table-columns > summary::-webkit-details-marker {
+  display: none;
+}
+
+.entry-table-columns-menu {
+  position: absolute;
+  right: 0;
+  z-index: 1001;
+  min-width: 160px;
+  max-height: 300px;
+  overflow: auto;
+  padding: 5px 0;
+  text-align: left;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.175);
+}
+
+.entry-table-columns-menu label {
+  display: block;
+  margin: 0;
+  padding: 3px 20px;
+  font-weight: normal;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.entry-table-columns-menu label:hover {
+  background: #f5f5f5;
+}
+
+.entry-table th.sortable {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* The arrows are Font Awesome's rather than the three base64 PNGs
+ * bootstrap-table shipped for them. The family is already loaded for every
+ * icon on the page, and weight 900 picks the solid face these glyphs are in --
+ * the same pair `.collapsible` above names.
+*/
+.entry-table th.sortable::after {
+  content: "\f0dc"; /* sort */
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  margin-left: 6px;
+  opacity: 0.3;
+}
+
+.entry-table th.sortable.asc::after {
+  content: "\f0de"; /* sort-up */
+  opacity: 0.8;
+}
+
+.entry-table th.sortable.desc::after {
+  content: "\f0dd"; /* sort-down */
+  opacity: 0.8;
+}
+
+.entry-table .entry-table-caret {
+  width: 30px;
+}
+
+.entry-table .no-records-found td {
+  text-align: center;
+}

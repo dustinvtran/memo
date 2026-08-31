@@ -1,5 +1,6 @@
 const { html, css, waitForEl } = Utils
-const { col, initTable, detailFormatter, includeReviewIn, allColumns, statuses, entryTypeToFullColumns, editColumn, filmStatuses, searchSettings } = Tables
+const { detailFormatter, includeReviewIn, statuses, entryTypeToFullColumns, filmStatuses, searchSettings } = Tables
+const { initTable } = TableView
 const { typeToTitle, statusToTitle } = Conversions
 const { initComponent, WithRemoteData, appendContent, Nothing } = Components
 const { Modal_ } = Components.UI
@@ -49,7 +50,7 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
     // list drawn before it.
     Rows.byRef = {}
 
-    // And for the same reason: the selectors a render registers name that
+    // And for the same reason: the handles a render registers belong to that
     // render's tables, so a second render would search the first one's.
     searchedTables.length = 0
 
@@ -65,28 +66,26 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
       }))
     }
 
-    // Both of these hang off `document` rather than off the row, which is what
-    // lets `script-src` in `_headers` keep refusing `'unsafe-inline'` and
-    // `'unsafe-eval'` (#219): the edit icon used to carry an `onclick`, and
-    // every expanded row an inline `<script>` that jQuery ran through `eval`.
-    // Delegation is also the answer to what the inline handler was for —
-    // bootstrap-table destroys a row's node and rebuilds it when the displayed
-    // columns change, and neither of these is bound to a node it can destroy.
+    // This hangs off `document` rather than off the button, which is what lets
+    // `script-src` in `_headers` keep refusing `'unsafe-inline'` and
+    // `'unsafe-eval'` (#219): the edit icon used to carry an `onclick`.
+    // Delegation is also the answer to what the inline handler was for — a
+    // row's node is destroyed and rebuilt on every search, sort and column
+    // toggle, and a handler on `document` never notices that.
     //
-    // The comment panel listens for bootstrap-table's own event rather than
-    // for a click on `.detail-icon`: the library's handler on that icon ends in
-    // `return false`, which in jQuery is `stopPropagation` too, so the click
-    // never reaches `document`. `expand-row.bs.table` is triggered on the table
-    // and bubbles, it arrives after the detail row is in the DOM, and it also
-    // covers a row opened by the url anchor in `list/index.js` rather than by
-    // hand.
+    // The comment panel is the other half of #219 and is no longer bound here.
+    // It used to listen for `expand-row.bs.table` rather than for a click on
+    // `.detail-icon`, because bootstrap-table's own handler on that icon ended
+    // in `return false` — `stopPropagation` too, in jQuery — so the click never
+    // reached `document`. `utils/table_view.js` owns the caret now and calls
+    // `includeReviewIn` itself once the panel is in the DOM, which also covers
+    // a row opened by the url anchor in `list/index.js` rather than by hand.
     //
     // `off` first because this initializer runs per render, and a second copy
     // of the edit handler would open two modals on one click.
     $(document)
-      .off('click.entryRows expand-row.bs.table')
+      .off('click.entryRows')
       .on('click.entryRows', '.edit-button', (e) => editEntry(e.currentTarget.dataset.ref))
-      .on('expand-row.bs.table', (_event, _index, _row, detail) => includeReviewIn(detail))
 
     // Show helpful image next to the first open-review-icon in the DOM. A
     // list with no rows in it never grows one, which is what the wait gives
@@ -100,18 +99,13 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
       if (!el || document.querySelector('#click-to-see-comments')) return
 
       setTimeout(() => {
-        $(el)
-          .parent()
-          .parent()
-          .parent()
-          .parent()
-          .parent()
-          .parent()
-          .parent()
-          // `String`: jQuery's `.before()` wants a string of markup.
-          .before(String(html`
-            <div id="click-to-see-comments">Click here to<br>read comments! <i class="fas fa-location-arrow" style="opacity:.7;"></i></div>
-          `))
+        // The table's own container, rather than the seven `.parent()` hops it
+        // took to climb out of bootstrap-table's wrappers. It sits directly
+        // under the sublist's heading, which is where the hint goes and what
+        // the collapse handler below expects to find there.
+        el.closest('.entry-table')?.insertAdjacentHTML('beforebegin', String(html`
+          <div id="click-to-see-comments">Click here to<br>read comments! <i class="fas fa-location-arrow" style="opacity:.7;"></i></div>
+        `))
       }, 200)
     })
   },
@@ -185,7 +179,7 @@ const SubList = (status, entryType, isOwner, data) => initComponent({
     <div class="row">
       <div class="col-md-10 col-md-offset-1 sublist-wrapper">
         <h2 id="${id}-title" class="collapsible sublist-title">${statusToTitle(entryType, status)}</h2>
-        <table id="${id}-list"></table>
+        <div id="${id}-list"></div>
       </div>
     </div>
     <div class="summary-stats">
@@ -230,21 +224,17 @@ const SubList = (status, entryType, isOwner, data) => initComponent({
       }
     }
 
-    .fixed-table-container {
-      overflow-x: auto;
-    }
-
-    .fixed-table-header, .fixed-table-body {
+    /* A full list is wider than a phone, so it scrolls sideways inside the
+       sublist rather than stretching the page. The generic half of that —
+       the scrolling container itself — is in main.css; the width below is what
+       makes a narrow screen scroll at all, and it belongs to a list table
+       rather than to the profile's three-column summaries. */
+    .sublist-wrapper .entry-table table {
       min-width: 550px;
     }
 
     @media (min-width: 615px) {
-      div.fixed-table-body:hover {
-        overflow-y: visible;
-        overflow-x: visible;
-      }
-
-      div.fixed-table-container:hover {
+      .sublist-wrapper .entry-table-scroll:hover {
         overflow-x: visible;
         overflow-y: visible;
       }
@@ -269,18 +259,12 @@ const initFullTable = (selector, data, entryType, isOwner, status) => {
   // one registry serves every table on it, and `List` empties it per render.
   data.forEach((row) => { Rows.byRef[row.dbRef] = row })
 
-  searchedTables.push(selector)
-
-  initTable(selector, data, {
+  const table = initTable(selector, data, {
     detailView: true,
     detailFormatter,
-    icons: 'icons',
-    iconsPrefix: 'fa',
+    onExpandRow: includeReviewIn,
     ...searchSettings(),
-    // Every sublist opens on whatever the url asked for, which is what makes
-    // a searched list a thing you can link someone.
-    searchText: Http.getSearchFromUrl(),
-    onSearch: (text) => onSearched(selector, text),
+    onSearch: (text) => onSearched(table, text),
     showColumns: true,
     sortName: 'score',
     sortOrder: 'desc',
@@ -289,6 +273,8 @@ const initFullTable = (selector, data, entryType, isOwner, status) => {
       ...(isOwner ? [Columns.edit()] : []),
     ]
   })
+
+  searchedTables.push(table)
 }
 
 /** Every table on the page, in the order they were built. */
@@ -299,16 +285,16 @@ const searchedTables = []
  * box of its own. Searching one and not the others leaves the page in a state
  * no single url can describe — and the url is where the query now lives — so
  * a search in any box is a search in all of them.
- * @type {(selector: string, text: string) => void}
+ *
+ * `setSearch` deliberately does not report the search back out, which is what
+ * stops four tables telling each other about the same keystroke for ever.
+ * @type {(table: object, text: string) => void}
  */
-const onSearched = (selector, text) => {
+const onSearched = (table, text) => {
   Http.setSearchInUrl(text)
   searchedTables
-    .filter((other) => other !== selector)
-    // `resetSearch` comes back through here, but bootstrap-table drops a
-    // search that does not change the text before it fires the event, so the
-    // second lap is where this stops.
-    .forEach((other) => $(other).bootstrapTable('resetSearch', text))
+    .filter((other) => other !== table)
+    .forEach((other) => other.setSearch(text))
 }
 
 const toStats = (entries, entryType) => {
@@ -343,11 +329,11 @@ const toStats = (entries, entryType) => {
 
 /**
  * Alphabetical by title, matching `byStatusThenScoreThenTitle` in
- * `api/utils/export_view.js`. bootstrap-table re-sorts each sublist on score
- * and its sort is stable, so this decides the order within a score — which in
- * the Planned sublist is the whole of it, since the score column there is a
- * preference almost nothing carries. It runs after the overrides are merged so
- * that it sorts on the title the Title column actually shows.
+ * `api/utils/export_view.js`. Each sublist is re-sorted on score and that sort
+ * is stable, so this decides the order within a score — which in the Planned
+ * sublist is the whole of it, since the score column there is a preference
+ * almost nothing carries. It runs after the overrides are merged so that it
+ * sorts on the title the Title column actually shows.
  *
  * Subtracting one title from another, as this used to, is `NaN` for every
  * pair; `sort` reads that as "these two are fine as they are" and leaves the

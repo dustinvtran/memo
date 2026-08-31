@@ -54,7 +54,11 @@ const ListPage = () => initComponent({
       waitForEl(`#${CSS.escape(urlAnchor)}`).then((element) => {
         if (!element) return
 
-        $(element).parent().prev().find('i').trigger('click')
+        // The row's caret, found from the row rather than by counting cells
+        // across from the title — the caret is not always the previous one, and
+        // a column toggle moves the rest. A real click, so it goes through the
+        // same handler in `utils/table_view.js` as a reader's would.
+        element.closest('tr')?.querySelector('a.detail-icon')?.click()
 
         // jump to the element, hacky as fuck
         location.hash = '#__nothing'
