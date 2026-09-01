@@ -1,4 +1,5 @@
 const { html, css } = Utils
+const { onClick } = Dom
 const { initComponent, appendContent } = Components
 
 const Modal = ({ title, content, openButtonHtml, showCloseConfirmationDialog }) => initComponent({
@@ -6,7 +7,7 @@ const Modal = ({ title, content, openButtonHtml, showCloseConfirmationDialog }) 
     <div id="${id}">${openButtonHtml({ include, id })}</div>
   `,
   initializer: ({ id }) => {
-    $(`#${id}`).click(() => {
+    onClick(`#${id}`, () => {
       appendContent('body', Modal_({ title, content, showCloseConfirmationDialog }))
     })
   }
@@ -115,7 +116,7 @@ const Overlay = (parentId, showCloseConfirmationDialog) => initComponent({
     }
   `,
   initializer: () => {
-    $(`#overlay-${parentId}`).click(() => {
+    onClick(`#overlay-${parentId}`, () => {
       closeModal(parentId, showCloseConfirmationDialog)
     })
   }
@@ -138,7 +139,7 @@ const CloseButton = (parentId, showCloseConfirmationDialog) => initComponent({
     }
   `,
   initializer: () => {
-    $(`#cancel-button-${parentId}`).click(() => {
+    onClick(`#cancel-button-${parentId}`, () => {
       closeModal(parentId, showCloseConfirmationDialog)
     })
   }
@@ -149,8 +150,10 @@ const closeModal = (parentId, showCloseConfirmationDialog) => {
     (!showCloseConfirmationDialog?.() ?? true) ||
     (confirm('Are you sure you want to close me? Your changes will not be saved.') == true)
   ) {
-    $(`#td-modal-window-${parentId}`).fadeOut(200)
-    $(`#overlay-${parentId}`).hide()
-    $(`#${parentId}`).remove()
+    // One line, where there were three. The other two were a `fadeOut(200)`
+    // on the window and a `hide()` on the overlay, and neither could ever have
+    // been seen: both of those elements are inside `#${parentId}`, which is
+    // removed in the same tick. The modal has always closed instantly.
+    document.getElementById(parentId)?.remove()
   }
 }

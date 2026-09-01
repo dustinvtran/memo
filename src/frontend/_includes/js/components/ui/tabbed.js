@@ -1,5 +1,6 @@
 const { initComponent, setContent, Div } = Components
 const { html, css } = Utils
+const { els, onClick } = Dom
 
 /**
  * pages = [
@@ -22,11 +23,21 @@ const Tabbed = (title, pages) => initComponent({
     </div>
   `,
   initializer: ({ id }) => {
-    $(`#${id} .tab-title`).click(function() {
-      $(`#${id} .tab-title`).removeClass('tab-active')
-      $(this).addClass('tab-active')
-      $(`#${id} .tab-contents > *`).addClass('tab-hidden')
-      $(`#${id} .tab-contents > *`).eq($(this).data('index')).removeClass('tab-hidden')
+    els(`#${id} .tab-title`).forEach((tab) => {
+      // Looked up per click rather than once, which is what `$(selector)` in
+      // the handler was doing and what keeps this working if a page ever
+      // redraws its own tab bodies.
+      onClick(tab, () => {
+        els(`#${id} .tab-title`).forEach((other) => other.classList.remove('tab-active'))
+        tab.classList.add('tab-active')
+
+        const contents = els(`#${id} .tab-contents > *`)
+        contents.forEach((content) => content.classList.add('tab-hidden'))
+        // `dataset` is strings and this one indexes an array. jQuery's
+        // `.data()` read `data-index="2"` back as the number 2 — the one
+        // conversion of its that is missed here rather than gladly lost.
+        contents[Number(tab.dataset.index)]?.classList.remove('tab-hidden')
+      })
     })
   },
   style: () => css`

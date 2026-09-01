@@ -19,6 +19,7 @@
 const appendedStyles = new Set()
 
 const { html, raw } = Utils
+const { el } = Dom
 
 /** The magic function to create and compose components */
 const initComponent = ({ content, initializer, style }) => {
@@ -51,17 +52,23 @@ const initComponent = ({ content, initializer, style }) => {
 
   // The <style> the component styles below are collected into, created on
   // first use. It is this component system's own tag, named rather than found
-  // with `$('head style')`: litepicker injects a <style> of its own at the top
-  // of <head>, and whichever of the two got there first used to decide where
-  // every component style landed. Appended, so it sits after the stylesheet
-  // <link>s and a component's style wins over main.css and bootstrap.
-  if ($('#component-styles').length === 0) {
-    $('head').append('<style id="component-styles"></style>')
-  }
-  const styleTag = $('#component-styles')
+  // with a `head style` selector: litepicker injects a <style> of its own at
+  // the top of <head>, and whichever of the two got there first used to decide
+  // where every component style landed. Appended, so it sits after the
+  // stylesheet <link>s and a component's style wins over main.css and
+  // bootstrap.
+  const styleTag =
+    document.getElementById('component-styles') ??
+    document.head.appendChild(
+      Object.assign(document.createElement('style'), { id: 'component-styles' })
+    )
 
   // Add the component style to the site if it has not already. The registry
   // below answers that; what the tag already contains is not read back.
+  //
+  // `append` on the element rather than through a markup string: a stylesheet
+  // is not markup, and `>` is the child combinator, which `main.css` and two
+  // component styles write. The native `append` puts the text in as text.
   const componentStyle = style?.({ id })
   if (componentStyle && !appendedStyles.has(componentStyle)) {
     appendedStyles.add(componentStyle)
@@ -88,25 +95,37 @@ const initComponent = ({ content, initializer, style }) => {
   })
 }
 
-/** Imperative way to replace an element inner HTML with a component */
-const setContent = (selector, component) => {
+/**
+ * Imperative way to replace an element inner HTML with a component.
+ *
+ * `target` is a selector or an element: `utils/tables.js` has the comment
+ * panel in hand and passes it, rather than building a selector out of an id
+ * that came from the database. A selector matching nothing still runs the
+ * initializer, which is what `$(selector).html()` on an empty set did.
+ */
+const setContent = (target, component) => {
   const { content, initializer, id } = access(component)
-  // Set the inner HTML to the component's content. `String`, because content
-  // is markup rather than a string now, and jQuery's `.html()` branches on
-  // `typeof value === "string"` — an object goes down the path meant for a
-  // callback and silently does something else.
-  $(selector).html(String(content))
+  // `String`, because `content` is a branded markup object rather than a
+  // string since #272 — `innerHTML` would otherwise stringify it as
+  // "[object Object]" and put that on the page. It is the one coercion the
+  // brand costs, and this is where it belongs: the boundary between the
+  // component system and the DOM.
+  const node = el(target)
+  if (node) node.innerHTML = String(content)
   // Run the component's initializer
   initializer?.()
   return id
 }
 
 /** Imperative way to append a component to element inner HTML*/
-const appendContent = (selector, component) => {
+const appendContent = (target, component) => {
   const { content, initializer, id } = access(component)
-  // Set the inner HTML to the component's content. `String` for the same
-  // reason as `setContent` above.
-  $(selector).append(String(content))
+  // `insertAdjacentHTML` rather than `innerHTML +=`, which would re-parse what
+  // is already there and throw away every listener bound to it — this is how
+  // a modal and a notification are put on <body>. `String` for the same reason
+  // as `setContent` above.
+  const node = el(target)
+  if (node) node.insertAdjacentHTML('beforeend', String(content))
   // Run the component's initializer
   initializer?.()
   return id

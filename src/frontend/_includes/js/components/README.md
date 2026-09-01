@@ -114,10 +114,11 @@ Three things follow, and they are the only three:
 - **Don't `.join('')` an array of templates.** `${rows.map(Row)}` already
   concatenates. Joining first flattens the markup back into a string, which
   the parent then escapes — the tags come out visible on the page.
-- **Coerce with `String(...)` at a boundary that wants a string.** jQuery's
-  `.html()`, `.append()`, `.before()` and `.after()` all check for one, and so
-  do `innerHTML` and `insertAdjacentHTML`. `setContent` and `appendContent` do
-  this for you. A table cell is *not* such a boundary: a column's `formatter`
+- **Coerce with `String(...)` at a boundary that wants a string.**
+  `innerHTML` and `insertAdjacentHTML` both take one, and hand an object to
+  `toString` only by accident of stringification — an unbranded object writes
+  `[object Object]` onto the page rather than failing. `setContent` and
+  `appendContent` do this for you. A table cell is *not* such a boundary: a column's `formatter`
   in `utils/columns.js` returns markup, or returns a stored value and lets
   `utils/table_view.js` escape it.
 - **`Utils.raw(...)` is for markup that came from somewhere else**, which here

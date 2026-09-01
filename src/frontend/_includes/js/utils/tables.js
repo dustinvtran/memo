@@ -21,7 +21,7 @@ const entryTypeToFullColumns = (entryType, status) =>
  * ids the panel itself carries.
  *
  * This used to be an inline `<script>` that `detailFormatter` returned inside
- * the row's markup: jQuery sees `<script` on the way in and runs the text
+ * the row's markup: jQuery saw `<script` on the way in and ran the text
  * through `eval` rather than parsing it as markup, so what the policy in
  * `_headers` refuses it for is `'unsafe-eval'`, which it grants no more than
  * `'unsafe-inline'`. Enforced, that is an `EvalError` and an empty panel on
@@ -34,11 +34,11 @@ const entryTypeToFullColumns = (entryType, status) =>
  * escaped again on its way into a selector.
  */
 const includeReviewIn = (detail) => {
-  const panel = $(detail).find('[data-review-ref]')[0]
+  const panel = detail.querySelector('[data-review-ref]')
   if (!panel) return
 
-  // `dataset` rather than jQuery's `.data()`, which is not a plain attribute
-  // read: it converts anything shaped like a number, `true`, `null` or JSON
+  // `dataset` rather than jQuery's `.data()`, which was not a plain attribute
+  // read: it converted anything shaped like a number, `true`, `null` or JSON
   // into that value, and these two are ids to be handed back verbatim.
   const { reviewType, reviewRef } = panel.dataset
 

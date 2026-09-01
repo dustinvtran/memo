@@ -1,5 +1,6 @@
 const { initComponent } = Components
 const { html, css } = Utils
+const { el } = Dom
 
 const Menu = () => initComponent({
   content: ({ include }) => html`
@@ -19,17 +20,23 @@ const Menu = () => initComponent({
   `,
   initializer: () => {
     const isLoggedIn = Netlify.getToken()
-    // `String` on both of these: jQuery's `.after()` takes a string of markup
-    // or a node, and markup is neither of those until it is asked for.
+    // `String` on both of these: `insertAdjacentHTML` takes a string of
+    // markup, and markup is not a string until it is asked for.
     const menuAuthLink = isLoggedIn
       ? html`<a href="/.netlify/functions/auth/logout">Log out</a>`
       : html`<a href="/.netlify/functions/auth/login">Log in</a>`
-    $('#home-menu-item').after(String(html`<li>${menuAuthLink}</li>`))
+    // `afterend`, which is what `.after()` was. Both of these go directly after
+    // the Home item, so the Profile link inserted below — later, when the
+    // request answers — lands above the Log out link rather than after it.
+    el('#home-menu-item')?.insertAdjacentHTML(
+      'afterend',
+      String(html`<li>${menuAuthLink}</li>`)
+    )
 
     Netlify.getUserName()
       .map(({ username }) => {
         if (username) {
-          $('#home-menu-item').after(String(html`
+          el('#home-menu-item')?.insertAdjacentHTML('afterend', String(html`
             <li id="home-menu-item"><a href="/profile/${encodeURIComponent(username)}">Profile</a></li>
           `))
         }

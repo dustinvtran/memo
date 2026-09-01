@@ -1,4 +1,5 @@
 const { html, css, toSafeUrl } = Utils
+const { onClick } = Dom
 const { initComponent, setContent, WithRemoteData } = Components
 const { retrieveWork } = Netlify
 const { EntryForm } = Components.List
@@ -52,7 +53,7 @@ const Result = (type, { title, year, imageUrl, ref }) => initComponent({
     }
   `,
   initializer: ({ id }) => {
-    $(`#${id}`).click(() => {
+    onClick(`#${id}`, () => {
       setContent('#search-results', WithRemoteData({
         remoteData: retrieveWork(type, ref),
         component: (data) => EntryForm(type, { commonMetadata: data })

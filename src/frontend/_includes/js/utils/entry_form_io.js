@@ -33,13 +33,13 @@ const readForm = (data, type) => ({
   // The create path never did, because `_create` parses and zod drops it. #171.
   workRef: data?.commonMetadata?.internalRef,
   overrides: getOverrides(data?.apiData, type),
-  status: $('#status').val(),
-  score: parseInt($('#score').val()) || null,
-  completedDate: Date.parse($('#completed-date').val()) || null,
-  review: $('#review').val(),
+  status: valueOf('status'),
+  score: parseInt(valueOf('score')) || null,
+  completedDate: Date.parse(valueOf('completed-date')) || null,
+  review: valueOf('review'),
   ...(type === 'films'
     ? {}
-    : { startedDate: Date.parse($('#started-date').val()) || null }),
+    : { startedDate: Date.parse(valueOf('started-date')) || null }),
   ...(type === 'tv' ? { progress: getInt('progress') || null } : {}),
 })
 
@@ -57,16 +57,26 @@ const readForm = (data, type) => ({
 const writeForm = (snapshot, type, data) => {
   // Set before the rest: the status handler shows and hides the date fields,
   // and fills some of them in, so the values below must come after it.
-  if (snapshot.status) $('#status').val(snapshot.status).trigger('change')
+  //
+  // The event is dispatched rather than implied: assigning to `.value` from
+  // script fires nothing at all, which is what `.trigger('change')` was here
+  // for. It bubbles because the autosave in `draft.js` listens on the form
+  // rather than on the field, and a restored version is an unsaved change like
+  // any other.
+  if (snapshot.status) {
+    setValue('status', snapshot.status)?.dispatchEvent(
+      new Event('change', { bubbles: true })
+    )
+  }
 
-  $('#score').val(snapshot.score ? String(snapshot.score) : 'Unrated')
-  setDate('#started-date', snapshot.startedDate)
-  setDate('#completed-date', snapshot.completedDate)
-  setIfPresent('#progress', snapshot.progress)
-  if (snapshot.review !== undefined) $('#review').val(snapshot.review)
+  setValue('score', snapshot.score ? String(snapshot.score) : 'Unrated')
+  setDate('started-date', snapshot.startedDate)
+  setDate('completed-date', snapshot.completedDate)
+  setIfPresent('progress', snapshot.progress)
+  if (snapshot.review !== undefined) setValue('review', snapshot.review)
 
   OVERRIDE_FIELDS.forEach(({ id, key, isList }) => {
-    if ($(`#${id}`).length === 0) return
+    if (!document.getElementById(id)) return
 
     const override = snapshot.overrides?.[key]
     // `commonMetadata` on a list row already has the current overrides folded
@@ -76,7 +86,8 @@ const writeForm = (snapshot, type, data) => {
     const fallback = data?.originalData?.[key] ?? data?.commonMetadata?.[key]
     const value = override ?? fallback
 
-    $(`#${id}`).val(
+    setValue(
+      id,
       value == null
         ? ''
         : isList
@@ -97,28 +108,45 @@ EntryFormIO = {
 
 const { isArray } = Array
 
+/**
+ * What a field holds, or `undefined` if this entry type has no such field — a
+ * film form has no started date, a book form no episode count. That is what a
+ * jQuery `.val()` gave for an empty selection, and the difference from `''` is
+ * one the draft comparison in `draft.js` can see: a field that is not there
+ * has not been emptied.
+ */
+const valueOf = (id) => document.getElementById(id)?.value
+
+/** Writes a field if this entry type has it, and answers with it either way. */
+const setValue = (id, value) => {
+  const field = document.getElementById(id)
+  if (field) field.value = value
+  return field
+}
+
+/** `?? ''` because a field that is not on this form used to throw here. */
 const getCommaSeparated = (id) =>
-  $(`#${id}`)
-    .val()
+  (valueOf(id) ?? '')
     .split(',')
     .map((x) => x.trim())
 
-const getInt = (id) => parseInt($(`#${id}`).val()) || undefined
+const getInt = (id) => parseInt(valueOf(id)) || undefined
 
 const getIntOrNull = (id) => {
-  const fieldVal = $(`#${id}`).val()
+  const fieldVal = valueOf(id)
   return fieldVal === '' ? null : parseInt(fieldVal) || undefined
 }
 
-const getFloat = (id) => parseFloat($(`#${id}`).val()) || undefined
+const getFloat = (id) => parseFloat(valueOf(id)) || undefined
 
-const setIfPresent = (selector, value) => {
-  if ($(selector).length > 0) $(selector).val(value ?? '')
+const setIfPresent = (id, value) => {
+  if (document.getElementById(id)) setValue(id, value ?? '')
 }
 
-const setDate = (selector, timestamp) => {
-  if ($(selector).length === 0) return
-  $(selector).val(
+const setDate = (id, timestamp) => {
+  if (!document.getElementById(id)) return
+  setValue(
+    id,
     timestamp ? new Date(timestamp).toISOString().substring(0, 10) : ''
   )
 }
@@ -126,7 +154,7 @@ const setDate = (selector, timestamp) => {
 const getOverrides = (api, type) => {
   const englishTranslatedTitle = getIfDifferent(
     api?.englishTranslatedTitle,
-    $('#title').val()
+    valueOf('title')
   )
   const duration =
     api?.duration === getFloat('duration') * (type === 'games' ? 60 : 1)
@@ -136,10 +164,10 @@ const getOverrides = (api, type) => {
   return {
     englishTranslatedTitle,
     originalTitle:
-      getIfDifferent(api?.originalTitle, $('#original-title').val()) ?? null,
+      getIfDifferent(api?.originalTitle, valueOf('original-title')) ?? null,
     releaseYear: getIfDifferent(api?.releaseYear, getIntOrNull('release-year')),
     duration,
-    imageUrl: getIfDifferent(api?.imageUrl, $('#image-url').val()),
+    imageUrl: getIfDifferent(api?.imageUrl, valueOf('image-url')),
     genres: getIfDifferent(api?.genres, getCommaSeparated('genres')),
     ...(type === 'films'
       ? {

@@ -3,6 +3,7 @@
  * refactored into multiple files?
  */
 const { html, css, waitForEl } = Utils
+const { els, on } = Dom
 const { initComponent } = Components
 const { SubmitButton, DeleteButton, ExternalFields, PersonalFields, CoverColumn, DraftNotice, EntryHistory } = Components.List
 
@@ -39,10 +40,18 @@ const EntryForm = (type, data) => {
       const markUnsavedChange = () => {
         window.hasUnsavedChange = true
       }
-      $(`#add-entry-fields input`).on('input', markUnsavedChange)
-      $(`#add-entry-fields select`).on('change', markUnsavedChange)
-      waitForEl(`#add-entry-fields textarea`).then(() => {
-        $(`#add-entry-fields textarea`).on('input', markUnsavedChange)
+      els('#add-entry-fields input').forEach((input) =>
+        on(input, 'input', markUnsavedChange)
+      )
+      els('#add-entry-fields select').forEach((select) =>
+        on(select, 'change', markUnsavedChange)
+      )
+      // The comments field arrives with a request of its own, so it is not
+      // there when the rest of the form is.
+      waitForEl('#add-entry-fields textarea').then(() => {
+        els('#add-entry-fields textarea').forEach((area) =>
+          on(area, 'input', markUnsavedChange)
+        )
       })
     }
   })
