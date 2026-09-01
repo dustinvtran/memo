@@ -338,35 +338,98 @@ span:lang(cn) {
   padding-bottom: 8px;
 }
 
+/* Icons.
+ *
+ * There is no icon font on this page any more. Font Awesome's stylesheet was
+ * 73,890 bytes and then fetched the faces the glyphs live in — 158,220 for
+ * `fa-solid-900.woff2` and 25,472 for `fa-regular-400.woff2`, both measured
+ * on a list page — to draw eighteen glyphs. `js/utils/icons.js` holds the
+ * thirteen the markup draws, as inline <svg>; the five below are the ones CSS
+ * draws itself, out of `::before` and `::after` content, which cannot be an
+ * element. #269.
+ *
+ * The paths are Font Awesome Free 6.7.2's own, from
+ * `@fortawesome/fontawesome-free@6.7.2/svgs/solid/<name>.svg`, so these are
+ * the same glyphs the font was drawing rather than something like them.
+ * **Font Awesome Free's icons are CC BY 4.0**
+ * (https://fontawesome.com/license/free). Attribution: Font Awesome Free
+ * 6.7.2 by @fontawesome — https://fontawesome.com.
+ *
+ * They are masks rather than background images, which is what keeps them
+ * inheriting their colour: a mask paints `background-color`, so `currentColor`
+ * makes the glyph the colour of the text around it and `.is-collapsed` below
+ * can still recolour its arrow by setting `color` alone. A background image
+ * would need one copy of the file per colour. `-webkit-mask` is there as well
+ * as `mask` because Safari only dropped the prefix in 15.4.
+*/
+:root {
+  --icon-angle-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 448 512'%3E%3Cpath d='M201.4 137.4c12.5-12.5 32.8-12.5 45.3 0l160 160c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L224 205.3 86.6 342.6c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3l160-160z'/%3E%3C/svg%3E");
+  --icon-angle-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 448 512'%3E%3Cpath d='M201.4 374.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 306.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z'/%3E%3C/svg%3E");
+  --icon-sort: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 512'%3E%3Cpath d='M137.4 41.4c12.5-12.5 32.8-12.5 45.3 0l128 128c9.2 9.2 11.9 22.9 6.9 34.9s-16.6 19.8-29.6 19.8L32 224c-12.9 0-24.6-7.8-29.6-19.8s-2.2-25.7 6.9-34.9l128-128zm0 429.3l-128-128c-9.2-9.2-11.9-22.9-6.9-34.9s16.6-19.8 29.6-19.8l256 0c12.9 0 24.6 7.8 29.6 19.8s2.2 25.7-6.9 34.9l-128 128c-12.5 12.5-32.8 12.5-45.3 0z'/%3E%3C/svg%3E");
+  --icon-sort-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 512'%3E%3Cpath d='M182.6 41.4c-12.5-12.5-32.8-12.5-45.3 0l-128 128c-9.2 9.2-11.9 22.9-6.9 34.9s16.6 19.8 29.6 19.8l256 0c12.9 0 24.6-7.8 29.6-19.8s2.2-25.7-6.9-34.9l-128-128z'/%3E%3C/svg%3E");
+  --icon-sort-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 512'%3E%3Cpath d='M182.6 470.6c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-9.2-9.2-11.9-22.9-6.9-34.9s16.6-19.8 29.6-19.8l256 0c12.9 0 24.6 7.8 29.6 19.8s2.2 25.7-6.9 34.9l-128 128z'/%3E%3C/svg%3E");
+}
+
+/* The shape of an icon, and the whole of what `js/utils/icons.js` leaves to
+ * CSS. Font Awesome's em square is 512 units tall, so a 1em height makes the
+ * drawn glyph exactly the size the font's was; the width is left to follow
+ * from each icon's `viewBox`, which is what the varying widths of the font's
+ * glyphs were. `-0.125em` is the 64 units of descent in that square, and is
+ * the number Font Awesome's own SVG mode uses for the same reason.
+ *
+ * `fill: currentColor` and nothing else: an icon takes the colour of the text
+ * it sits in, so the rules that used to colour an `<i>` still colour this.
+*/
+.icon {
+  display: inline-block;
+  height: 1em;
+  vertical-align: -0.125em;
+  fill: currentColor;
+  overflow: visible;
+}
+
 /* Styling for headers which collapse the subsequent element. It acts like a
- * link and uses Font-Awesome unicode to indicate whether it's collapsed.
- * The family named here is Font Awesome 6's own. `FontAwesome` was 4.7.0's,
- * and 4.7.0 is no longer loaded — 6 does declare that name too, as a v4
- * shim, but there is no reason to reach an icon through a compatibility
- * alias. Weight 900 picks the solid face, which is where these glyphs are.
+ * link, and the arrow saying which way it is folded is one of the masks above.
 */
 .collapsible {
   color: #0e9ce0;
   cursor: pointer;
 }
 .collapsible:before {
-  content: "\f106"; /* angle-up */
-  font-family: "Font Awesome 6 Free";
-  font-weight: 900;
+  content: "";
+  display: inline-block;
+  width: 0.8750em;
+  height: 1em;
+  vertical-align: -0.125em;
+  background-color: currentColor;
+  -webkit-mask: var(--icon-angle-up) no-repeat center / contain;
+  mask: var(--icon-angle-up) no-repeat center / contain;
   margin-right: 10px;
   top: 2px;
   position: relative;
-  display: inline-block;
 }
 .is-collapsed {
   color: #ccc;
 }
+/* `margin-right: 15px` where this was `margin-right: 10px` above plus a
+ * `padding-right: 5px` here: the same gap, moved. `box-sizing: border-box` is
+ * set on `::before` at the top of this file, so padding on a box that now has
+ * a `width` takes 5px off the arrow rather than putting 5px after it — which
+ * it did not do when the arrow was a character in a box sized by its font.
+ *
+ * Worth knowing before reading much into this rule: `components/list/list.js`
+ * puts `is-collapsed` on the elements it folds away — the table and the
+ * summary line — and not on the `.collapsible` heading above them. So the
+ * heading's arrow does not flip today, and what this draws is a `::before` on
+ * something that is being slid shut. It is translated rather than corrected
+ * here, because which element should carry the class is a question about that
+ * file rather than this one.
+*/
 .is-collapsed:before {
   color: #ccc;
-  content: "\f107"; /* angle-down */
-  font-family: "Font Awesome 6 Free";
-  font-weight: 900;
-  padding-right: 5px;
+  -webkit-mask-image: var(--icon-angle-down);
+  mask-image: var(--icon-angle-down);
+  margin-right: 15px;
 }
 .collapsible:hover {
   text-decoration: underline;
@@ -452,7 +515,7 @@ h1 {
   margin-top: 11px;
 }
 
-.summary-stats i {
+.summary-stats .icon {
   margin: 0 10px;
   opacity: 0.7;
 }
@@ -592,25 +655,32 @@ button {
 }
 
 /* The arrows are Font Awesome's rather than the three base64 PNGs
- * bootstrap-table shipped for them. The family is already loaded for every
- * icon on the page, and weight 900 picks the solid face these glyphs are in --
- * the same pair `.collapsible` above names.
+ * bootstrap-table shipped for them — three more of the masks at the top of
+ * this file. The two sorted states change only the glyph, so the rest of the
+ * mask comes from the shorthand below them.
 */
 .entry-table th.sortable::after {
-  content: "\f0dc"; /* sort */
-  font-family: "Font Awesome 6 Free";
-  font-weight: 900;
+  content: "";
+  display: inline-block;
+  width: 0.6250em;
+  height: 1em;
+  vertical-align: -0.125em;
+  background-color: currentColor;
+  -webkit-mask: var(--icon-sort) no-repeat center / contain;
+  mask: var(--icon-sort) no-repeat center / contain;
   margin-left: 6px;
   opacity: 0.3;
 }
 
 .entry-table th.sortable.asc::after {
-  content: "\f0de"; /* sort-up */
+  -webkit-mask-image: var(--icon-sort-up);
+  mask-image: var(--icon-sort-up);
   opacity: 0.8;
 }
 
 .entry-table th.sortable.desc::after {
-  content: "\f0dd"; /* sort-down */
+  -webkit-mask-image: var(--icon-sort-down);
+  mask-image: var(--icon-sort-down);
   opacity: 0.8;
 }
 

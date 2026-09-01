@@ -11,6 +11,7 @@
  * may have been edited elsewhere since.
  */
 const { html, css, waitForEl, timeAgo, dateTime } = Utils
+const { icon } = Icons
 const { el, on, onClick, fadeIn, fadeOut } = Dom
 const { initComponent } = Components
 const { getDraft, saveDraft, deleteDraft } = Netlify
@@ -27,7 +28,7 @@ const DraftNotice = (type, data) => initComponent({
   content: ({ id }) => html`
     <div id="${id}" class="draft-notice-wrapper">
       <div id="${id}-banner" class="draft-notice" style="display: none;">
-        <i class="fas fa-rotate-left draft-icon"></i>
+        ${icon('rotate-left', { class: 'draft-icon' })}
         <div class="draft-text">
           <span class="draft-title">Unsaved draft</span>
           <span id="${id}-when" class="draft-when"></span>

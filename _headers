@@ -71,9 +71,13 @@
 # `script-src` violation, so an owner viewing their own list is what
 # report-only is here to measure.
 #
-# `font-src` names cdnjs because Bootstrap's glyphicons and Font Awesome's
-# webfonts are fetched by those stylesheets relative to themselves; under
-# `default-src 'self'` alone they would be the first thing to break.
+# `font-src` and `style-src` name no host but this one any more. Both listed
+# cdnjs for third-party stylesheets and for what those fetched relative to
+# themselves — Bootstrap's glyphicons, then Font Awesome's webfonts — and #269
+# has removed the last of them, so the page loads no CSS and no font it did not
+# serve itself. `style-src` keeps `'unsafe-inline'` for the reason above and
+# loses only the two hosts. What still comes from a CDN is three scripts, which
+# is `script-src`'s business and unchanged.
 #
 # `img-src` is the loose one: cover art urls are stored on the work documents
 # and come from whatever TMDB, IGDB or Google Books handed back, so an
@@ -108,7 +112,7 @@
 # an indented `#` is one more thing that would have to be right.
 
 /*
-  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' https: data:; font-src 'self' https://cdnjs.cloudflare.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Strict-Transport-Security: max-age=31536000; includeSubDomains

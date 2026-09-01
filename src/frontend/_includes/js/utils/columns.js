@@ -1,4 +1,5 @@
 const { html, toSafeUrl } = Utils
+const { icon } = Icons
 const { round } = Math
 const { apiTypeToType, statusToTitle } = Conversions
 
@@ -84,7 +85,7 @@ const genre = () =>
   })
 
 const edit = () =>
-  col(html`<i class="fas fa-edit"></i>`, 'editCol', {
+  col(icon('edit'), 'editCol', {
     searchable: false,
     formatter: (_, row, i) => {
       // The attribute names the row rather than holding it: an owner's list
@@ -107,7 +108,11 @@ const edit = () =>
       // `utils/table_view.js` interpolates a cell into an `html` template, so
       // what a formatter returns is trusted if it is markup and escaped if it
       // is a stored value. See the note at the top of that file.
-      return html`<i id="edit-${row.status}-${i}" class="fas fa-edit edit-button" data-ref="${row.dbRef}"></i>`
+      return icon('edit', {
+        id: `edit-${row.status}-${i}`,
+        class: 'edit-button',
+        dataRef: row.dbRef,
+      })
     },
     cellStyle: () => ({ css: { 'width': '20px' } }),
   })

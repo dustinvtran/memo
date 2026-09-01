@@ -1,4 +1,5 @@
 const { html, toSafeUrl } = Utils
+const { icon } = Icons
 
 const profileColumns = (status) => [
   Columns.englishTitleAndLastUpdated(),
@@ -70,7 +71,7 @@ const detailFormatter = (_, row) => {
   return html`
     <div class="review">
       <p>
-        <b><a href="#${anchorId}"><i class="fas fa-link"></i></a> Comments:</b>
+        <b><a href="#${anchorId}">${icon('link')}</a> Comments:</b>
           ${cover}
           <div id="review-${row.dbRef}" data-review-type="${type}" data-review-ref="${row.dbRef}">
           </div>

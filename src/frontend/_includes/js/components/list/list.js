@@ -1,4 +1,5 @@
 const { html, css, waitForEl } = Utils
+const { icon } = Icons
 const { el, onClick, delegateClick, slideToggle } = Dom
 const { detailFormatter, includeReviewIn, statuses, entryTypeToFullColumns, filmStatuses, searchSettings } = Tables
 const { initTable } = TableView
@@ -98,16 +99,19 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
       return
     }
 
-    waitForEl('a.detail-icon').then((icon) => {
-      if (!icon || document.querySelector('#click-to-see-comments')) return
+    // `caret` rather than `icon`, which is what this was called: `icon` is the
+    // helper this file destructures off `Icons` at the top, and a parameter of
+    // that name shadows it exactly where the hint's own icon is built.
+    waitForEl('a.detail-icon').then((caret) => {
+      if (!caret || document.querySelector('#click-to-see-comments')) return
 
       setTimeout(() => {
         // The table's own container, rather than the seven `.parent()` hops it
         // took to climb out of bootstrap-table's wrappers. It sits directly
         // under the sublist's heading, which is where the hint goes and what
         // the collapse handler below expects to find there.
-        icon.closest('.entry-table')?.insertAdjacentHTML('beforebegin', String(html`
-          <div id="click-to-see-comments">Click here to<br>read comments! <i class="fas fa-location-arrow" style="opacity:.7;"></i></div>
+        caret.closest('.entry-table')?.insertAdjacentHTML('beforebegin', String(html`
+          <div id="click-to-see-comments">Click here to<br>read comments! ${icon('location-arrow', { style: 'opacity:.7;' })}</div>
         `))
       }, 200)
     })
@@ -150,7 +154,7 @@ Components.List.List = List
 const ListPageHeader = (title, username) => initComponent({
   content: () => html`
     <div class="full-bleed">
-      <h1><a href="/profile/${encodeURIComponent(username)}"><i class="fa fa-home"></i></a> ${title}</h1>
+      <h1><a href="/profile/${encodeURIComponent(username)}">${icon('home')}</a> ${title}</h1>
     </div>
     <hr>
   `
@@ -172,7 +176,7 @@ const SubLists = (entryType, isOwner, data) => initComponent({
       text-align: center;
       margin-top: 60px;
     }
-    #global-stats i {
+    #global-stats .icon {
       margin: 0 10px;
       opacity: 0.7;
     }
@@ -286,7 +290,7 @@ const SubList = (status, entryType, isOwner, data) => initComponent({
       margin-top: 11px;
     }
 
-    .summary-stats i {
+    .summary-stats .icon {
       margin: 0 10px;
       opacity: 0.7;
     }
@@ -340,7 +344,7 @@ const onSearched = (table, text) => {
 const toStats = (entries, entryType) => {
   // Markup, so it is written as an `html` literal rather than a string: the
   // two templates below interpolate it, and an interpolated string is text.
-  const icon = html` <i class="fas fa-wave-square"></i> `
+  const separator = html` ${icon('wave-square')} `
   const totalEpsSeen = entries
     .map(e => e.progress ?? 0)
     .reduce((a,b) => a + b, 0)
@@ -364,7 +368,7 @@ const toStats = (entries, entryType) => {
         .reduce((mins, e) => mins + (get(e, 'duration') ?? 0), 0)
       ) / 60 / 24
 
-  return html`Total entries: ${entries.length}${entryType === 'tv' ? html` ${icon} Episodes seen: ${totalEpsSeen}` : ''} ${icon} Days spent: ${days.toFixed(2)} ${icon} Mean score: ${meanScore.toFixed(2)}`
+  return html`Total entries: ${entries.length}${entryType === 'tv' ? html` ${separator} Episodes seen: ${totalEpsSeen}` : ''} ${separator} Days spent: ${days.toFixed(2)} ${separator} Mean score: ${meanScore.toFixed(2)}`
 }
 
 /**

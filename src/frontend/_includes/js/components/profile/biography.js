@@ -1,5 +1,6 @@
 const { getUserName, setBio } = Netlify
 const { html, css, raw, escapeHtml } = Utils
+const { icon } = Icons
 const { el, onClick } = Dom
 const { initComponent, setContent } = Components
 const { Button, showNotification } = Components.UI
@@ -28,7 +29,7 @@ const Biography = (userdata) => initComponent({
         if (username === userdata.username) {
           el('#biography-heading')?.insertAdjacentHTML(
             'beforeend',
-            String(html` <i id="biography-edit" class="fas fa-edit"></i>`)
+            String(html` ${icon('edit', { id: 'biography-edit' })}`)
           )
           onClick('#biography-edit', () => {
             setContent('#biography-content', BiographyInput(userdata.biography))
