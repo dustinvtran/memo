@@ -1,26 +1,33 @@
 /**
  * @file Fetches a third-party script the first time a page actually needs it.
  *
- * One caller: the profile's score histograms. ApexCharts is 862,713 bytes —
- * more than every render-blocking library in `base.njk` put together — and it
- * draws five charts on `/profile/:name` and nothing anywhere else. It was a
- * `<script defer>` in `base.njk`, which is the layout for every page, and
- * `_redirects` rewrites every url to that one HTML document: so every list,
- * every entry form and the home page fetched all 862 KB to draw nothing with
- * it. #269.
+ * Two callers, and both were the same mistake: a library one screen wants, in
+ * `base.njk`, which is the layout for every page — and `_redirects` rewrites
+ * every url to that one HTML document, so every visitor to every page fetched
+ * it whether or not anything was ever going to use it. `defer` keeps a file
+ * from blocking the parser and does nothing whatever about fetching it. #269.
  *
- * The url stays pinned and hashed, because none of the reasons for that have
- * changed: the file is third-party, the page holds the reader's 14-day
+ * ApexCharts is 862,713 bytes — more than every render-blocking library in
+ * `base.njk` put together — and it draws five charts on `/profile/:name` and
+ * nothing anywhere else.
+ *
+ * Litepicker is 64,114 bytes for the two date fields of the entry form, which
+ * opens when the signed-in owner of a list clicks add or edit. Every other
+ * reader of every list and every profile fetched it for a form they have no
+ * way to reach.
+ *
+ * The urls stay pinned and hashed, because none of the reasons for that have
+ * changed: the files are third-party, the page holds the reader's 14-day
  * `nf_jwt`, and a jsDelivr that starts serving something else has to be
  * refused rather than run. `integrity`, `crossOrigin` and `referrerPolicy` are
- * set on the element exactly as the tag set the attributes — as properties,
+ * set on the element exactly as the tags set the attributes — as properties,
  * which is why this builds the element rather than any markup.
  *
- * `check_cdn_advisories.js` reads the pin below as well as the tags in
+ * `check_cdn_advisories.js` reads the pins below as well as the tags in
  * `base.njk`. It has to: that check counts what it finds, so a pin that moved
  * out of its reach would not have failed anything — the count would simply
- * have gone from 8 to 7, and the library would be unwatched, which is the one
- * outcome that file exists to prevent.
+ * have dropped by one, quietly, and the library would be unwatched, which is
+ * the one outcome that file exists to prevent.
  */
 
 /**
@@ -35,18 +42,34 @@ const APEXCHARTS = {
 }
 
 /**
+ * 2.0.12, the version the deferred tag in `base.njk` pinned, with the hash it
+ * carried — same recipe as above. The url before #122 named no version at all,
+ * so the code the site ran changed whenever the package published; this is
+ * what that had resolved to.
+ *
+ * A wrong hash here is two date fields that stay plain text boxes rather than
+ * anything that looks broken, so check that the picker actually opens if you
+ * change it.
+ */
+const LITEPICKER = {
+  url: 'https://cdn.jsdelivr.net/npm/litepicker@2.0.12/dist/litepicker.js',
+  integrity: 'sha384-TwHJTusQtbcoEHJcrF5aeo0MHBgj8lt8onFRrG7wKk8Q/LG9EphkEsqNRiVWzIP9',
+}
+
+/**
  * url -> the load that is already in flight or already done.
  *
  * This is what makes a second ask free, and it has to be a promise rather than
- * a flag: the five charts on a profile initialise in the same tick, so the
- * four that come after the first arrive while the request is open rather than
- * after it. A flag would let all five through and inject five tags.
+ * a flag: the five charts on a profile initialise in the same tick, as do the
+ * entry form's two date fields, so the asks after the first arrive while the
+ * request is open rather than after it. A flag would let all five through and
+ * inject five tags.
  *
- * It lasts as long as the document, which on this site is as long as the
- * profile — every navigation here is a full page load, whatever `_redirects`
- * makes it look like. So what a settled entry saves is a component drawn a
- * second time into a page that already has the script: the same 862 KB is
- * fetched once per visit and not once per chart.
+ * It lasts as long as the document, which on this site is as long as the page
+ * — every navigation here is a full page load, whatever `_redirects` makes it
+ * look like. So what a settled entry saves is a component drawn a second time
+ * into a page that already has the script: the script is fetched once per
+ * visit, not once per chart and not once per opening of the form.
  */
 const inFlight = new Map()
 
@@ -90,21 +113,29 @@ const loadScript = ({ url, integrity }) => {
 }
 
 /**
- * The `ApexCharts` constructor, once it is there to be had.
+ * The constructor one of these scripts leaves behind, once it is there to be
+ * had.
  *
- * The script is a UMD bundle with no module system to publish itself into
- * here, so it assigns a global and this reads it back. Asking rather than
+ * Both are UMD bundles with no module system to publish themselves into here,
+ * so each assigns a global and this reads it back. Asking rather than
  * assuming: a load that resolves without leaving the global behind would
  * otherwise be a `TypeError` at the call site with no clue where it came from.
  */
-const loadApexCharts = () =>
-  loadScript(APEXCHARTS).then(() => {
-    if (!window.ApexCharts) {
-      throw new Error(`${APEXCHARTS.url} loaded but defined no ApexCharts`)
+const loadGlobal = (pin, name) =>
+  loadScript(pin).then(() => {
+    if (!window[name]) {
+      throw new Error(`${pin.url} loaded but defined no ${name}`)
     }
-    return window.ApexCharts
+    return window[name]
   })
+
+/** For the score histograms on `/profile/:name`. */
+const loadApexCharts = () => loadGlobal(APEXCHARTS, 'ApexCharts')
+
+/** For the two date fields of the entry form. */
+const loadLitepicker = () => loadGlobal(LITEPICKER, 'Litepicker')
 
 LoadScript = {
   loadApexCharts,
+  loadLitepicker,
 }
