@@ -27,12 +27,32 @@
        scale, and the margins on paragraphs, lists and rules, which applied to
        every page whether or not it named a Bootstrap class.
 
-       Font Awesome 6 only. It defines the `fa`, `fas` and `far` prefixes the
-       markup uses, so the 4.7.0 stylesheet that used to sit alongside it was
-       being overridden for every icon on the page. The one thing that did
-       still come from 4.7.0 is the `FontAwesome` font family `main.css` names
-       for the collapsible arrows; that now names this file's family. #}
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="sha384-nRgPTkuX86pH8yjPJUAFuASXQSSl2/bBUiNV47vSYpKFxHJhbcrGnmlYpYJMeD7a" crossorigin="anonymous" referrerpolicy="no-referrer">
+       Font Awesome was the last of them and there is no <link> here at all
+       any more: every stylesheet this page loads is its own.
+
+       Its own file was 73,890 bytes of CSS naming two thousand icons, and
+       that was the smaller half. The glyphs live in webfonts the stylesheet
+       then fetches, and a list page pulled two of them —
+       `fa-solid-900.woff2` at 158,220 bytes and `fa-regular-400.woff2` at a
+       further 25,472. Around 257 KB, to draw eighteen glyphs.
+       `fa-brands-400.woff2` was never fetched, which is worth knowing before
+       the next person assumes it was: nothing here uses a brand icon.
+
+       Thirteen of the eighteen were `<i class="fas fa-edit">` in the markup
+       and are inline <svg> now — `js/utils/icons.js`. The other five were
+       drawn by `_includes/css/main.css` itself, out of `content: "\f106"`
+       against the font's family: the two collapsible arrows and the table's
+       three sort arrows. A pseudo-element's content cannot be an element, so
+       those are mask images in that file rather than SVG in the markup. The
+       paths on both sides are Font Awesome Free 6.7.2's own, so the glyphs
+       are the ones that were here rather than something like them, and both
+       files carry the CC BY 4.0 attribution that requires.
+
+       What the prefixes picked is written down here because nothing asserts
+       it any more: `fas` and a bare `fa` are the solid face, `far` the
+       regular one, and exactly one icon on the site was `far` — the `+`
+       on Add an entry. That one alone is why the second webfont above was
+       fetched. #}
 
     <link rel="icon" href="/img/favicon.ico" type="image/x-icon"/>
     {# `_includes/css/main.css`, emitted at this url by `css/main.njk`. #126
@@ -87,10 +107,11 @@
 
        Measured on a list page: the render-blocking JavaScript every page
        fetches is 72,688 bytes, all of it DOMPurify and marked, where #269
-       opened at 209,612. What blocks the first paint besides it is one
-       stylesheet rather than two, Font Awesome's 73,890, where #269 opened at
-       195,347. `defer` was never the answer to any of it: it keeps a file from
-       blocking the parser and does nothing whatever about fetching it. #269. #}
+       opened at 209,612. Nothing else render-blocking comes from a CDN now —
+       the stylesheet above is gone, where #269 opened at 195,347 bytes of CDN
+       CSS and the fonts behind it. `defer` was never the answer to any of it:
+       it keeps a file from blocking the parser and does nothing whatever
+       about fetching it. #269. #}
     <!-- JavaScript -->
     {# DOMPurify is the only thing between another user's markdown and this
        page's DOM, and this page holds their reader's `nf_jwt` — so it is the

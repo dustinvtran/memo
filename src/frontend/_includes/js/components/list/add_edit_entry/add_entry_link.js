@@ -1,4 +1,5 @@
 const { html, css } = Utils
+const { icon } = Icons
 const { initComponent, setContent, WithRemoteData } = Components
 const { Modal, InputWithAction, showNotification, Button } = Components.UI
 const { searchWorks } = Netlify
@@ -13,7 +14,7 @@ const AddEntryButton = (type) => initComponent({
     showCloseConfirmationDialog: () => window.hasUnsavedChange === true,
     openButtonHtml: () => html`
       <h2 id="add-entry">
-        <i class="far fa-plus-square"></i><span id="add-entry-text">Add an entry</span>
+        ${icon('plus-square')}<span id="add-entry-text">Add an entry</span>
       </h2>
     `
   })),

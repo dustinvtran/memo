@@ -11,6 +11,7 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "columns.js"), "utf8");
 const generalSource = fs.readFileSync(path.join(__dirname, "general.js"), "utf8");
+const iconsSource = fs.readFileSync(path.join(__dirname, "icons.js"), "utf8");
 
 // The real `Utils`, not a stub: `escapeHtml` and `toSafeUrl` are most of what
 // the formatters below are being asked about, so a stand-in for them would be
@@ -30,6 +31,12 @@ const load = (js, exports) =>
   vm.runInContext(`(() => {\n${js}\n;return ${exports}\n})()`, context);
 
 load(generalSource, "undefined");
+
+// The real `Icons` for the same reason as the real `Utils`: the edit column
+// *is* an icon now, so a stub would be what the assertion below was reading.
+// `GLYPHS` is pulled out of the file's scope rather than exported, the way
+// the formatters below are — nothing in the bundle needs it.
+const { GLYPHS } = load(iconsSource, "({ GLYPHS })");
 
 const { playtimeFormatter, titleFormatter, listOfLinksFormatter, Columns } =
   load(
@@ -286,8 +293,8 @@ test("the edit button carries the row's id and nothing else", () => {
   assert.ok(!rendered.includes("Hollow Knight"));
   assert.equal(
     rendered,
-    '<i id="edit-Completed-0" class="fas fa-edit edit-button" ' +
-      'data-ref="abc"></i>'
+    '<svg class="icon edit-button" id="edit-Completed-0" data-ref="abc" ' +
+      `viewBox="0 0 512 512" aria-hidden="true"><path d="${GLYPHS.edit.path}"/></svg>`
   );
 });
 

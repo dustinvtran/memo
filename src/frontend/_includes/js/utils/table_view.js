@@ -16,6 +16,7 @@
  */
 
 const { html } = Utils
+const { icon } = Icons
 
 /**
  * Draws a table into the element `selector` names, and answers with the handle
@@ -160,10 +161,10 @@ TableView = {
  */
 const SEARCH_DEBOUNCE_MS = 200
 
-/** Font Awesome's carets, which is what the caret column used to reach for
+/** The carets the caret column draws, which is what it used to reach for
  *  through `window.icons` and bootstrap-table's `icons` option. */
-const CARET_CLOSED = 'fa-caret-down'
-const CARET_OPEN = 'fa-caret-up'
+const CARET_CLOSED = 'caret-down'
+const CARET_OPEN = 'caret-up'
 
 /** What `initTable` answers when the element it was pointed at is not there. */
 const NO_TABLE = { setSearch: () => undefined }
@@ -192,7 +193,7 @@ const toolbar = (state, options) => html`
  */
 const columnsMenu = (state) => html`
   <details class="entry-table-columns">
-    <summary>Columns <i class="fas fa-caret-down"></i></summary>
+    <summary>Columns ${icon('caret-down')}</summary>
     <div class="entry-table-columns-menu">
       ${TableModel.switchableColumns(state).map((column) => html`
         <label>
@@ -275,7 +276,7 @@ const dataRow = (row, index, state, options) => html`
 const caretCell = (row, state) => html`
   <td class="entry-table-caret">
     <a class="detail-icon" href="#" aria-label="Comments" data-ref="${row.dbRef}">
-      <i class="fa ${TableModel.isExpanded(state, row.dbRef) ? CARET_OPEN : CARET_CLOSED}"></i>
+      ${icon(TableModel.isExpanded(state, row.dbRef) ? CARET_OPEN : CARET_CLOSED)}
     </a>
   </td>
 `

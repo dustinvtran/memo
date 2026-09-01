@@ -323,6 +323,43 @@ test("conversions.js comes before the files that derive from it", () => {
   );
 });
 
+test("icons.js comes before the files that destructure it", () => {
+  // Nine files open with `const { icon } = Icons`, which runs while the file is
+  // being read rather than when something draws. So icons.js being below any
+  // of them is not a missing icon: it is a ReferenceError in one IIFE, the
+  // bundle stopping there, and every page on the site blank. `npm test` passes
+  // either way, because each test loads one file into its own vm.
+  const files = plan.BUNDLED_FILES;
+  const icons = files.indexOf("js/utils/icons.js");
+
+  assert.notEqual(icons, -1, "js/utils/icons.js is no longer bundled");
+
+  const readers = files.filter(
+    (includePath) =>
+      includePath !== "js/utils/icons.js" &&
+      /\bconst\s*\{[^}]*\bicon\b[^}]*\}\s*=\s*Icons\b/.test(
+        read(path.join(INCLUDES, includePath))
+      )
+  );
+
+  assert.ok(readers.length > 0, "nothing destructures Icons any more");
+
+  readers.forEach((includePath) =>
+    assert.ok(
+      files.indexOf(includePath) > icons,
+      `${includePath} is bundled before js/utils/icons.js, whose Icons ` +
+        `global it reads as it loads`
+    )
+  );
+
+  // The other half: icons.js reads `Utils` the same way.
+  assert.ok(
+    files.indexOf("js/utils/general.js") < icons,
+    "js/utils/icons.js is bundled above js/utils/general.js, whose `Utils` " +
+      "it destructures as it loads"
+  );
+});
+
 test("the concatenated bundle parses as JavaScript", () => {
   // Exactly what `_data/assets.js` hands to UglifyJS, built by the same pure
   // function. `new Function` compiles the body without running it, so this is a

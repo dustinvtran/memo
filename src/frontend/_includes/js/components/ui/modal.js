@@ -1,4 +1,5 @@
 const { html, css } = Utils
+const { icon } = Icons
 const { onClick } = Dom
 const { initComponent, appendContent } = Components
 
@@ -131,7 +132,7 @@ const Overlay = (parentId, showCloseConfirmationDialog) => initComponent({
 
 const CloseButton = (parentId, showCloseConfirmationDialog) => initComponent({
   content: () => html`
-    <div id="cancel-button-${parentId}" class="cancel-button"><i class="fas fa-window-close"></i></div>
+    <div id="cancel-button-${parentId}" class="cancel-button">${icon('window-close')}</div>
   `,
   style: () => `
     .cancel-button {

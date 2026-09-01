@@ -61,17 +61,17 @@ const SELF = `.github/scripts/${path.basename(__filename)}`
 /**
  * cdnjs library name -> npm package name, where the two differ.
  *
- * This is the trap the whole check turns on: the bulk endpoint answers an
- * unknown package with silence rather than an error, so a wrong name here
- * reads exactly like a clean bill of health. cdnjs's `font-awesome` is the
- * live example — npm's `font-awesome` stopped at 4.7.0, and the 6.x this site
- * loads is published as `@fortawesome/fontawesome-free`, so asking npm about
- * `font-awesome@6.7.2` gets a 404 that would otherwise pass for "nothing
- * reported". `resolves()` below is what turns that back into a failure.
+ * Empty, and the guard it feeds is the reason to keep it anyway. This is the
+ * trap the whole check turns on: the bulk endpoint answers an unknown package
+ * with silence rather than an error, so a wrong name here reads exactly like a
+ * clean bill of health. cdnjs's `font-awesome` was the live example until #269
+ * drew its icons as SVG instead — npm's `font-awesome` stopped at 4.7.0, and
+ * the 6.x this site loaded is published as `@fortawesome/fontawesome-free`, so
+ * asking npm about `font-awesome@6.7.2` got a 404 that would otherwise have
+ * passed for "nothing reported". `resolves()` below is what turned that into a
+ * failure, and it is what the next entry added here is checked by.
  */
-const NPM_NAME = {
-  'font-awesome': '@fortawesome/fontawesome-free',
-}
+const NPM_NAME = {}
 
 /**
  * Package name -> why an advisory against it does not stop the build today.
@@ -95,7 +95,7 @@ const ACCEPTED = {}
  * check that fails on an advisory nobody is going to act on is a check that
  * gets ignored.
  *
- * As of #269 nothing at all is reported against the five that remain, at any
+ * As of #269 nothing at all is reported against the four that remain, at any
  * severity, so this line decides nothing today. It is where the line goes when
  * that changes.
  */

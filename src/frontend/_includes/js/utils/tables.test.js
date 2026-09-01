@@ -21,6 +21,7 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "tables.js"), "utf8");
 const generalSource = fs.readFileSync(path.join(__dirname, "general.js"), "utf8");
+const iconsSource = fs.readFileSync(path.join(__dirname, "icons.js"), "utf8");
 
 // The real `Utils`, because the escaping is what the attributes below are
 // being asked about and a stand-in for it would be testing the stand-in.
@@ -36,6 +37,9 @@ const load = (js, exports) =>
   vm.runInContext(`(() => {\n${js}\n;return ${exports}\n})()`, context);
 
 load(generalSource, "undefined");
+// The real `Icons` too: the panel's heading carries the link icon, so this
+// is markup the assertions below read rather than a stub of it.
+load(iconsSource, "undefined");
 
 const { detailFormatter, includeReviewIn } = load(
   source,

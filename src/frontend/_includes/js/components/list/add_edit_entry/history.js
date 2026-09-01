@@ -12,6 +12,7 @@
  * should still be readable in a modal.
  */
 const { html, css, timeAgo, dateTime, dateOnly } = Utils
+const { icon } = Icons
 const { el, els, onClick, isVisible, slideToggle, slideUp, slideDown } = Dom
 const { initComponent, setContent, WithRemoteData } = Components
 const { showNotification } = Components.UI
@@ -23,10 +24,10 @@ const EntryHistory = (type, data) => initComponent({
   content: ({ id }) => html`
     <div class="entry-history">
       <div id="${id}-header" class="history-header">
-        <i class="fas fa-clock-rotate-left history-icon"></i>
+        ${icon('clock-rotate-left', { class: 'history-icon' })}
         <span class="history-title">History</span>
         <span id="${id}-count" class="history-count"></span>
-        <i id="${id}-chevron" class="fas fa-chevron-down history-chevron"></i>
+        ${icon('chevron-down', { id: `${id}-chevron`, class: 'history-chevron' })}
       </div>
       <div id="${id}-body" class="history-body" style="display: none;"></div>
     </div>
@@ -92,7 +93,7 @@ const Version = (type, data, version, older) => initComponent({
         </span>
         ${version.isCurrent ? html`<span class="version-tag">current</span>` : ''}
         <span class="version-chips">${chipsHtml(version, older)}</span>
-        <i id="${id}-caret" class="fas fa-chevron-down version-caret"></i>
+        ${icon('chevron-down', { id: `${id}-caret`, class: 'version-caret' })}
       </div>
       <div id="${id}-detail" class="version-detail" style="display: none;">
         ${changesHtml(version, older)}
@@ -184,7 +185,7 @@ const fieldRowHtml = (field, version, older) => html`
   <tr>
     <td class="field-name">${fieldLabel(field)}</td>
     <td class="field-old">${formatValue(field, valueOf(older?.snapshot, field))}</td>
-    <td class="field-arrow"><i class="fas fa-arrow-right"></i></td>
+    <td class="field-arrow">${icon('arrow-right')}</td>
     <td class="field-new">${formatValue(field, valueOf(version.snapshot, field))}</td>
   </tr>
 `
