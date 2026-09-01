@@ -126,20 +126,16 @@
        signature is unchanged across the major — 3.0 dropped IE, which is the
        whole of what it broke. #}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.14/purify.min.js" integrity="sha384-46dPGH1XlTmj7bc50bqLjTdORXs/3EP2QpA/6EWbelYWOY9VGp+87RT61S3Mcslb" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    {# The entry form's two date fields, drawn long after the page is. The
-       url used to name no version at all, so the code the site ran changed
-       whenever the package published; this is the version that resolved to.
-
-       ApexCharts was here on the same reasoning and is not any more. It is
-       862,713 bytes — more than every render-blocking file above it put
-       together — for four histograms on `/profile/:name`, and this layout is
-       every page: `_redirects` rewrites every url to this one document, so
-       every list and every entry form downloaded all of it to draw nothing
-       with it. `defer` keeps a file from blocking the parser and does nothing
-       whatever about fetching it. The profile asks for it when it mounts now,
-       and `js/utils/load_script.js` is where the url, the hash and the reason
-       live. #269. #}
-    <script defer src="https://cdn.jsdelivr.net/npm/litepicker@2.0.12/dist/litepicker.js" integrity="sha384-TwHJTusQtbcoEHJcrF5aeo0MHBgj8lt8onFRrG7wKk8Q/LG9EphkEsqNRiVWzIP9" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    {# ApexCharts and litepicker were both here, and neither is any more. This
+       layout is every page — `_redirects` rewrites every url to this one
+       document — so a tag here is a file every visitor fetches, and `defer`
+       keeps a file from blocking the parser while doing nothing whatever about
+       fetching it. ApexCharts was 862,713 bytes for the score histograms on
+       `/profile/:name`; litepicker was 64,114 bytes for the two date fields of
+       the entry form, which only ever opens for the signed-in owner of a list.
+       Each is asked for now by the one component that wants it, and
+       `js/utils/load_script.js` is where both urls, both hashes and the
+       reasons live. #269. #}
     {# 4.0.2 carried two high ReDoS advisories, both fixed in 4.0.10 — which
        cdnjs lists but has no files for, so the 4.x line here stops at 4.3.0
        and the choice was that or the current major. This is the current one.

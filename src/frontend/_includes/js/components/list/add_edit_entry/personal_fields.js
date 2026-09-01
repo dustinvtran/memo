@@ -4,6 +4,7 @@ const { initComponent, WithRemoteData } = Components
 const { statuses, filmStatuses } = Tables
 const { statusToTitle } = Conversions
 const { initialReviewText } = ReviewTemplate
+const { loadLitepicker } = LoadScript
 
 const PersonalFields = (data, type) => {
   const isEdit = data?.status ?? false
@@ -112,12 +113,11 @@ const PersonalFields = (data, type) => {
       </div>
     `,
     initializer: () => {
-      if (document.getElementById('started-date')) {
-        new Litepicker({ element: document.getElementById('started-date') })
-      }
-      if (document.getElementById('completed-date')) {
-        new Litepicker({ element: document.getElementById('completed-date') })
-      }
+      // Not awaited, and it cannot be: this initializer is called by the
+      // component system, which does nothing with what it returns, and the
+      // rest of the form below must not wait on a CDN. `attachDatePickers`
+      // reports its own failures for the same reason.
+      attachDatePickers(['started-date', 'completed-date'])
 
       const status = el('#status')
 
@@ -180,6 +180,44 @@ const CommentsField = (type, review) => initComponent({
     </div>
   `
 })
+
+
+/**
+ * Turns the named text inputs into date pickers, once litepicker is there to
+ * do it with.
+ *
+ * Litepicker is fetched on demand — see `utils/load_script.js` for why 64 KB
+ * for two fields is no longer in `base.njk` — so this is asynchronous where it
+ * used to be two constructor calls. Both fields ask in the same tick and
+ * `loadLitepicker` hands them the same load, so that is one request and one
+ * <script> however many times the form is opened.
+ *
+ * The elements are looked up *before* the await rather than after, which is
+ * what keeps a form closed and reopened while the load is in flight from
+ * ending up with two pickers on one input: the first call is holding the
+ * inputs of the form that is gone, and `isConnected` is false for them. The
+ * same check is what stops a picker being attached to a form the reader has
+ * already closed.
+ *
+ * A failure leaves the two inputs as what they already are: text boxes taking
+ * a `YYYY-MM-DD` string, which is what the form reads back out of them either
+ * way. That is the whole reason this catches rather than rejecting — an
+ * initializer that throws takes the status dropdown's handler with it, and the
+ * fields it shows and hides are the rest of this form.
+ */
+const attachDatePickers = async (ids) => {
+  const elements = ids.map((id) => document.getElementById(id)).filter(Boolean)
+  if (elements.length === 0) return
+
+  try {
+    const Litepicker = await loadLitepicker()
+    elements
+      .filter((element) => element.isConnected)
+      .forEach((element) => new Litepicker({ element }))
+  } catch (error) {
+    console.error(`the date fields are plain text fields: ${error.message}`)
+  }
+}
 
 
 /**
