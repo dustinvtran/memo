@@ -8,8 +8,9 @@
  * Margaret Nolan, and searching for `go` returns the whole list, because
  * every linked name renders with `&go=Go` in its href.
  *
- * So this replaces it, wired up as `customSearch` in `utils/tables.js`. A
- * query is a comma-separated list of terms, all of which have to match:
+ * So this replaces it. `utils/table_model.js` is what calls in here, with the
+ * fields of the columns its table is showing. A query is a comma-separated list
+ * of terms, all of which have to match:
  *
  *   nolan          a bare term: a case-insensitive substring, tried against
  *                  the columns the table is actually showing
@@ -28,14 +29,14 @@
  * run — see `toRegexTest` and the budget in `filterEntries` for the two halves
  * of #228.
  *
- * Pure: no DOM, no jQuery, no bootstrap-table. The glue is in
- * `utils/tables.js`, and `components/list/list.js` puts the query in the url.
+ * Pure: no DOM, no jQuery, no table. `utils/table_model.js` is the glue, and
+ * `components/list/list.js` puts the query in the url.
  */
 
 /**
- * The fields a term can name, keyed by the bootstrap-table column field they
- * belong to so that a table can ask which of its columns are searchable and
- * what each one holds.
+ * The fields a term can name, keyed by the `field` of the column they belong to
+ * so that a table can ask which of its columns are searchable and what each one
+ * holds.
  */
 const searchFields = {
   'commonMetadata.englishTranslatedTitle': {
@@ -126,7 +127,8 @@ const matchesQuery = (row, terms, freeTextFields) =>
 /**
  * `freeTextFields` is what a bare term is tried against — the fields of the
  * columns the table is showing. An empty query keeps the rows as they are,
- * array and all, the way bootstrap-table's own search does.
+ * array and all; `utils/table_model.js` copies before it sorts, so handing the
+ * caller's own array back is safe.
  *
  * The pass is on a clock. A field term is a regex the reader supplies, and
  * `?q=` means the reader can be whoever was sent a link (#156), so the pattern
@@ -193,8 +195,8 @@ const FILTER_BUDGET_MS = 250
 /**
  * The empty result of a pass that gave up, told apart from an honest empty
  * result by the flag riding on it. A property on the array rather than a
- * wrapper object, because the caller assigns what it gets straight to
- * bootstrap-table's `this.data`.
+ * wrapper object, so that a caller with no interest in the distinction can use
+ * the return value as the list of rows it is.
  */
 const abandonedPass = () => Object.assign([], { searchAbandoned: true })
 

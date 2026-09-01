@@ -37,14 +37,22 @@ const { playtimeFormatter, titleFormatter, listOfLinksFormatter, Columns } =
     "({ playtimeFormatter, titleFormatter, listOfLinksFormatter, Columns })"
   );
 
+// `String`, on each of the three: a formatter that builds markup answers with
+// markup now rather than with a string, because `utils/table_view.js`
+// interpolates it into the cell's own `html` template. The assertions below are
+// about the bytes that reach the page, so they coerce at that boundary — the
+// same move `components/README.md` asks of any caller handing markup to
+// something that wants a string.
 const playtime = (commonMetadata, overrides) =>
-  playtimeFormatter(null, { commonMetadata, overrides });
+  String(playtimeFormatter(null, { commonMetadata, overrides }));
 
 const title = (commonMetadata, overrides) =>
-  titleFormatter(null, { dbRef: "abc", commonMetadata, overrides });
+  String(titleFormatter(null, { dbRef: "abc", commonMetadata, overrides }));
 
 const genres = (values) =>
-  listOfLinksFormatter("genres")(null, { commonMetadata: { genres: values } });
+  String(
+    listOfLinksFormatter("genres")(null, { commonMetadata: { genres: values } })
+  );
 
 test("a flat hltb apiRef links the playtime to HowLongToBeat", () => {
   assert.equal(
@@ -268,13 +276,13 @@ test("an ampersand in a name is searched for, not read as a parameter", () => {
 });
 
 test("the edit button carries the row's id and nothing else", () => {
-  const rendered = Columns.edit()
-    .formatter(null, {
+  const rendered = String(
+    Columns.edit().formatter(null, {
       status: "Completed",
       dbRef: "abc",
       commonMetadata: { englishTranslatedTitle: "Hollow Knight" },
     }, 0)
-    .trim();
+  ).trim();
   assert.ok(!rendered.includes("Hollow Knight"));
   assert.equal(
     rendered,
@@ -287,25 +295,26 @@ test("the edit button carries no behaviour for a CSP to refuse", () => {
   // The handler is delegated from `document` in `components/list/list.js`. An
   // inline one here is a `script-src` violation, and under the policy in
   // `_headers` that is an owner's edit button silently doing nothing (#219).
-  const rendered = Columns.edit()
-    .formatter(null, { status: "Completed", dbRef: "abc" }, 0);
+  const rendered = String(
+    Columns.edit().formatter(null, { status: "Completed", dbRef: "abc" }, 0)
+  );
 
   assert.doesNotMatch(rendered, /\son[a-z]+=/i);
   assert.ok(!rendered.includes("javascript:"));
 });
 
 test("a quote in a dbRef stays inside the attribute that holds it", () => {
-  const rendered = Columns.edit()
-    .formatter(null, { status: "Completed", dbRef: `a"b'c` }, 0)
-    .trim();
+  const rendered = String(
+    Columns.edit().formatter(null, { status: "Completed", dbRef: `a"b'c` }, 0)
+  ).trim();
   assert.ok(rendered.includes(`data-ref="a&quot;b&#39;c"`));
 });
 
 test("what the browser parses out of the edit attribute is the dbRef itself", () => {
   const dbRef = `a"b'&c`;
-  const rendered = Columns.edit()
-    .formatter(null, { status: "Completed", dbRef }, 0)
-    .trim();
+  const rendered = String(
+    Columns.edit().formatter(null, { status: "Completed", dbRef }, 0)
+  ).trim();
 
   // The attribute holds the id itself rather than a fragment of JS that
   // quotes it, so HTML-decoding is the whole of what the handler gets back.

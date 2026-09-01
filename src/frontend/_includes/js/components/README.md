@@ -116,8 +116,10 @@ Three things follow, and they are the only three:
   the parent then escapes — the tags come out visible on the page.
 - **Coerce with `String(...)` at a boundary that wants a string.** jQuery's
   `.html()`, `.append()`, `.before()` and `.after()` all check for one, and so
-  does bootstrap-table for what a `formatter` or a `detailFormatter` returns.
-  `setContent` and `appendContent` do this for you.
+  do `innerHTML` and `insertAdjacentHTML`. `setContent` and `appendContent` do
+  this for you. A table cell is *not* such a boundary: a column's `formatter`
+  in `utils/columns.js` returns markup, or returns a stored value and lets
+  `utils/table_view.js` escape it.
 - **`Utils.raw(...)` is for markup that came from somewhere else**, which here
   means the output of `DOMPurify.sanitize`. There are three call sites and
   there should not be a fourth: anything else reaching for it is a template
