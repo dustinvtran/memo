@@ -1,5 +1,6 @@
 const { getUserName, setBio } = Netlify
 const { html, css, raw, escapeHtml } = Utils
+const { el, onClick } = Dom
 const { initComponent, setContent } = Components
 const { Button, showNotification } = Components.UI
 const { errorMessage } = Http
@@ -25,8 +26,11 @@ const Biography = (userdata) => initComponent({
     getUserName()
       .map(({ username }) => {
         if (username === userdata.username) {
-          $('#biography-heading').append(' <i id="biography-edit" class="fas fa-edit"></i>')
-          $('#biography-edit').click(() => {
+          el('#biography-heading')?.insertAdjacentHTML(
+            'beforeend',
+            String(html` <i id="biography-edit" class="fas fa-edit"></i>`)
+          )
+          onClick('#biography-edit', () => {
             setContent('#biography-content', BiographyInput(userdata.biography))
           })
         }
@@ -69,7 +73,7 @@ const BiographyInput = (currentBio) => initComponent({
           display: inline-block;
         }
       `,
-      onClick: () => setBio($('#biography-input').val())
+      onClick: () => setBio(el('#biography-input').value)
         .map(() => location.reload())
         .mapErr((err) =>
           showNotification(`Error saving biography: ${errorMessage(err)}`)

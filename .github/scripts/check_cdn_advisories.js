@@ -76,20 +76,13 @@ const NPM_NAME = {
 
 /** Package name -> why an advisory against it does not stop the build today. */
 const ACCEPTED = {
-  jquery:
-    '1.12.2 is the one release on the whole 1.x line where CVE-2015-9251 ' +
-    'is fixed: the fix regressed in 1.12.3 and was not made again until ' +
-    '3.0, so the reported range reads `<1.12.2 || >=1.12.3 <3.0.0`. It is ' +
-    'a swap rather than a clearance — 1.12.0 is where CVE-2020-11022 ' +
-    'begins — so three moderate XSS are reported either way. Clearing them ' +
-    'needs 3.5.0, and jQuery 1.x to 3.x is not a drop-in. #254.',
   bootstrap:
-    '3.4.1 clears six of the seven moderate XSS that 3.3.1 carried. The ' +
-    'two left are CVE-2024-6485, `data-loading-text` in the button ' +
-    'plugin, and CVE-2025-1647, popover and tooltip, reported against ' +
-    '3.4.1 exactly. Neither has a patched release anywhere on the 3.x ' +
-    'line, so they are the floor until Bootstrap 5 — which renames every ' +
-    'class in every template and is its own change. #254.',
+    'Only the stylesheet is loaded now, and both advisories reported ' +
+    'against 3.4.1 need JavaScript that is no longer on the page: ' +
+    'CVE-2024-6485 is `data-loading-text` in the button plugin and ' +
+    'CVE-2025-1647 is popover and tooltip, and `bootstrap.min.js` left ' +
+    'with jQuery in #269 step 5. Neither has a patched release anywhere ' +
+    'on the 3.x line in any case. The stylesheet is step 6. #254, #269.',
 }
 
 /**

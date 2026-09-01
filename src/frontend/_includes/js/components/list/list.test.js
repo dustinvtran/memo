@@ -17,6 +17,7 @@ const source = fs.readFileSync(path.join(__dirname, "list.js"), "utf8");
 // reached into have to be objects.
 const context = vm.createContext({
   Utils: {},
+  Dom: {},
   Tables: {},
   TableView: {},
   Conversions: {},

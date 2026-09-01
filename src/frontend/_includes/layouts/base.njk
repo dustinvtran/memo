@@ -14,6 +14,24 @@
        if you change a version, and check the page still draws: a wrong hash
        blocks the file silently, and the whole page is drawn by these. #}
     <!-- CSS -->
+    {# The stylesheet only. Bootstrap's JavaScript is gone: it is itself a
+       jQuery plugin and refuses to load without one, and #273 took away the
+       only thing on this site that ever called into it — bootstrap-table's
+       Columns dropdown, and the version detection that read
+       `$.fn.dropdown.Constructor.VERSION`. Nothing here initialises a
+       Bootstrap plugin, and the one `data-toggle` left in the tree belongs to
+       litepicker.
+
+       That is also what makes the two advisories still open against 3.4.1
+       unreachable, which is worth writing down beside the pin rather than
+       leaving to be worked out again: CVE-2024-6485 needs the button plugin
+       and a `data-loading-text`, CVE-2025-1647 needs a popover or a tooltip,
+       and neither plugin can be initialised out of a file the page does not
+       load. Neither has a patched release anywhere on the 3.x line either, so
+       they would be the floor even if they were reachable.
+
+       The stylesheet is #269 step 6: nine `row`, two `container`, six `col-*`,
+       one `text-center`, and about twenty lines of CSS Grid. #254, #269. #}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous" referrerpolicy="no-referrer">
     {# Font Awesome 6 only. It defines the `fa`, `fas` and `far` prefixes the
        markup uses, so the 4.7.0 stylesheet that used to sit alongside it was
@@ -34,29 +52,47 @@
 
     {# The page cannot draw until every script below has been fetched and run,
        so anything not needed to draw it carries `defer` and gets out of the
-       way. What is left is what the block of app code at the end of this head
-       reaches for while it is being parsed: jQuery and the libraries the first
-       render calls into.
+       way. What is left is the two libraries the bundle reaches for as it
+       draws the first page.
 
-       Three of these are gone rather than deferred. Ramda was 44,743 bytes
-       for four calls — three `R.equals` and one `R.isNil` — and axios 65,099
-       for the two in `utils/http.js`; `utils/deep_equal.js` and `fetch` are
-       what do that work now, so 110 KB stopped blocking the first paint of
-       every page on the site. The `ramda` in `package.json` is a different
-       thing and stays: `src/api` imports it in four files and nothing here
-       loads that copy.
+       Five things are gone rather than deferred, and the order they went in is
+       the order they had to go in. Ramda was 44,743 bytes for four calls —
+       three `R.equals` and one `R.isNil` — and axios 65,099 for the two in
+       `utils/http.js`; `utils/deep_equal.js` and `fetch` do that work now. The
+       `ramda` in `package.json` is a different thing and stays: `src/api`
+       imports it in four files and nothing here loads that copy.
 
        bootstrap-table was the third, at 145,282 bytes of js and css to draw
        every list on the site. What it actually supplied was the table markup,
        sort-on-header-click, the Columns dropdown, expand/collapse of a detail
        row, and a pagination nothing used; the search, the columns and every
        cell formatter were already ours. `js/utils/table_model.js` decides those
-       four things and `js/utils/table_view.js` draws them. It is also what
-       unblocks the next two steps. bootstrap-table is a jQuery plugin and has
-       no jQuery-free build at any version it has ever published, so it was the
-       one thing here that jQuery could not have been removed from underneath;
-       and it was the only caller `bootstrap.min.js` had, for the Columns
-       dropdown. The site's own 113 jQuery calls are step 5. #269. #}
+       four things and `js/utils/table_view.js` draws them. It is a jQuery
+       plugin with no jQuery-free build at any version it has ever published,
+       so it was the one thing here jQuery could not have been removed from
+       underneath — which is why it had to go first.
+
+       jQuery was the fourth, at 97,244 bytes for 111 calls of the site's own.
+       Nearly every one of them was already vanilla under a different name:
+       `.val()` is `.value`, `.html()` is `.innerHTML`, `.text()` is
+       `.textContent`, `.addClass` is `classList.add`, and `.closest()` and
+       `.append()` are native under the same name. What was not is
+       `js/utils/dom.js` — the animations, which measured a height because CSS
+       cannot transition from `auto`, and a delegated click that can be
+       registered again without doubling.
+
+       Bootstrap's JavaScript went in the same change and had to: it is a
+       jQuery plugin and throws while loading without one. Losing it cost
+       nothing, because #273 had already taken away its only caller. Its
+       stylesheet is still above, and is step 6.
+
+       Measured on a list page: the render-blocking JavaScript every page
+       fetches is 72,688 bytes, all of it DOMPurify and marked, where #269
+       opened at 209,612. What is left blocking the first paint is the two
+       stylesheets, 195,347 bytes of which 121,457 is Bootstrap's — which is
+       what makes step 6 the rest of this. `defer` was never the answer to any
+       of it: it keeps a file from blocking the parser and does nothing
+       whatever about fetching it. #269. #}
     <!-- JavaScript -->
     {# DOMPurify is the only thing between another user's markdown and this
        page's DOM, and this page holds their reader's `nf_jwt` — so it is the
@@ -85,29 +121,6 @@
        and `js/utils/load_script.js` is where the url, the hash and the reason
        live. #269. #}
     <script defer src="https://cdn.jsdelivr.net/npm/litepicker@2.0.12/dist/litepicker.js" integrity="sha384-TwHJTusQtbcoEHJcrF5aeo0MHBgj8lt8onFRrG7wKk8Q/LG9EphkEsqNRiVWzIP9" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    {# 1.11.1 was from 2014. 1.12.2 is the one release on the whole 1.x
-       line where CVE-2015-9251 is fixed — a cross-origin ajax response typed
-       `text/javascript` went to `jQuery.globalEval` whatever the request had
-       asked for. The fix regressed in 1.12.3 and was not made again until
-       3.0, which the advisory range states out loud as
-       `<1.12.2 || >=1.12.3 <3.0.0`: the rest of the 1.x line is no better
-       than 1.11.1 was, and 1.12.4 is strictly worse.
-
-       It is a swap rather than a clearance. 1.12.0 is where CVE-2020-11022
-       begins, so the count stays at three. What the swap buys beyond the
-       trade is that jQuery's own documented workaround for 11022 and 11023 —
-       reassigning `jQuery.htmlPrefilter` — cannot be applied at all before
-       1.12. Clearing those two outright needs 3.5.0, and 1.x to 3.x is not a
-       drop-in on a page that leans on jQuery this heavily. #254. #}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.2/jquery.min.js" integrity="sha384-o6l2EXLcx4A+q7ls2O2OP2Lb2W7iBgOsYvuuRI6G+Efbjbk6J4xbirJpHZZoHbfs" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    {# 3.3.1 carried seven moderate XSS and 3.4.1 clears six of them. What
-       is left is CVE-2024-6485, `data-loading-text` in the button plugin, and
-       CVE-2025-1647, popover and tooltip, reported against 3.4.1 exactly.
-       Neither has a patched release anywhere on the 3.x line, so they are the
-       floor for as long as this page is on Bootstrap 3 — both need markup
-       this site writes itself to carry an attacker's `data-*`. Bootstrap 3 to
-       5 renames every class in every template and is its own change. #254. #}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.4.1/js/bootstrap.min.js" integrity="sha384-aJ21OjlMXNL5UyIl/XNwTMqvzeRMZH2w8c5cRVpzpU8Y5bApTppSuUkhZXN0VxHd" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     {# 4.0.2 carried two high ReDoS advisories, both fixed in 4.0.10 — which
        cdnjs lists but has no files for, so the 4.x line here stops at 4.3.0
        and the choice was that or the current major. This is the current one.

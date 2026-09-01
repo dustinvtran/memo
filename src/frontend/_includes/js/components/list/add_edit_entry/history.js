@@ -12,6 +12,7 @@
  * should still be readable in a modal.
  */
 const { html, css, timeAgo, dateTime, dateOnly } = Utils
+const { el, els, onClick, isVisible, slideToggle, slideUp, slideDown } = Dom
 const { initComponent, setContent, WithRemoteData } = Components
 const { showNotification } = Components.UI
 const { getVersions } = Netlify
@@ -34,9 +35,9 @@ const EntryHistory = (type, data) => initComponent({
   initializer: ({ id }) => {
     let loaded = false
 
-    $(`#${id}-header`).click(() => {
-      $(`#${id}-body`).slideToggle(150)
-      $(`#${id}-chevron`).toggleClass('is-open')
+    onClick(`#${id}-header`, () => {
+      slideToggle(el(`#${id}-body`), 150)
+      el(`#${id}-chevron`)?.classList.toggle('is-open')
 
       if (loaded) return
       loaded = true
@@ -45,9 +46,11 @@ const EntryHistory = (type, data) => initComponent({
         remoteData: getVersions(type, data.dbRef),
         component: ({ versions }) => {
           const past = (versions ?? []).length - 1
-          $(`#${id}-count`).text(
-            past === 0 ? 'no edits yet' : past === 1 ? '1 earlier version' : `${past} earlier versions`
-          )
+          const count = el(`#${id}-count`)
+          if (count) {
+            count.textContent =
+              past === 0 ? 'no edits yet' : past === 1 ? '1 earlier version' : `${past} earlier versions`
+          }
           return Versions(type, data, versions ?? [])
         },
       }))
@@ -106,21 +109,28 @@ const Version = (type, data, version, older) => initComponent({
     </li>
   `,
   initializer: ({ id }) => {
-    $(`#${id}-row`).click(() => {
-      const wasOpen = $(`#${id}-detail`).is(':visible')
+    onClick(`#${id}-row`, () => {
+      const detail = el(`#${id}-detail`)
+      const wasOpen = isVisible(detail)
+      const list = detail?.closest('.version-list')
 
       // One row open at a time: two open diffs in a modal push each other off
-      // the screen.
-      $(`#${id}-detail`).closest('.version-list').find('.version-detail').slideUp(120)
-      $(`#${id}-row`).closest('.version-list').find('.version-caret').removeClass('is-open')
+      // the screen. `slideUp` leaves an already-shut panel alone, so this is
+      // the whole of the closing.
+      if (list) {
+        els('.version-detail', list).forEach((panel) => slideUp(panel, 120))
+        els('.version-caret', list).forEach((caret) =>
+          caret.classList.remove('is-open')
+        )
+      }
 
       if (!wasOpen) {
-        $(`#${id}-detail`).slideDown(120)
-        $(`#${id}-caret`).addClass('is-open')
+        slideDown(detail, 120)
+        el(`#${id}-caret`)?.classList.add('is-open')
       }
     })
 
-    $(`#${id}-restore`).click((event) => {
+    onClick(`#${id}-restore`, (event) => {
       // The row's own handler would fold the detail shut underneath the click.
       event.stopPropagation()
       writeForm(version.snapshot, type, data)

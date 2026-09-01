@@ -1,4 +1,5 @@
 const { html, css } = Utils
+const { el, on, show, hide } = Dom
 const { initComponent, WithRemoteData } = Components
 const { statuses, filmStatuses } = Tables
 const { statusToTitle } = Conversions
@@ -118,35 +119,49 @@ const PersonalFields = (data, type) => {
         new Litepicker({ element: document.getElementById('completed-date') })
       }
 
-      $('#status').on('change', () => {
-        if ($('#status').val() === 'Planned') {
-          $('#progress-container').show()
-          $('label[for="score"]').html('Preference')
+      const status = el('#status')
+
+      on(status, 'change', () => {
+        // A `select` whose value matches no option reads back as the empty
+        // string, which matches none of the branches below — the same nothing
+        // jQuery's `.val()` gave.
+        if (status.value === 'Planned') {
+          show('#progress-container')
+          setScoreLabel('Preference')
           ;['started-date', 'completed-date'].forEach((field) => {
-            $(`#${field}`).val('')
-            $(`#${field}-container`).hide()
+            setField(field, '')
+            hide(`#${field}-container`)
           })
-          $('#progress-container').show()
-        } else if ($('#status').val() === 'Dropped') {
-          $('label[for="score"]').html('Score')
-          $('#progress-container').show()
-          $('#started-date-container').show()
-          $('#completed-date').val('')
-          $('#completed-date-container').hide()
-        } else if ($('#status').val() === 'Completed') {
-          $('label[for="score"]').html('Score')
-          $('#started-date-container').show()
-          $('#completed-date-container').show()
-          $('#completed-date').val(today())
-          $('#progress-container').hide()
-          $('#progress-container').val($('#episodes').html())
-        } else if ($('#status').val() === 'InProgress') {
-          $('label[for="score"]').html('Score')
-          $('#started-date-container').show()
-          $('#completed-date').val('')
-          $('#started-date').val(data.startedDate ? timestampToString(data.startedDate) : today())
-          $('#completed-date-container').hide()
-          $('#progress-container').show()
+          show('#progress-container')
+        } else if (status.value === 'Dropped') {
+          setScoreLabel('Score')
+          show('#progress-container')
+          show('#started-date-container')
+          setField('completed-date', '')
+          hide('#completed-date-container')
+        } else if (status.value === 'Completed') {
+          setScoreLabel('Score')
+          show('#started-date-container')
+          show('#completed-date-container')
+          setField('completed-date', today())
+          hide('#progress-container')
+          // A `.val()` on `#progress-container`, given the `.html()` of
+          // `#episodes`, used to follow — and it did nothing twice over.
+          // `#progress-container` is a <div>, so setting a value set a
+          // property nothing reads back, and `#episodes` is an <input>, whose
+          // inner HTML is the empty string. What it presumably wanted, filling
+          // the episode count in when an entry is completed, is a feature
+          // rather than a translation, so it is not written back here.
+        } else if (status.value === 'InProgress') {
+          setScoreLabel('Score')
+          show('#started-date-container')
+          setField('completed-date', '')
+          setField(
+            'started-date',
+            data.startedDate ? timestampToString(data.startedDate) : today()
+          )
+          hide('#completed-date-container')
+          show('#progress-container')
         }
       })
     }
@@ -165,6 +180,22 @@ const CommentsField = (type, review) => initComponent({
     </div>
   `
 })
+
+
+/**
+ * The label over the score dropdown, which reads "Preference" for something
+ * nobody has got to yet. `textContent`, not `innerHTML`: it is a word.
+ */
+const setScoreLabel = (text) => {
+  const label = el('label[for="score"]')
+  if (label) label.textContent = text
+}
+
+/** A form field this entry type may not have at all. */
+const setField = (id, value) => {
+  const field = document.getElementById(id)
+  if (field) field.value = value
+}
 
 
 const today = () => {

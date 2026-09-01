@@ -1,8 +1,14 @@
 /**
  * @file The frontend scripts are plain globals concatenated into a bundle
- * rather than modules, so this loads entry_form_io.js into a vm context with
- * a jQuery stand-in backed by a plain id -> value map: enough of `$` for
+ * rather than modules, so this loads entry_form_io.js into a vm context with a
+ * stand-in `document` backed by a plain id -> value map: enough of the DOM for
  * reading and writing form fields, which is all this module does.
+ *
+ * The map is also the point of the test. A form's fields depend on the entry
+ * type — a film has no started date, a book no episode count — and the whole
+ * of this module's behaviour is what it does about a field that is not there.
+ * So `getElementById` answers `null` for anything the map does not name, the
+ * way the real one does.
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -16,23 +22,27 @@ const source = fs.readFileSync(path.join(__dirname, "entry_form_io.js"), "utf8")
 const formWith = (fields) => {
   const values = { ...fields };
 
-  const $ = (selector) => {
-    const id = String(selector).replace(/^#/, "");
-    const field = {
-      length: Object.prototype.hasOwnProperty.call(values, id) ? 1 : 0,
-      val: (value) => {
-        if (value === undefined) return values[id];
-        values[id] = value;
-        return field;
-      },
-      trigger: () => field,
-    };
-    return field;
+  const document = {
+    getElementById: (id) =>
+      Object.prototype.hasOwnProperty.call(values, id)
+        ? {
+            get value() {
+              return values[id];
+            },
+            set value(next) {
+              values[id] = next;
+            },
+            // `writeForm` dispatches a real `change` on the status field, so
+            // that the handler in `personal_fields.js` runs; here it only has
+            // to not be missing.
+            dispatchEvent: () => true,
+          }
+        : null,
   };
 
   const { readForm, writeForm } = vm.runInContext(
     `${source}\n;EntryFormIO`,
-    vm.createContext({ $, console })
+    vm.createContext({ document, Event: class {}, console })
   );
 
   return { values, readForm, writeForm };

@@ -21,6 +21,7 @@ const crypto = require("node:crypto");
 const BUNDLED_FILES = [
   "js/packages/neverthrow.js",
   "js/utils/general.js",
+  "js/utils/dom.js",
   "js/utils/nullable.js",
   "js/utils/deep_equal.js",
   "js/utils/load_script.js",

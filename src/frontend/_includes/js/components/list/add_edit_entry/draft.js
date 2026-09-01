@@ -11,6 +11,7 @@
  * may have been edited elsewhere since.
  */
 const { html, css, waitForEl, timeAgo, dateTime } = Utils
+const { el, on, onClick, fadeIn, fadeOut } = Dom
 const { initComponent } = Components
 const { getDraft, saveDraft, deleteDraft } = Netlify
 const { readForm, writeForm } = EntryFormIO
@@ -151,21 +152,33 @@ const offerExistingDraft = ({ id, type, data, saved }) => {
         return
       }
 
-      $(`#${id}-when`)
-        .text(`from ${timeAgo(draft.createdDate)}`)
-        .attr('title', dateTime(draft.createdDate))
-      $(`#${id}-summary`).text(summarise(draft.snapshot, saved))
-      $(`#${id}-banner`).css('display', 'flex').hide().fadeIn(150)
+      // The banner carries `display: none` inline and `display: flex` in its
+      // rule, so taking the inline declaration back off is what shows it —
+      // which is `fadeIn`'s whole job here. The `.css('display', 'flex')`
+      // that used to precede this was jQuery being told what to restore.
+      //
+      // It can be gone: this runs when the request for the draft answers, and
+      // the modal it belongs to may have been closed by then. `$` was silent
+      // about that and the three writes below are not, so it is asked once.
+      const banner = el(`#${id}-banner`)
+      if (!banner) return
 
-      $(`#${id}-restore`).click(() => {
+      const when = el(`#${id}-when`)
+      when.textContent = `from ${timeAgo(draft.createdDate)}`
+      when.title = dateTime(draft.createdDate)
+      el(`#${id}-summary`).textContent = summarise(draft.snapshot, saved)
+
+      fadeIn(banner, 150)
+
+      onClick(`#${id}-restore`, () => {
         writeForm(draft.snapshot, type, data)
         window.hasUnsavedChange = true
-        $(`#${id}-banner`).fadeOut(150)
+        fadeOut(banner, 150)
       })
 
-      $(`#${id}-discard`).click(() => {
+      onClick(`#${id}-discard`, () => {
         deleteDraft(type, data.dbRef)
-        $(`#${id}-banner`).fadeOut(150)
+        fadeOut(banner, 150)
       })
     })
     // A network blip must not stop anyone from editing, so this stays quiet.
@@ -192,25 +205,34 @@ const autosaveWhileEditing = ({ id, type, data, saved }) => {
 
   const save = () => {
     // The modal is gone: this is a timer that outlived the form it belonged
-    // to, and the entry may since have been saved for real.
-    if ($(`#${id}`).closest('body').length === 0) return
+    // to, and the entry may since have been saved for real. `isConnected`
+    // rather than a walk up to <body>, which is what `.closest('body')` was.
+    if (!el(`#${id}`)?.isConnected) return
 
     const current = readForm(data, type)
     if (deepEqual(comparable(current), comparable(saved))) return
 
+    const status = el(`#${id}-status`)
     saveDraft(type, data.dbRef, current)
       .map(() => {
-        $(`#${id}-status`).text(`Draft saved ${clockTime(Date.now())}`)
+        if (status) status.textContent = `Draft saved ${clockTime(Date.now())}`
       })
       .mapErr(() => {
-        $(`#${id}-status`).text('Could not save a draft of these changes.')
+        if (status) status.textContent = 'Could not save a draft of these changes.'
       })
   }
 
-  $('#add-entry-fields').on('input change', 'input, select, textarea', () => {
+  // One listener on the form for both events rather than one per field: the
+  // comments textarea arrives with a request of its own, and `input` and
+  // `change` both bubble, so the form hears about a field that was not there
+  // when this ran. jQuery's delegation did the same and was spelled shorter.
+  const fields = el('#add-entry-fields')
+  const schedule = () => {
     clearTimeout(timer)
     timer = setTimeout(save, AUTOSAVE_DELAY_MS)
-  })
+  }
+  on(fields, 'input', schedule)
+  on(fields, 'change', schedule)
 }
 
 /** The form sends fields the draft doesn't carry (and vice versa) as absent

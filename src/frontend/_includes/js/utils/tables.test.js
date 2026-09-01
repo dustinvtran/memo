@@ -6,8 +6,8 @@
  * row of every list, for every visitor (#219).
  *
  * What replaces it is two halves that have to agree: markup that names the
- * entry in `data-` attributes, and a handler bound to `document` that reads
- * them back. Both halves are asserted here, against each other.
+ * entry in `data-` attributes, and a handler on the table's container that
+ * reads them back. Both halves are asserted here, against each other.
  *
  * Loaded the way `columns.test.js` loads its file — the frontend is plain
  * globals concatenated into a bundle rather than modules, so this runs the
@@ -62,19 +62,25 @@ test("an id in the panel is escaped like any other attribute value", () => {
   assert.ok(rendered.includes(`data-review-ref="a&quot;b&#39;c"`));
 });
 
+/**
+ * The `td` the detail view was appended to, which is what
+ * `utils/table_view.js` hands over. `querySelector` is the whole of the
+ * element API this module uses now that jQuery is gone (#269).
+ */
+const detailWith = (panel, searched = []) => ({
+  querySelector: (selector) => {
+    searched.push(selector);
+    return panel;
+  },
+});
+
 test("the handler asks for the review the panel names", () => {
   const panel = { dataset: { reviewType: "games", reviewRef: "abc" } };
-  const detailCell = { it: "the td the detail view was appended to" };
   const searched = [];
+  const detailCell = detailWith(panel, searched);
   const asked = [];
   const filled = [];
 
-  context.$ = (target) => ({
-    find: (selector) => {
-      searched.push([target, selector]);
-      return [panel];
-    },
-  });
   context.Netlify = {
     getReview: (type, entryId) => {
       asked.push([type, entryId]);
@@ -89,7 +95,7 @@ test("the handler asks for the review the panel names", () => {
 
   includeReviewIn(detailCell);
 
-  assert.deepEqual(searched, [[detailCell, "[data-review-ref]"]]);
+  assert.deepEqual(searched, ["[data-review-ref]"]);
   assert.deepEqual(asked, [["games", "abc"]]);
   assert.equal(filled.length, 1);
   // The panel itself, not a selector built from the id it holds.
@@ -100,26 +106,18 @@ test("the attribute the handler looks for is the one the markup writes", () => {
   // The two halves are in one file and still a rename could take only one of
   // them, which would be a comment panel that spins for ever.
   const panel = { dataset: { reviewType: "games", reviewRef: "abc" } };
-  let selector;
+  const searched = [];
 
-  context.$ = () => ({
-    find: (used) => {
-      selector = used;
-      return [panel];
-    },
-  });
+  includeReviewIn(detailWith(panel, searched));
 
-  includeReviewIn({});
-
-  const attribute = selector.replace(/[[\]]/g, "");
+  const attribute = searched[0].replace(/[[\]]/g, "");
   assert.ok(String(detailFormatter(null, row())).includes(`${attribute}="abc"`));
 });
 
 test("a detail view with no panel in it asks for nothing", () => {
-  context.$ = () => ({ find: () => [] });
   context.Netlify = {
     getReview: () => assert.fail("asked for a review with no panel to put it in"),
   };
 
-  assert.doesNotThrow(() => includeReviewIn({}));
+  assert.doesNotThrow(() => includeReviewIn(detailWith(null)));
 });

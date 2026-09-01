@@ -1,4 +1,5 @@
 const { html, css, waitForEl } = Utils
+const { el, onClick, delegateClick, slideToggle } = Dom
 const { detailFormatter, includeReviewIn, statuses, entryTypeToFullColumns, filmStatuses, searchSettings } = Tables
 const { initTable } = TableView
 const { typeToTitle, statusToTitle } = Conversions
@@ -81,11 +82,13 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
     // `includeReviewIn` itself once the panel is in the DOM, which also covers
     // a row opened by the url anchor in `list/index.js` rather than by hand.
     //
-    // `off` first because this initializer runs per render, and a second copy
-    // of the edit handler would open two modals on one click.
-    $(document)
-      .off('click.entryRows')
-      .on('click.entryRows', '.edit-button', (e) => editEntry(e.currentTarget.dataset.ref))
+    // Registered under a name because this initializer runs per render, and a
+    // second copy of the edit handler would open two modals on one click:
+    // `delegateClick` replaces the handler of that name rather than adding
+    // one, which is what `.off('click.entryRows')` was doing first.
+    delegateClick('entryRows', '.edit-button', (button) =>
+      editEntry(button.dataset.ref)
+    )
 
     // Show helpful image next to the first open-review-icon in the DOM. A
     // list with no rows in it never grows one, which is what the wait gives
@@ -95,15 +98,15 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
       return
     }
 
-    waitForEl('a.detail-icon').then((el) => {
-      if (!el || document.querySelector('#click-to-see-comments')) return
+    waitForEl('a.detail-icon').then((icon) => {
+      if (!icon || document.querySelector('#click-to-see-comments')) return
 
       setTimeout(() => {
         // The table's own container, rather than the seven `.parent()` hops it
         // took to climb out of bootstrap-table's wrappers. It sits directly
         // under the sublist's heading, which is where the hint goes and what
         // the collapse handler below expects to find there.
-        el.closest('.entry-table')?.insertAdjacentHTML('beforebegin', String(html`
+        icon.closest('.entry-table')?.insertAdjacentHTML('beforebegin', String(html`
           <div id="click-to-see-comments">Click here to<br>read comments! <i class="fas fa-location-arrow" style="opacity:.7;"></i></div>
         `))
       }, 200)
@@ -187,16 +190,24 @@ const SubList = (status, entryType, isOwner, data) => initComponent({
     </div>
   `,
   initializer: ({ id }) => {
-    $(`#${id}-title`).click(() => {
-      const nextEl = $(`#${id}-title`).next()
-      const elsToHide =
-        nextEl.attr('id') === 'click-to-see-comments'
-          ? [nextEl, nextEl.next(), nextEl.parent().parent().next()]
-          : [nextEl, nextEl.parent().parent().next()]
+    onClick(`#${id}-title`, () => {
+      // What follows the heading is the table, unless the hint for a
+      // logged-out reader was inserted before it — see `List` above, which
+      // puts that one directly under the heading too. The summary line is two
+      // levels out and one along, past the `.row` the sublist is wrapped in.
+      const next = el(`#${id}-title`)?.nextElementSibling
+      const summary = next?.parentElement?.parentElement?.nextElementSibling
+      const toCollapse =
+        next?.id === 'click-to-see-comments'
+          ? [next, next.nextElementSibling, summary]
+          : [next, summary]
 
-      elsToHide.forEach(el => {
-        el.toggle(200)
-        el.toggleClass('is-collapsed')
+      toCollapse.filter(Boolean).forEach((element) => {
+        // `toggle(200)` was jQuery's, and a slide is what it looked like: it
+        // animated height, width and opacity at once, of which only the height
+        // is doing anything to a block that fills its row.
+        slideToggle(element, 200)
+        element.classList.toggle('is-collapsed')
       })
     })
 
