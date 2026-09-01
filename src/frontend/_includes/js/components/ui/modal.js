@@ -79,12 +79,19 @@ Components.UI.Modal_ = Modal_
 
 const ModalHeader = (title, parentId, showCloseConfirmationDialog) => initComponent({
   content: ({ include }) => html`
-    <div class="td-modal-header modal-header">
+    <div class="td-modal-header">
       <div class="td-modal-title">${title}</div>
       ${include(CloseButton(parentId, showCloseConfirmationDialog))}
     </div>
   `,
   style: () => css`
+    /* The rule under the title, which was Bootstrap's .modal-header until
+       #269 step 6. Both children of this are positioned absolutely, so what it
+       contributes is the line and the space above it and nothing else. */
+    .td-modal-header {
+      padding: 15px;
+      border-bottom: 1px solid #e5e5e5;
+    }
     .td-modal-title {
       position: absolute;
       top: 27px;

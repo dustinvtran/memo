@@ -232,10 +232,10 @@ const openBox = (node) => {
 /**
  * The number to give the `height` property, which is not the same number under
  * the two box models: `offsetHeight` is always the border box, and `height`
- * only means that under `box-sizing: border-box`. Bootstrap sets that on
- * everything today and the reset replacing it in step 6 will as well, but this
- * asks rather than assuming — being wrong about it shows up as a panel that
- * clips its last line, not as anything that fails.
+ * only means that under `box-sizing: border-box`. `main.css` sets that on
+ * everything, as Bootstrap did before it, but this asks rather than assuming —
+ * being wrong about it shows up as a panel that clips its last line, not as
+ * anything that fails.
  */
 const heightOf = (node, style) =>
   style.boxSizing === 'border-box'

@@ -70,20 +70,18 @@ const SELF = `.github/scripts/${path.basename(__filename)}`
  * reported". `resolves()` below is what turns that back into a failure.
  */
 const NPM_NAME = {
-  'twitter-bootstrap': 'bootstrap',
   'font-awesome': '@fortawesome/fontawesome-free',
 }
 
-/** Package name -> why an advisory against it does not stop the build today. */
-const ACCEPTED = {
-  bootstrap:
-    'Only the stylesheet is loaded now, and both advisories reported ' +
-    'against 3.4.1 need JavaScript that is no longer on the page: ' +
-    'CVE-2024-6485 is `data-loading-text` in the button plugin and ' +
-    'CVE-2025-1647 is popover and tooltip, and `bootstrap.min.js` left ' +
-    'with jQuery in #269 step 5. Neither has a patched release anywhere ' +
-    'on the 3.x line in any case. The stylesheet is step 6. #254, #269.',
-}
+/**
+ * Package name -> why an advisory against it does not stop the build today.
+ *
+ * Empty, which is the state #254 was asking for and #269 reached: every pin
+ * this check watches is on a release nothing is reported against, so there is
+ * nothing here to have read and accepted. Bootstrap was the last entry, and it
+ * left when its stylesheet did in #269 step 6.
+ */
+const ACCEPTED = {}
 
 /**
  * Severities that stop the build.
@@ -91,11 +89,15 @@ const ACCEPTED = {
  * `check_audit.js` draws this line at high, and is right to — those are
  * transitive server-side packages where a moderate is usually a
  * denial-of-service in a code path nothing reaches. These are not that. Every
- * advisory against this set is XSS, on a page holding a 14-day session token
- * that any script running there can read, so a moderate here is the shape of
- * thing a critical is there. Low stays off the list: both of the ones reported
- * today need a configuration this site does not pass, and a check that fails
- * on those is a check that gets ignored.
+ * advisory this set has ever carried is XSS, on a page holding a 14-day
+ * session token that any script running there can read, so a moderate here is
+ * the shape of thing a critical is there. Low stays off the list, because a
+ * check that fails on an advisory nobody is going to act on is a check that
+ * gets ignored.
+ *
+ * As of #269 nothing at all is reported against the five that remain, at any
+ * severity, so this line decides nothing today. It is where the line goes when
+ * that changes.
  */
 const BLOCKING = new Set(['moderate', 'high', 'critical'])
 
@@ -191,7 +193,8 @@ const readPins = (root) => {
         unrecognised.push({ url, source })
         continue
       }
-      /* Two tags for one library — Bootstrap's CSS and its JS — are one pin. */
+      /* A library loaded by more than one tag — as Bootstrap's CSS and its JS
+         were — is one pin. */
       pins.set(`${pin.name}@${pin.version}`, pin)
       count += 1
     }
