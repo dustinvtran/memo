@@ -4,11 +4,11 @@ const { Menu } = Components.UI
 
 const Base = (title, content) => initComponent({
   content: ({ include }) => html`
-    <div class="container">
-      <div class="row" style="padding:20px">
+    <div class="page">
+      <div class="page-body page-columns">
         ${include(Menu())}
-        <div class="col-xs-12 col-sm-9 col-md-9">
-          <div class="row"> <h1>${title}</h1> </div>
+        <div class="page-main">
+          <div class="full-bleed"> <h1>${title}</h1> </div>
           <hr>
           <div id="content">
             ${include(content)}

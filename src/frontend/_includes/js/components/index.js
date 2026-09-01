@@ -55,8 +55,7 @@ const initComponent = ({ content, initializer, style }) => {
   // with a `head style` selector: litepicker injects a <style> of its own at
   // the top of <head>, and whichever of the two got there first used to decide
   // where every component style landed. Appended, so it sits after the
-  // stylesheet <link>s and a component's style wins over main.css and
-  // bootstrap.
+  // stylesheet <link>s and a component's style wins over main.css.
   const styleTag =
     document.getElementById('component-styles') ??
     document.head.appendChild(

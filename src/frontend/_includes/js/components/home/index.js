@@ -47,7 +47,7 @@ const NameRequestFailed = (err) => err?.status === 401
 
 const SessionEnded = () => initComponent({
   content: () => html`
-    <div class="row">
+    <div class="full-bleed">
       Your session has ended. <a href="${LOGIN_URL}">Log in</a> to pick up where you left off.
     </div>
   `
@@ -66,11 +66,11 @@ const ProfileListsOrUsernameSetter = ({ error, username }) => initComponent({
 
 const AuthenticatedHomePage = (username) => initComponent({
   content: () => html`
-    <div id="authenticated-home-page" class="row">
+    <div id="authenticated-home-page" class="full-bleed">
       Hi ${username}! Not much here yet. Why not visit <a href="/profile/${encodeURIComponent(username)}">your profile</a>?
     </div>
 
-    <div class="row">
+    <div class="full-bleed">
       <h2>Tips</h2>
         <ul>
           <li>
@@ -87,7 +87,7 @@ const AuthenticatedHomePage = (username) => initComponent({
 
 const UnauthenticatedWelcome = () => initComponent({
   content: () => html`
-    <div class="row">Welcome to memo. Log in to start listing.</div>
+    <div class="full-bleed">Welcome to memo. Log in to start listing.</div>
   `
 })
 

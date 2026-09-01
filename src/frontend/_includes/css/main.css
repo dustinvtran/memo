@@ -1,6 +1,327 @@
+/* The base layer, which was Bootstrap's until #269 step 6.
+ *
+ * The Bootstrap class names the markup carried are replaced further down,
+ * under "Layout" and in the two components named there. This first section is the part of that stylesheet with no
+ * class names in it at all -- `box-sizing`, the body font and size, the
+ * heading scale, the margins on paragraphs, lists and rules -- and it is the
+ * part that touched every page, including the ones that never used a
+ * Bootstrap class. Dropping the file without writing this down changes the
+ * look of the whole site by a little, everywhere, which is the hardest kind of
+ * regression to see.
+ *
+ * So the values here are the ones the site has always rendered at rather than
+ * a browser's defaults, and this file is where they are written down now.
+*/
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.42857143;
+  color: #333;
+  background: #fff;
+}
+
+/* Form controls inherit neither the document's font nor its colour on their
+ * own, and this is the one part of this section that is not a preference:
+ * without it every input, select and button on the site falls back to the
+ * browser's own 13.33px face and to black instead of #333.
+*/
+input,
+button,
+select,
+textarea,
+optgroup {
+  color: inherit;
+  font: inherit;
+  margin: 0;
+}
+
 a {
   color: #0e9ce0;
+  text-decoration: none;
 }
+
+/* The one deliberate difference in this change. Bootstrap darkened a hovered
+ * link to #23527c, which is its own #337ab7 link colour darkened -- and the
+ * site has overridden that colour with #0e9ce0 since long before this, so
+ * every hover was landing on a navy belonging to a palette nothing else here
+ * uses. This is the same darkening applied to the colour the links actually
+ * are.
+*/
+a:hover,
+a:focus {
+  color: #0b7cb3;
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: inherit;
+  font-weight: 500;
+  line-height: 1.1;
+  color: inherit;
+  margin-bottom: 10px;
+}
+
+h1,
+h2,
+h3 {
+  margin-top: 20px;
+}
+
+h4,
+h5,
+h6 {
+  margin-top: 10px;
+}
+
+h1 { font-size: 36px; }
+h2 { font-size: 30px; }
+h3 { font-size: 24px; }
+h4 { font-size: 18px; }
+h5 { font-size: 14px; }
+h6 { font-size: 12px; }
+
+p {
+  margin: 0 0 10px;
+}
+
+ul,
+ol {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+ul ul,
+ul ol,
+ol ul,
+ol ol {
+  margin-bottom: 0;
+}
+
+b,
+strong {
+  font-weight: bold;
+}
+
+small {
+  font-size: 85%;
+}
+
+hr {
+  margin-top: 20px;
+  margin-bottom: 20px;
+  border: 0;
+  border-top: 1px solid #eee;
+}
+
+img {
+  border: 0;
+  vertical-align: middle;
+}
+
+label {
+  display: inline-block;
+  max-width: 100%;
+  margin-bottom: 5px;
+  font-weight: 700;
+}
+
+/* `padding: 2px 5px` on the site's own rule below would otherwise inflate a
+ * checkbox, and the margin is what lines one up with the text beside it.
+*/
+input[type="checkbox"],
+input[type="radio"] {
+  margin: 4px 0 0;
+  padding: 0;
+  line-height: normal;
+}
+
+/* The list tables' search box. Without this the browser draws its own search
+ * decoration inside a field the site has already styled.
+*/
+input[type="search"] {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  background: transparent;
+}
+
+th {
+  text-align: left;
+}
+
+td,
+th {
+  padding: 0;
+}
+
+/* Markdown. A comment or a biography can hold any of these, and each of them
+ * was drawn by the file that is gone -- so a note with a quotation or a code
+ * fence in it is exactly where a missing base layer shows first.
+*/
+blockquote {
+  padding: 10px 20px;
+  margin: 0 0 20px;
+  font-size: 17.5px;
+  border-left: 5px solid #eee;
+}
+
+blockquote p:last-child,
+blockquote ul:last-child,
+blockquote ol:last-child {
+  margin-bottom: 0;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+code {
+  padding: 2px 4px;
+  font-size: 90%;
+  color: #c7254e;
+  background: #f9f2f4;
+  border-radius: 4px;
+}
+
+pre {
+  display: block;
+  padding: 9.5px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.42857143;
+  color: #333;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  background: #f5f5f5;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+pre code {
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+  white-space: pre-wrap;
+  background: transparent;
+  border-radius: 0;
+}
+
+/* Layout, which was two `container`, nine `row` and seven `col-*`.
+ *
+ * Only two places on the site put anything beside anything else -- the menu
+ * and the page it points into, and a sublist inset from the edge of a list
+ * page -- so what is here is those two, at the widths Bootstrap's twelfths
+ * gave them and at the breakpoints its `sm` and `md` prefixes meant. The
+ * sublist's half lives beside the rest of its rules in
+ * `js/components/list/list.js`, and the menu's in `js/components/ui/menu.js`.
+ *
+ * Two of the nine `row`s are `.page-body` below and one is the sublist's.
+ * The other six had no columns under them at all, and what they were for is
+ * `.full-bleed`.
+ *
+ * `display: flow-root` on these is not decoration. Bootstrap gave `row` and
+ * `container` a clearfix, and a clearfix is two in-flow pseudo-elements, which
+ * stop a child's top and bottom margins collapsing out through the box. Every
+ * heading on the site sits in one of these, so without it the page loses 10px
+ * under each and reads a little tighter than it ever has. `flow-root` says
+ * that on purpose rather than as a side effect of clearing floats it no longer
+ * has to clear.
+*/
+.page,
+.page-body,
+.page-main,
+.full-bleed {
+  display: flow-root;
+}
+
+.page {
+  padding: 0 15px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+@media (min-width: 768px) {
+  .page { width: 750px; }
+}
+
+@media (min-width: 992px) {
+  .page { width: 970px; }
+}
+
+@media (min-width: 1200px) {
+  .page { width: 1170px; }
+}
+
+/* The band inside the page. The negative margins take back the gutter `.page`
+ * adds, and the padding was an inline `style="padding:20px"` on both of the
+ * elements that carry this.
+*/
+.page-body {
+  padding: 20px;
+  margin-right: -15px;
+  margin-left: -15px;
+}
+
+/* A list page has no menu, so only `ui/base.js` puts two things side by side.
+ * Below 768px this is not a flex container at all and the two stack, which is
+ * what `col-sm-*` meant by only taking effect from there up.
+ *
+ * The two do not add up to twelve twelfths on a wide screen -- 2 and 9, not 3
+ * and 9 -- so there is a gap at the right of every page from 992px. That is
+ * how it has always looked and the numbers below say so on purpose.
+ *
+ * `.page-main` is in the group above because `col-xs-12` floated at every
+ * width, and a float holds its children's margins in the same way a flex item
+ * does. Below 768px, where there is no flex container, nothing else would.
+*/
+.page-menu,
+.page-main {
+  padding: 0 15px;
+}
+
+@media (min-width: 768px) {
+  .page-columns {
+    display: flex;
+    align-items: flex-start;
+  }
+  .page-menu { width: 25%; }
+  .page-main { width: 75%; }
+}
+
+@media (min-width: 992px) {
+  .page-menu { width: 16.66666667%; }
+}
+
+/* A block that ignores the 15px gutter of the column it sits in, so it spans
+ * the full width rather than the text width. This is all a Bootstrap `row`
+ * ever did on the six elements here that had no column under them, and the
+ * heading of every page is one of them: a `<hr>` and the block above it start
+ * 15px apart, which is small enough to be worth naming rather than losing.
+*/
+.full-bleed {
+  margin-right: -15px;
+  margin-left: -15px;
+}
+
 span:lang(ja) {
   font-family: sans-serif;
 }
@@ -136,15 +457,6 @@ h1 {
   opacity: 0.7;
 }
 
-.table > thead > tr > th,
-.table > tbody > tr > th,
-.table > tfoot > tr > th,
-.table > thead > tr > td,
-.table > tbody > tr > td,
-.table > tfoot > tr > td {
-  vertical-align: middle;
-}
-
 select {
   background: white;
 }
@@ -165,16 +477,43 @@ button {
 
 /* The list tables, drawn by `js/utils/table_view.js`.
  *
- * bootstrap-table's stylesheet used to supply all of this. What is here is what
- * the site actually used out of it: a scrolling container, a toolbar, a Columns
- * menu and a sort indicator on the header. The table element itself still
- * carries Bootstrap 3's `.table .table-bordered .table-hover`, exactly as it
- * did, so the rows and borders are unchanged; #269 step 6 is what replaces
- * those.
+ * bootstrap-table's stylesheet used to supply the container, the toolbar, the
+ * Columns menu and the sort indicator, and #273 wrote those. Bootstrap's own
+ * `.table .table-bordered .table-hover` supplied the rest — the borders, the
+ * cell padding and the hover — and #269 step 6 is what writes that, so this is
+ * now the whole of how every list on the site looks.
+ *
+ * The child combinators are load-bearing rather than tidy, and they are why
+ * Bootstrap wrote its own table rules this way. A comment is markdown and a
+ * markdown table draws `<td>`s of its own, inside the detail row of the table
+ * these rules are for; a descendant selector would put an 8px cell padding and
+ * a grey border on those too.
 */
-.entry-table table {
+.entry-table-scroll > table {
   width: 100%;
+  max-width: 100%;
   margin-bottom: 0;
+  border: 1px solid #ddd;
+}
+
+.entry-table-scroll > table > thead > tr > th,
+.entry-table-scroll > table > tbody > tr > th,
+.entry-table-scroll > table > tfoot > tr > th,
+.entry-table-scroll > table > thead > tr > td,
+.entry-table-scroll > table > tbody > tr > td,
+.entry-table-scroll > table > tfoot > tr > td {
+  padding: 8px;
+  line-height: 1.42857143;
+  vertical-align: middle;
+  border: 1px solid #ddd;
+}
+
+.entry-table-scroll > table > thead > tr > th {
+  border-bottom-width: 2px;
+}
+
+.entry-table-scroll > table > tbody > tr:hover {
+  background: #f5f5f5;
 }
 
 .entry-table-scroll {

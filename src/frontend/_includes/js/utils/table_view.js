@@ -172,7 +172,7 @@ const NO_TABLE = { setSearch: () => undefined }
 const chrome = (state, options) => html`
   ${options.search || options.showColumns ? toolbar(state, options) : ''}
   <div class="entry-table-scroll">
-    <table class="table table-bordered table-hover"></table>
+    <table></table>
   </div>
 `
 
@@ -186,10 +186,9 @@ const toolbar = (state, options) => html`
 /**
  * A `<details>`, so the menu opens and closes with no script at all.
  *
- * This is the last consumer of Bootstrap's dropdown JS — the only thing on the
+ * This was the last consumer of Bootstrap's dropdown JS — the only thing on the
  * site that ever called into `bootstrap.min.js`, and only because
- * bootstrap-table built its Columns button out of it. #269 step 6 is what takes
- * the file itself away.
+ * bootstrap-table built its Columns button out of it.
  */
 const columnsMenu = (state) => html`
   <details class="entry-table-columns">

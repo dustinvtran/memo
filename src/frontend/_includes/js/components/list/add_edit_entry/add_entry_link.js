@@ -12,13 +12,14 @@ const AddEntryButton = (type) => initComponent({
     content: AddEntryModal(type),
     showCloseConfirmationDialog: () => window.hasUnsavedChange === true,
     openButtonHtml: () => html`
-      <h2 class="text-center" id="add-entry">
+      <h2 id="add-entry">
         <i class="far fa-plus-square"></i><span id="add-entry-text">Add an entry</span>
       </h2>
     `
   })),
   style: () => `
     #add-entry {
+      text-align: center;
       color: #0e9ce0;
       cursor: pointer;
       top: 20px;

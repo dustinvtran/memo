@@ -5,7 +5,7 @@ const { el } = Dom
 const Menu = () => initComponent({
   content: ({ include }) => html`
     <div
-      class="col-sm-3 col-md-2 memo-menu"
+      class="page-menu memo-menu"
       id="sidebar"
       role="navigation"
     >
@@ -13,7 +13,7 @@ const Menu = () => initComponent({
         <img src="/img/memo_logo.png">
       </div>
       <hr>
-      <ul class="nav nav-pills nav-stacked">
+      <ul class="memo-menu-links">
         <li id="home-menu-item"><a href="/">Home</a></li>
       </ul>
     </div>
@@ -53,17 +53,42 @@ const Menu = () => initComponent({
       width: 60px;
     }
 
+    /* Bootstrap's nav, nav-pills and nav-stacked drew these until #269 step
+       6, and it is three rules rather than three class names: a list with no
+       bullets, a link that fills its row, and a rounded grey highlight under
+       the one the pointer is on. */
+    .memo-menu-links {
+      padding-left: 0;
+      margin-bottom: 0;
+      list-style: none;
+    }
+
+    .memo-menu-links > li + li {
+      margin-top: 2px;
+    }
+
+    .memo-menu-links > li > a {
+      display: block;
+      padding: 10px 15px;
+      border-radius: 4px;
+    }
+
+    .memo-menu-links > li > a:hover,
+    .memo-menu-links > li > a:focus {
+      text-decoration: none;
+      background: #eee;
+    }
+
     @media (max-width: 768px) {
       .memo-menu {
         margin-top: 20px;
       }
-      .memo-menu ul {
+      .memo-menu-links {
         display: flex;
         justify-content: space-evenly;
       }
-      .nav-stacked > li + li {
-        margin-top: 0px;
-        margin-left: 0;
+      .memo-menu-links > li + li {
+        margin-top: 0;
       }
     }
   `

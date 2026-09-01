@@ -11,8 +11,8 @@ const { EntryForm } = Components.List
 /** `entries` and `isOwner` are already in flight; see `list/index.js`. */
 const List = ({ username, entryType, entries, isOwner }) => initComponent({
   content: ({ include }) => html`
-    <div class="container">
-      <div class="row" style="padding:20px">
+    <div class="page">
+      <div class="page-body">
         <div id="list-header">
           ${include(
             ListPageHeader(typeToTitle[entryType], username)
@@ -113,9 +113,11 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
     })
   },
   style: () => css`
-    #sublist-wrapper {
-      position: relative;
-    }
+    /* The hint is positioned against the sublist it points into, and what
+       makes that so is the position: relative on .sublist-wrapper below. This
+       block used to open with a #sublist-wrapper rule of its own, which named
+       an id nothing on the page has; what actually held the hint in place was
+       Bootstrap's col-md-10, which is relative for exactly this reason. */
     #click-to-see-comments {
       font-size: 10px;
       opacity: .7;
@@ -147,7 +149,7 @@ Components.List.List = List
 
 const ListPageHeader = (title, username) => initComponent({
   content: () => html`
-    <div class="row">
+    <div class="full-bleed">
       <h1><a href="/profile/${encodeURIComponent(username)}"><i class="fa fa-home"></i></a> ${title}</h1>
     </div>
     <hr>
@@ -179,8 +181,8 @@ const SubLists = (entryType, isOwner, data) => initComponent({
 
 const SubList = (status, entryType, isOwner, data) => initComponent({
   content: ({ id }) => html`
-    <div class="row">
-      <div class="col-md-10 col-md-offset-1 sublist-wrapper">
+    <div class="sublist">
+      <div class="sublist-wrapper">
         <h2 id="${id}-title" class="collapsible sublist-title">${statusToTitle(entryType, status)}</h2>
         <div id="${id}-list"></div>
       </div>
@@ -194,7 +196,7 @@ const SubList = (status, entryType, isOwner, data) => initComponent({
       // What follows the heading is the table, unless the hint for a
       // logged-out reader was inserted before it — see `List` above, which
       // puts that one directly under the heading too. The summary line is two
-      // levels out and one along, past the `.row` the sublist is wrapped in.
+      // levels out and one along, past the `.sublist` the wrapper sits in.
       const next = el(`#${id}-title`)?.nextElementSibling
       const summary = next?.parentElement?.parentElement?.nextElementSibling
       const toCollapse =
@@ -218,8 +220,35 @@ const SubList = (status, entryType, isOwner, data) => initComponent({
     })
   },
   style: () => css`
+    /* Two elements, because the collapse handler above walks them and because
+       the inset needs both: the outer one is the negative gutter a Bootstrap
+       row carried, and the inner one is the ten twelfths, offset by one, that
+       col-md-10 and col-md-offset-1 were until #269 step 6. Below 992px the
+       inner one is simply the full width, which is what the md in those names
+       meant. */
+    .sublist {
+      display: flow-root;
+      margin-right: -15px;
+      margin-left: -15px;
+    }
+
     .sublist-wrapper {
+      position: relative;
+      padding: 0 15px;
       margin-top: 50px
+    }
+
+    /* flow-root only from 992px, because that is where col-md-10 started
+       floating, and a float is what held the heading's 20px top margin inside
+       the box. Below it that margin collapses into the wrapper's own 50px and
+       the sublists sit 20px closer together, which is how a narrow window has
+       always drawn them. */
+    @media (min-width: 992px) {
+      .sublist-wrapper {
+        display: flow-root;
+        width: 83.33333333%;
+        margin-left: 8.33333333%;
+      }
     }
 
     .sublist-title {
