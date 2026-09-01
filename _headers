@@ -66,10 +66,19 @@
 # at runtime, and litepicker and apexcharts inject their own on top of that.
 # `script-src` does not get it, which is the whole point of the exercise — the
 # scripts are the pinned CDN files and one hashed same-origin bundle, every one
-# of them loaded by `src`. The known exception is the `onclick` that
-# `utils/columns.js` writes into each row's edit icon: an inline handler is a
-# `script-src` violation, so an owner viewing their own list is what
-# report-only is here to measure.
+# of them loaded by `src`. There is no known exception left: #219 removed the
+# last one — an `onclick` written into each row's edit icon — and
+# `bundle.test.js` now fails if any bundled file emits an inline handler or a
+# script tag, reading `script-src` out of this file so that granting
+# `'unsafe-inline'` breaks that test rather than quietly making it pointless.
+#
+# So what report-only measures now is the half neither that test nor a build
+# can see. Production already serves this header, and a visitor's pages log no
+# violation: the homepage, a list, the profile charts and the apexcharts they
+# fetch, a comment panel rendered through marked and DOMPurify. What stays
+# unread is the owner's own views, which need a login to reach — the entry
+# form and the edit column, which is where #219's handlers were. Those are the
+# pages to have a console open on before the header loses `-Report-Only`.
 #
 # `font-src` and `style-src` name no host but this one any more. Both listed
 # cdnjs for third-party stylesheets and for what those fetched relative to
