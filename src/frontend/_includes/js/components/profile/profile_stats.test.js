@@ -12,39 +12,74 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "profile_stats.js"), "utf8");
 
-// Stubs, not the real thing: nothing under test renders any markup or talks to
-// Netlify. They exist because the file destructures all of these at load time,
-// and because its last line writes itself onto `Components.Profile`.
-//
-// `wrapInIife` in `asset_plan.js` wraps each bundled file in its own IIFE,
-// which is what keeps two files' `const`s from colliding and what makes an
-// assignment with no keyword the only thing that crosses between them. Loading
-// it the same way here keeps that difference visible.
-const context = vm.createContext({
-  Netlify: { entryTypes: [], getStats: () => {} },
-  Conversions: { typeToTitle: {} },
-  Utils: {
-    html: () => "",
-    css: () => "",
-    timeAgo: () => "",
-    dateTime: () => "",
-  },
-  // The charts are drawn by `drawChart`, which is not what this file is
-  // about — but the script it fetches them with is destructured at load time,
-  // the way everything above is.
-  LoadScript: { loadApexCharts: () => {} },
-  Components: {
-    initComponent: () => {},
-    WithRemoteData: () => {},
-    UI: { Tabbed: () => {} },
-    Profile: {},
-  },
-});
+/**
+ * The script in a context of its own, with a record of what it asked the page
+ * and the loader for.
+ *
+ * Most of the context is stubs, not the real thing: nothing under test renders
+ * any markup or talks to Netlify. They exist because the file destructures all
+ * of these at load time, and because its last line writes itself onto
+ * `Components.Profile`.
+ *
+ * `wrapInIife` in `asset_plan.js` wraps each bundled file in its own IIFE,
+ * which is what keeps two files' `const`s from colliding and what makes an
+ * assignment with no keyword the only thing that crosses between them. Loading
+ * it the same way here keeps that difference visible.
+ */
+const load = () => {
+  const state = {
+    /** Asks for ApexCharts. Zero of them means nothing tried to draw. */
+    loads: 0,
+    rendered: [],
+    containers: new Map(),
+    errors: [],
+  };
 
-const { BUCKETS, toChartOptions, aggregateStats } = vm.runInContext(
-  `(() => {\n${source}\n;return ({ BUCKETS, toChartOptions, aggregateStats })\n})()`,
-  context
-);
+  const ApexCharts = function (element, options) {
+    this.render = () => state.rendered.push({ element, options });
+  };
+
+  const context = vm.createContext({
+    Netlify: { entryTypes: [], getStats: () => {} },
+    Conversions: { typeToTitle: {} },
+    Utils: {
+      html: () => "",
+      css: () => "",
+      timeAgo: () => "",
+      dateTime: () => "",
+    },
+    // ApexCharts is fetched on demand, so `drawChart` is asynchronous and the
+    // ask is the first thing it does. Counting the asks is how the tests below
+    // tell a chart that was drawn from one that was not.
+    LoadScript: {
+      loadApexCharts: () => {
+        state.loads += 1;
+        return Promise.resolve(ApexCharts);
+      },
+    },
+    document: {
+      querySelector: (selector) => state.containers.get(selector) ?? null,
+    },
+    console: { error: (message) => state.errors.push(message) },
+    Components: {
+      // Handed straight back rather than swallowed: what the tests need is the
+      // initializer, and `content` and `style` are never called.
+      initComponent: (component) => component,
+      WithRemoteData: () => {},
+      UI: { Tabbed: () => {} },
+      Profile: {},
+    },
+  });
+
+  const exports = vm.runInContext(
+    `(() => {\n${source}\n;return ({ BUCKETS, toChartOptions, aggregateStats, GlobalStats, once })\n})()`,
+    context
+  );
+
+  return { ...exports, state };
+};
+
+const { BUCKETS, toChartOptions, aggregateStats } = load();
 
 /** A full tally, one entry in each bucket, so a dropped bucket is visible. */
 const oneOfEach = () =>
@@ -152,4 +187,118 @@ test("the timestamp beside the scores is not counted as a fifth type", () => {
     totals(stats),
     Object.fromEntries(BUCKETS.map((b) => [b, 4]))
   );
+});
+
+///////////////////////////////////////////////////////////////////////////////
+// When the global chart draws, which is the whole of #282. It is the second
+// page of `Tabbed`, so its container is `display: none` when its initializer
+// runs and `.render()` would measure a width of zero and keep it.
+
+/** Only the first call of a `once` does anything. */
+test("once runs the first call and swallows the rest", () => {
+  const { once } = load();
+  const calls = [];
+  const record = once((n) => calls.push(n));
+
+  record(1);
+  record(2);
+  record(3);
+
+  assert.deepEqual([...calls], [1]);
+});
+
+test("once passes the first call's arguments through", () => {
+  const { once } = load();
+  let seen;
+  once((...args) => {
+    seen = args.join(",");
+  })("a", "b");
+
+  assert.equal(seen, "a,b");
+});
+
+test("a once that throws is still spent", () => {
+  // Not a design goal so much as a fact worth pinning: `drawChart` catches its
+  // own failures, so nothing reaches here, and a `once` that reset itself on a
+  // throw would be a retry loop bound to however many times a tab is clicked.
+  const { once } = load();
+  let calls = 0;
+  const boom = once(() => {
+    calls += 1;
+    throw new Error("no");
+  });
+
+  assert.throws(boom);
+  boom();
+
+  assert.equal(calls, 1);
+});
+
+/** A container the browser has measured, as far as `drawChart` looks at one. */
+const aVisibleContainer = () => ({
+  isConnected: true,
+  offsetWidth: 392,
+  getClientRects: () => [{}],
+});
+
+/** `drawChart` awaits the loader and then the layout; both settle as microtasks. */
+const settled = () => new Promise((resolve) => setImmediate(resolve));
+
+const aProfile = () =>
+  scoresOf(oneOfEach(), oneOfEach(), oneOfEach(), oneOfEach());
+
+/** The page as `Tabbed` gets it, with its container already in the document. */
+const aGlobalStatsPage = () => {
+  const loaded = load();
+  const page = loaded.GlobalStats(aProfile());
+  loaded.state.containers.set("#_chart", aVisibleContainer());
+  page.component.initializer({ id: "_chart" });
+  return { page, state: loaded.state };
+};
+
+test("the global chart is not drawn while its tab is still hidden", async () => {
+  const { state } = aGlobalStatsPage();
+  await settled();
+
+  // Not even asked for: drawing here is drawing into a `display: none`
+  // container, which is the zero-wide SVG this whole change is about.
+  assert.equal(state.loads, 0);
+  assert.equal(state.rendered.length, 0);
+});
+
+test("the global chart is drawn when its tab is shown", async () => {
+  const { page, state } = aGlobalStatsPage();
+
+  page.onShow();
+  await settled();
+
+  assert.equal(state.rendered.length, 1);
+  // The tally it draws is the aggregate one, not a per-type slice.
+  assert.deepEqual(
+    [...state.rendered[0].options.series[0].data],
+    new Array(11).fill(4)
+  );
+});
+
+test("a second reveal does not stack a second chart", async () => {
+  // `Tabbed` reports every click, including one on the tab already showing,
+  // and ApexCharts appends a canvas rather than replacing one.
+  const { page, state } = aGlobalStatsPage();
+
+  page.onShow();
+  page.onShow();
+  page.onShow();
+  await settled();
+
+  assert.equal(state.loads, 1);
+  assert.equal(state.rendered.length, 1);
+});
+
+test("the reveal draws into the container the initializer was given", async () => {
+  const { page, state } = aGlobalStatsPage();
+
+  page.onShow();
+  await settled();
+
+  assert.equal(state.rendered[0].element, state.containers.get("#_chart"));
 });

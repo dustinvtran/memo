@@ -5,8 +5,19 @@ const { els, onClick } = Dom
 /**
  * pages = [
  *   { title: 'Tab title', component: MyComponent() },
- *   { title: 'Another tab title', component: SomethingElse() },
+ *   { title: 'Another tab title', component: SomethingElse(), onShow },
  * ]
+ *
+ * `onShow` is optional, and is the only way a page hears about the one moment
+ * that is invisible from inside it: every page but the first is `display: none`
+ * from the markup, so anything in it that has to be measured — a chart, and so
+ * far only a chart — measures zero when its initializer runs and has no way to
+ * know when that stops being true. See #282.
+ *
+ * It is called on every reveal, including a click on the tab already showing,
+ * because "you are visible now" is the honest thing for a tab bar to say and
+ * only the page knows whether that is worth acting on twice. A page that must
+ * act once says so itself: `once` in profile/profile_stats.js.
  */
 const Tabbed = (title, pages) => initComponent({
   content: ({ id, include }) => html`
@@ -36,7 +47,11 @@ const Tabbed = (title, pages) => initComponent({
         // `dataset` is strings and this one indexes an array. jQuery's
         // `.data()` read `data-index="2"` back as the number 2 — the one
         // conversion of its that is missed here rather than gladly lost.
-        contents[Number(tab.dataset.index)]?.classList.remove('tab-hidden')
+        const index = Number(tab.dataset.index)
+        contents[index]?.classList.remove('tab-hidden')
+        // After the class, not before: a listener told it is visible has to be
+        // able to measure it, and `classList.remove` is what makes that true.
+        pages[index]?.onShow?.()
       })
     })
   },
