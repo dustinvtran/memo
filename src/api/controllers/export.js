@@ -183,11 +183,19 @@ const withinBudget = (contentType, body, username) =>
         ],
       })
 
-/** @type {(contentType: string, body: string) => Response} */
+/**
+ * The one response in the tree that does not come out of `responses.js`, so
+ * the site-wide headers are spread in by hand here. Written as the shared
+ * constant rather than as its own list: this route is the reason `nosniff` is
+ * in that list at all — two content types off one path, both of them users'
+ * own note text, and the CORS header below on the same response.
+ * @type {(contentType: string, body: string) => Response}
+ */
 const asText = (contentType, body) => ({
   statusCode: 200,
   headers: {
     'content-type': contentType,
+    ...responses.SECURITY_HEADERS,
     // Public data, and reading it from a page or a notebook shouldn't need a
     // proxy.
     'access-control-allow-origin': '*',

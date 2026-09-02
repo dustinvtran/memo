@@ -167,6 +167,53 @@ test('a rejected query answers without quoting the driver', options, async () =>
   assert.equal(lines.some((line) => line.includes(HOSTS)), true)
 })
 
+/**
+ * `_headers`' `/*` values, typed out rather than read from
+ * `responses.SECURITY_HEADERS`. Spread from the constant, the assertions
+ * below would agree with whatever it holds — including holding nothing, which
+ * is the state they exist to rule out. If this block and that one ever
+ * disagree, one of them is the site and the other is a typo; `_headers` says
+ * which.
+ */
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
+}
+
+test('a success carries the site-wide security headers', options, () => {
+  // `_headers` reaches pages and static assets and not `/api/*`, so these are
+  // sent from here or not at all. #300.
+  assert.deepEqual(responses.ok({ username: 'nil' }).headers, {
+    'content-type': responses.JSON_CONTENT_TYPE,
+    ...SECURITY_HEADERS,
+  })
+})
+
+test('so does an error, which is the response a stranger can ask for', options, async () => {
+  const [response] = await capturingLogs(() =>
+    responses.fromError(errors.db(topologyError()))
+  )
+
+  assert.equal(response.statusCode, 500)
+  assert.deepEqual(response.headers, {
+    'content-type': responses.JSON_CONTENT_TYPE,
+    ...SECURITY_HEADERS,
+  })
+})
+
+test('and so does the 500 a body that will not stringify falls back to', options, () => {
+  // The one response built without a body, and the one built by the failure
+  // path of the constructor rather than its success path.
+  const circular = {}
+  circular.self = circular
+
+  assert.deepEqual(responses.ok(circular).headers, {
+    'content-type': responses.JSON_CONTENT_TYPE,
+    ...SECURITY_HEADERS,
+  })
+})
+
 test('a query rejecting with a 4xx keeps its status', options, async () => {
   const notFound = Object.assign(new Error('nothing there'), { name: 'NotFound' })
 
