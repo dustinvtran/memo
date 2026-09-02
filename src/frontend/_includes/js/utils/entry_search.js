@@ -275,6 +275,9 @@ const toRegexTest = (value) => {
  *   a*b*a*b*c   the same, with the two halves of the trade interleaved rather
  *               than side by side — `b*` matches the empty string, so it does
  *               not stand between the two `a*` any more than nothing does
+ *   a*b*c*d*e   several quantified atoms with nothing mandatory between them,
+ *               which can trade whenever they overlap — spelling them
+ *               differently is not what stops them
  *
  * All of them are refused before they are compiled and read as text instead.
  * This is the half of #228 that answers instantly, and it is also the only
@@ -298,9 +301,19 @@ const toRegexTest = (value) => {
  * than two to its power. Refusing that as well would have cost the ordinary
  * search something and bought nothing.
  *
+ * The fourth shape is #279, and it is why a run is now counted rather than
+ * compared. Two quantified atoms trade characters whenever they can match the
+ * same ones, which does not require them to be spelled the same way:
+ * `[^~]*[^!]*[^@]*[^#]*[^$]*[^%]*[^&]*[^+]*[^=]*[^;]*~` is every-letter
+ * classes all the way down, no two texts alike, 57 characters, and 424
+ * seconds on that same one title.
+ *
  * It over-refuses a little. `(nolan|villeneuve)+` and `\d+\d+` cannot take
  * any real time and are read as text — the answer a pattern that does not
- * compile already gets, for patterns nobody types.
+ * compile already gets, for patterns nobody types. `a*b*c*d` joins them:
+ * three atoms that can trade are cubic rather than exponential, but a count
+ * is the only thing that catches an attack whose atoms never repeat one
+ * another, and a count cannot tell the two apart.
  */
 const hasExplosiveShape = (value) => isExplosive(toAtoms(String(value)))
 
@@ -323,24 +336,39 @@ const isExplosiveGroup = (atom) => {
 }
 
 /**
- * Whether a quantified atom in this sequence repeats one that came earlier
- * with nothing mandatory in between — the shape where a character either of
- * them could have matched can be given up by one and taken by the other, and
- * the number of ways to divide the subject between them is a power rather
- * than a product.
+ * Whether the quantified atoms in this sequence can hand each other
+ * characters — the shape where a character either of two of them could have
+ * matched can be given up by one and taken by the other, and the number of
+ * ways to divide the subject between them is a power rather than a product.
  *
  * The atoms still in play are the ones since the last atom that has to match
- * something, because that atom fixes a point the division cannot cross.
- * Comparing `text` is the same equality the adjacent check used: it does not
- * ask whether `[a-z]` and `\w` overlap, only whether the pattern says the
- * same thing twice, which is what an interleaved attack has to do to be one.
+ * something, because that atom fixes a point the division cannot cross. Such
+ * a run is refused on either of two counts:
+ *
+ *   the same `text` twice   `a*a*b`, and interleaved, `a*b*a*b*c`
+ *   more than two of them   `[^~]*[^!]*[^@]*~`, whatever the texts say
+ *
+ * The equality came first and is not enough on its own, which is #279: it
+ * does not ask whether `[a-z]` and `\w` overlap, only whether the pattern
+ * says the same thing twice, and an interleaved attack never had to spell its
+ * atoms the same way to be one. Four classes as unalike as `[^~]`, `[^!]`,
+ * `[^@]` and `[^#]` still each match every letter of every title.
+ *
+ * So the count is the thing to bound. Every quantified atom in a run is a
+ * place the division can move, the degree of the polynomial is that count,
+ * and two is as many as an ordinary search has ever wanted: `^t.*e M.*$` is
+ * two runs of one apiece, because the literal `e M` between them has to
+ * match. The run never grows past two, since the atom that would make three
+ * is the one that answers.
  */
 const trades = (atoms) => {
-  let sinceMandatory = new Set()
+  let sinceMandatory = []
   for (const atom of atoms) {
-    if (atom.quantifier !== '' && sinceMandatory.has(atom.text)) return true
-    if (!isNullable(atom)) sinceMandatory = new Set()
-    if (atom.quantifier !== '') sinceMandatory.add(atom.text)
+    const quantified = atom.quantifier !== ''
+    if (quantified && sinceMandatory.length > 1) return true
+    if (quantified && sinceMandatory.includes(atom.text)) return true
+    if (!isNullable(atom)) sinceMandatory = []
+    if (quantified) sinceMandatory.push(atom.text)
   }
   return false
 }
