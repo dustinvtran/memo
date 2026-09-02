@@ -48,13 +48,33 @@ const corruptFieldsOf = (collection, work) => {
 /**
  * A game whose playtime column has a number to show and nothing to link it
  * to. This mirrors `toPlaytimeUrl` in
- * ../frontend/_includes/js/utils/columns.js: an IGDB-sourced duration links
- * to the IGDB page it came from, anything else links to HowLongToBeat.
+ * ../frontend/_includes/js/utils/columns.js, whose three cases are listed
+ * here one for one rather than summarised, so that the next time the page
+ * grows a case this comment disagrees with it in a diff:
  *
- * Reported by the audit, but deliberately *not* part of `hasGaps` — no API
- * can fix it any more. HowLongToBeat's is gone, so a game whose duration
- * predates IGDB will never gain a link, and re-running the adapter at it
- * forever would only waste the call.
+ *   1. `durationSource: "igdb"` links to the stored `igdb` externalUrl, and
+ *      to nothing else. There is deliberately no fallback: igdb.com's urls
+ *      are slugs rather than ids so the apiRef cannot build one, and a
+ *      HowLongToBeat link the game may still carry is not where an IGDB
+ *      number came from.
+ *   2. Any other duration links to the stored `hltb` externalUrl, or to a
+ *      page built from an `hltb__` apiRef — `findApiRef` here, a numeric
+ *      test there, both rejecting the 27 `hltb__N/A` placeholders.
+ *   3. Failing both, to a HowLongToBeat *search* for the title.
+ *
+ * Case 3 is why this is not simply "has no stored link": it was added by
+ * #201, for the 210 games holding a HowLongToBeat playtime with no ref to
+ * build a page url from, and until #293 this check still counted all 210 as
+ * unlinked while the page linked every one of them. A HowLongToBeat playtime
+ * is unlinked only when there is no title to search on either, which leaves
+ * case 1 as the one that flags anything real: an adapter writing a duration
+ * without the url it came from.
+ *
+ * Reported by the audit, but deliberately *not* part of `hasGaps`, which
+ * decides what is worth an API call. A titleless HowLongToBeat playtime can
+ * never gain a link — that API is gone (docs/API_choices.md) — and an IGDB
+ * one missing its url is a bug to read about rather than a field to chase,
+ * so neither is a reason to re-run the adapter.
  */
 const isMissingPlaytimeLink = (collection, work) => {
   if (collection.type !== "games" || isEmptyValue(work.duration)) return false;
@@ -62,9 +82,11 @@ const isMissingPlaytimeLink = (collection, work) => {
   const hasUrl = (Array.isArray(work.externalUrls) ? work.externalUrls : []).some(
     (url) => url?.name === source
   );
-  return source === "igdb"
-    ? !hasUrl
-    : !hasUrl && !findApiRef(work.apiRefs, "hltb");
+  if (source === "igdb") return !hasUrl;
+  if (hasUrl || findApiRef(work.apiRefs, "hltb")) return false;
+  // The search the page falls back to needs a title and nothing else, read
+  // the same way the column reads it.
+  return isEmptyValue(work.englishTranslatedTitle ?? work.originalTitle);
 };
 
 /** True when a work is worth spending an API call on. */
