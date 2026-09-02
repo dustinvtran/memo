@@ -14,7 +14,9 @@ const ProfileStats = (username) => initComponent({
               "Stats",
               [
                 { title: "Stats per category", component: SubStats(username, stats) },
-                { title: "Global stats", component: GlobalStats(stats) },
+                // Spread, because this page is a `component` and an `onShow`
+                // that have to be built together — see `GlobalStats`.
+                { title: "Global stats", ...GlobalStats(stats) },
               ]
               ))}
             ${include(StatsFreshness(stats.updatedDate))}
@@ -124,31 +126,71 @@ const AdditionalStats = (relevantScores) => initComponent({
   `
 })
 
-const GlobalStats = (stats) => initComponent({
-  content: ({ id, include }) => html`
-    <div class="profile-global-stats">
-      <h3>Global stats</h3>
-      <div id="profile-global-stats">
-        <div id=${id}></div>
-        ${include(AdditionalStats(aggregateStats(stats)))}
-      </div>
-    </div>
-  `,
-  initializer: ({ id }) => {
-    drawChart(id, toChartOptions(aggregateStats(stats)))
-  },
-  style: () => css`
-    #profile-global-stats {
-      width: 48%;
-    }
+/**
+ * A `Tabbed` page rather than a component: the aggregate histogram, and the
+ * `onShow` that draws it.
+ *
+ * This is the second page of the tab bar, so when its initializer runs its
+ * container is `display: none` and has no boxes at all. `whenLaidOut` below
+ * says why waiting is not an answer to that, and `.render()` measures once, so
+ * a chart drawn here is one that says `width="0"` until the window is resized.
+ * #271 fixed the four charts that are on screen at that moment; this is the
+ * fifth, which is not, and #282 is that difference.
+ *
+ * So the initializer keeps the container's id and draws nothing, and the tab
+ * bar's `onShow` is what draws — by which point the panel is displayed and can
+ * be measured like any of the other four. `once`, because ApexCharts appends a
+ * canvas rather than replacing one and a second click would stack a second
+ * histogram in the same box.
+ */
+const GlobalStats = (stats) => {
+  let chartId
+  return {
+    component: initComponent({
+      content: ({ id, include }) => html`
+        <div class="profile-global-stats">
+          <h3>Global stats</h3>
+          <div id="profile-global-stats">
+            <div id=${id}></div>
+            ${include(AdditionalStats(aggregateStats(stats)))}
+          </div>
+        </div>
+      `,
+      initializer: ({ id }) => {
+        chartId = id
+      },
+      style: () => css`
+        #profile-global-stats {
+          width: 48%;
+        }
 
-    @media (max-width: 768px) {
-      #profile-global-stats {
-        width: 100%;
-      }
-    }
-  `
-})
+        @media (max-width: 768px) {
+          #profile-global-stats {
+            width: 100%;
+          }
+        }
+      `
+    }),
+    onShow: once(() => drawChart(chartId, toChartOptions(aggregateStats(stats)))),
+  }
+}
+
+/**
+ * `fn`, but only the first call runs it.
+ *
+ * Deliberately not `Tabbed`'s job: a tab bar reporting a reveal is reporting a
+ * fact, and swallowing the repeats there would mean no page could ever act on
+ * a second one. Deliberately not a shared util either — one caller, four lines,
+ * and the reason it exists is entirely local to `GlobalStats` above.
+ */
+const once = (fn) => {
+  let called = false
+  return (...args) => {
+    if (called) return
+    called = true
+    fn(...args)
+  }
+}
 
 const { loadApexCharts } = LoadScript
 
@@ -194,12 +236,15 @@ const drawChart = async (id, options) => {
  * only ever spent when the answer really is zero.
  *
  * An element that is not displayed at all is told apart from one that has
- * simply not been measured yet, and is not waited for: the Global stats tab is
- * `display: none` until it is clicked, so its container has no boxes and will
- * not get one until then. That chart is drawn zero-wide here exactly as it was
- * before — redrawing it when its tab is shown is a separate change — rather
- * than waiting on frames, which a document in a background tab does not hand
- * out at all. The frame bound is the backstop under that.
+ * simply not been measured yet, and is not waited for: no number of frames
+ * gives a `display: none` container a width, and a document in a background
+ * tab does not hand out frames at all. The frame bound is the backstop under
+ * that.
+ *
+ * Which leaves the question of who calls this when the container is hidden,
+ * and the answer since #282 is nobody: `GlobalStats` waits for its tab to be
+ * shown before it draws, so every caller that reaches here is one whose
+ * container is displayed or has been removed from the page.
  */
 const whenLaidOut = (element, frames = 2) =>
   new Promise((resolve) => {
