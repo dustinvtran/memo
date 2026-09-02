@@ -3,7 +3,6 @@ const { profileColumns } = Tables
 const { initTable } = TableView
 const { typeToTitle } = Conversions
 const { html, css } = Utils
-const { UsernameSetter } = Components.Profile
 const { initComponent, WithRemoteData } = Components
 
 const ProfileLists = (username) => initComponent({

@@ -22,7 +22,6 @@ const source = fs.readFileSync(path.join(__dirname, "profile_stats.js"), "utf8")
 // it the same way here keeps that difference visible.
 const context = vm.createContext({
   Netlify: { entryTypes: [], getStats: () => {} },
-  Tables: { col: () => {} },
   Conversions: { typeToTitle: {} },
   Utils: {
     html: () => "",
