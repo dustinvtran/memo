@@ -10,6 +10,8 @@ const {
   COMMON_FIELDS,
   parseApiRef,
   findApiRef,
+  displayTitle,
+  titlesAgree,
   isEmptyValue,
   isCorruptStringArray,
   isCorruptNumber,
@@ -76,6 +78,7 @@ const hasGaps = (collection, work) =>
 
 /**
  * Builds the `$set` payload for one work. Rules:
+ *   - a work whose title the API disagrees with is refused outright
  *   - a field the API has nothing to say about is never cleared
  *   - apiRefs and externalUrls are unioned, so a ref we already know about
  *     survives even when the API stops returning it
@@ -83,9 +86,16 @@ const hasGaps = (collection, work) =>
  *   - a stored duration is only ever refreshed by the source that wrote it
  *   - `durationSource` only travels with a `duration`
  *
- * @type {(collection: any, work: any, fresh: any, options?: { missingOnly?: boolean }) => { updates: any, notes: string[] }}
+ * `refused` is set instead of `updates` when the first rule fires, so that a
+ * caller reports the skip rather than filing it under "already current" —
+ * which is what an empty `updates` means everywhere else.
+ *
+ * @type {(collection: any, work: any, fresh: any, options?: { missingOnly?: boolean }) => { updates: any, notes: string[], refused?: string }}
  */
 const mergeWork = (collection, work, fresh, { missingOnly = false } = {}) => {
+  const refused = titleConflict(work, fresh);
+  if (refused) return { updates: {}, notes: [refused], refused };
+
   const updates = {};
   const notes = [];
 
@@ -137,12 +147,6 @@ const mergeWork = (collection, work, fresh, { missingOnly = false } = {}) => {
       !isCorruptField(collection, field, currentValue);
     if (missingOnly && usable) continue;
     if (equal(currentValue, freshValue)) continue;
-
-    if (field === "englishTranslatedTitle" && usable) {
-      notes.push(
-        `title changes from "${currentValue}" to "${freshValue}" — check the apiRef points at the right work`
-      );
-    }
 
     updates[field] = freshValue;
   }
@@ -216,6 +220,42 @@ module.exports = {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Why this response must not be merged into this work, or undefined when it
+ * may be.
+ *
+ * The apiRef is the only thing tying the two together, and it is not always
+ * telling the truth. Twenty-five groups of works in the database carry an id
+ * that belongs to a *different* work — `Among Us` under The Wolf Among Us's
+ * IGDB id, Dostoevsky's `Demons` under The Da Vinci Code's ISBN — and every
+ * one of them was filled in by a `--missing-only` backfill that took the ref
+ * at its word. Their titles survived only because a title was never the
+ * missing field. A run without `--missing-only` overwrites those too, and at
+ * that point the pair is indistinguishable and the damage is unrecoverable
+ * except from a snapshot. #290.
+ *
+ * So a title disagreement stops the merge dead. It used to be written and
+ * annotated, which put the one signal that the ref is wrong in a note beneath
+ * the write it should have prevented.
+ *
+ * **Nothing at all is written, the `entryType` repair included.** If the ref
+ * names another work then this call was about another work, and the safe
+ * amount to take from it is none of it. The audit reports a wrong `entryType`
+ * separately, and the next run makes it once the ref is right.
+ *
+ * A genuine retitling — TMDB correcting a name — lands here too, and is meant
+ * to: it is a human's call which of the two names the work, and correcting the
+ * stored title by hand lets the next run through. `titlesAgree` answers
+ * `undefined` rather than `false` when either side has no title, so a work
+ * that is missing one is filled in as it always was.
+ * @type {(work: any, fresh: any) => string | undefined}
+ */
+const titleConflict = (work, fresh) =>
+  titlesAgree(work, fresh) === false
+    ? `refused: stored title "${displayTitle(work)}" but the apiRef names ` +
+      `"${displayTitle(fresh)}" — one of them is filed under the other's id`
+    : undefined;
 
 const toParsedRefs = (value) =>
   (Array.isArray(value) ? value : []).map(parseApiRef).filter((ref) => ref);

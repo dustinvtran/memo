@@ -153,6 +153,46 @@ const findApiRef = (apiRefs, name) => {
     .find((parsed) => parsed?.name === name)?.ref;
 };
 
+/**
+ * A title reduced to what a comparison should care about. Case and
+ * punctuation vary between one API's spelling of a work and another's — WALL·E
+ * against Wall-E — and a real difference does not.
+ */
+const normalizeTitle = (title) =>
+  String(title ?? "")
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]/gu, "");
+
+/** The title to show a reader for a work, or for an adapter's response. */
+const displayTitle = (work) =>
+  work?.englishTranslatedTitle ?? work?.originalTitle ?? "(untitled)";
+
+/** Every title a document carries, normalised, with the blanks dropped. */
+const titlesOf = (work) =>
+  [work?.englishTranslatedTitle, work?.originalTitle]
+    .map(normalizeTitle)
+    .filter((title) => title !== "");
+
+/**
+ * Whether two documents claim to be the same work — a stored work and a fresh
+ * API response, most often. Either title of one matching either title of the
+ * other is enough: the two APIs disagree about which spelling is the original
+ * often enough that insisting on the same *field* would report a difference
+ * where there is none.
+ *
+ * `undefined`, and not `false`, when either side carries no title at all.
+ * Nothing was compared, so there is nothing to conclude, and a caller that
+ * treats "don't know" as "they differ" would refuse to fill in the title of
+ * every work that is missing one.
+ * @type {(a: unknown, b: unknown) => boolean | undefined}
+ */
+const titlesAgree = (a, b) => {
+  const ours = titlesOf(a);
+  const theirs = titlesOf(b);
+  if (ours.length === 0 || theirs.length === 0) return undefined;
+  return ours.some((title) => theirs.includes(title));
+};
+
 /** Empty means "there is nothing usable here", so it's safe to overwrite. */
 const isEmptyValue = (value) =>
   value === undefined ||
@@ -207,6 +247,10 @@ module.exports = {
   isPlaceholder,
   parseApiRef,
   findApiRef,
+  normalizeTitle,
+  displayTitle,
+  titlesOf,
+  titlesAgree,
   isEmptyValue,
   isCorruptStringArray,
   isCorruptNumber,

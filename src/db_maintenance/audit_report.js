@@ -30,11 +30,18 @@
  * `label` takes the collection descriptor because one of them names the
  * apiRef prefix the type is refreshed by.
  *
+ * `only` and `except` restrict a finding to one type or withhold it from one.
+ * They are the two halves of the same idea and both are in use: the playtime
+ * line belongs to games alone, and the collision line belongs to every type
+ * but tv — where sharing a show id between seasons is how the site works, so
+ * a collision is not a thing that can be found.
+ *
  * @type {Array<{
  *   key: string,
  *   kind: "problem" | "note",
  *   label: (collection: any) => string,
  *   only?: string,
+ *   except?: string,
  * }>}
  */
 const FINDINGS = [
@@ -80,10 +87,22 @@ const FINDINGS = [
     label: () => "playtime with nothing to link it to",
     only: "games",
   },
+  // The three things that used to be one line. "44 duplicate works sharing an
+  // apiRef" was a number nobody could act on: nineteen of those groups were tv
+  // seasons, which are correct by design and can never go to zero, and
+  // twenty-five were works filed under another work's id, which is neither a
+  // duplicate nor something `dedupe_works.js` may touch. See
+  // ../shared_ref_check.js and #290.
   {
     key: "duplicateWorks",
     kind: "problem",
     label: () => "duplicate works sharing an apiRef",
+  },
+  {
+    key: "sharedIdentityRefs",
+    kind: "problem",
+    label: () => "ids shared by works that are not the same work",
+    except: "tv",
   },
   {
     key: "orphanReviews",
@@ -97,6 +116,12 @@ const FINDINGS = [
     label: () => "entries with no linked work (user-authored, expected)",
   },
   {
+    key: "expectedSharedRefs",
+    kind: "note",
+    label: () => "works sharing a show id (separate seasons, expected)",
+    only: "tv",
+  },
+  {
     key: "orphanWorks",
     kind: "note",
     label: () => "cached works no entry points at",
@@ -106,10 +131,12 @@ const FINDINGS = [
 /**
  * The summary lines for one collection, already split.
  *
- * A finding whose `only` doesn't match the type is left out entirely rather
- * than printed as a zero, which is how the playtime line has always behaved.
- * A key the result doesn't carry counts as zero rather than throwing: the
- * report is a diagnostic, and half of one still beats a stack trace.
+ * A finding whose `only` doesn't match the type, or whose `except` does, is
+ * left out entirely rather than printed as a zero — which is how the playtime
+ * line has always behaved, and is the only honest thing to do with a count
+ * that cannot be anything but zero. A key the result doesn't carry counts as
+ * zero rather than throwing: the report is a diagnostic, and half of one still
+ * beats a stack trace.
  *
  * @type {(collection: any, result: object) => {
  *   problems: Array<{ key: string, label: string, count: number }>,
@@ -118,7 +145,9 @@ const FINDINGS = [
  */
 const toSummary = (collection, result) => {
   const lines = FINDINGS.filter(
-    (finding) => finding.only === undefined || finding.only === collection.type
+    (finding) =>
+      (finding.only === undefined || finding.only === collection.type) &&
+      finding.except !== collection.type
   ).map((finding) => ({
     key: finding.key,
     kind: finding.kind,

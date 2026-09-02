@@ -4,11 +4,22 @@
  *
  * Reports every inconsistency backfill_work_metadata.js and dedupe_works.js
  * can act on, plus the ones that need a human decision. It never writes, and
- * it needs no external API keys — only MONGODB_URL.
+ * by default it needs no external API keys — only MONGODB_URL.
+ *
+ * `--verify-shared-refs` is the one thing here that reaches an API, and so the
+ * one thing that wants the adapter keys. Works sharing an identity ref are
+ * split three ways without asking anyone (../shared_ref_check.js), but which
+ * *side* of a collision is misfiled cannot be worked out from the database:
+ * both documents look equally plausible. So it retrieves each shared id once
+ * — 25 calls against production today — and reports which of the group's
+ * titles the id actually names. Off by default because a diagnostic that
+ * spends someone else's rate limit every time it is run is a diagnostic that
+ * stops being run. #290.
  *
  * Usage:
  *   node scripts/audit_database.js
  *   node scripts/audit_database.js --only=games,books
+ *   node scripts/audit_database.js --verify-shared-refs
  *   node scripts/audit_database.js --json=./audit.json
  */
 require("../env");
@@ -18,7 +29,9 @@ const {
   COLLECTIONS,
   parseApiRef,
   isEmptyValue,
+  displayTitle,
   selectCollections,
+  sleep,
   parseArgs,
 } = require("../work_collections");
 const {
@@ -26,11 +39,18 @@ const {
   corruptFieldsOf,
   isMissingPlaytimeLink,
 } = require("../work_metadata_merge");
-const { groupWorksByApiRef } = require("../work_dedupe_plan");
+const {
+  classifySharedRefs,
+  resolveIdentity,
+  sharedRefReason,
+} = require("../shared_ref_check");
 const { implausibleDuration } = require("../duration_plausibility");
 const { toSummary, countProblems } = require("../audit_report");
+const { loadAdapter, describeError } = require("../load_adapter");
 
 const args = parseArgs(process.argv);
+
+const verifySharedRefs = args["verify-shared-refs"] === true;
 
 let client;
 
@@ -132,13 +152,17 @@ const auditCollection = async (db, collection) => {
     if (!referencedWorkIds.has(work._id)) orphanWorks.push(describe(work));
   }
 
-  const duplicateWorks = [...groupWorksByApiRef(collection, works).entries()]
-    .filter(([, group]) => group.length > 1)
-    .map(([apiRef, group]) => ({
-      apiRef,
-      count: group.length,
-      works: group.map(describe),
-    }));
+  // Three findings out of what used to be one. A group of works under one
+  // identity ref is copies of one work, seasons of one show, or one work
+  // wearing another's id — and only the last is #290's damage.
+  const shared = classifySharedRefs(collection, works);
+  const duplicateWorks = shared.duplicates.map(describeGroup);
+  const expectedSharedRefs = shared.expected.map(describeGroup);
+  const sharedIdentityRefs = shared.collisions.map(describeGroup);
+
+  const identityChecks = verifySharedRefs
+    ? await verifyIdentities(collection, shared.collisions)
+    : [];
 
   const entriesWithoutWorkRef = entries
     .filter((e) => !e.workRef)
@@ -170,6 +194,9 @@ const auditCollection = async (db, collection) => {
     gamesMissingPlaytimeLink,
     implausibleDurations,
     duplicateWorks,
+    expectedSharedRefs,
+    sharedIdentityRefs,
+    identityChecks,
     orphanWorks,
     entriesWithoutWorkRef,
     entriesWithDanglingWorkRef,
@@ -188,9 +215,63 @@ const hasRetrieveRef = (collection, work) =>
 
 const describe = (work) => ({
   id: work._id,
-  title: work.englishTranslatedTitle ?? work.originalTitle ?? "(untitled)",
+  title: displayTitle(work),
   apiRefs: work.apiRefs,
 });
+
+const describeGroup = ({ key, ref, works }) => ({
+  apiRef: key,
+  ref,
+  count: works.length,
+  works: works.map(describe),
+});
+
+/**
+ * Asks the adapter, once per collision group, what the shared id names.
+ *
+ * The pause between calls is the same one the backfill uses, out of the same
+ * descriptor: IGDB caps at four requests a second and a retrieve costs three
+ * of them. A group whose retrieve fails is recorded with its error rather than
+ * dropped — "IGDB would not say" and "IGDB says neither of these" are
+ * different answers, and only the second is a finding.
+ *
+ * @type {(collection: any, groups: any[]) => Promise<object[]>}
+ */
+const verifyIdentities = async (collection, groups) => {
+  if (groups.length === 0) return [];
+
+  const adapter = loadAdapter(collection);
+  if (!adapter) return [];
+
+  const delayMs = collection.defaultDelayMs;
+  const checks = [];
+
+  for (const [index, group] of groups.entries()) {
+    if (index > 0) await sleep(delayMs);
+
+    const result = await adapter.retrieve(group.ref);
+    if (result.isErr()) {
+      checks.push({
+        apiRef: group.key,
+        ref: group.ref,
+        error: describeError(result.error),
+        works: group.works.map(describe),
+      });
+      continue;
+    }
+
+    const { apiTitle, matches, mismatches } = resolveIdentity(group, result.value);
+    checks.push({
+      apiRef: group.key,
+      ref: group.ref,
+      apiTitle,
+      matches: matches.map(describe),
+      mismatches: mismatches.map(describe),
+    });
+  }
+
+  return checks;
+};
 
 const printSummary = (collection, result) => {
   const { problems, notes } = toSummary(collection, result);
@@ -217,12 +298,57 @@ const printSummary = (collection, result) => {
     console.log(`  e.g. impossible duration: ${finding.title}: ${finding.reason}`);
   }
 
+  printSharedRefs(collection, result);
+
   const examples = result.missingFields.slice(0, 5);
   if (examples.length > 0) {
     console.log("  e.g. missing:");
     for (const e of examples) {
       console.log(`    - ${e.title}: ${e.fields.join(", ")}`);
     }
+  }
+};
+
+/**
+ * The collision groups in full, and what the API said about each — every one
+ * of them rather than a sample, because a count of collisions is not something
+ * anyone can act on and the pairs are the whole finding.
+ */
+const printSharedRefs = (collection, result) => {
+  const reason = sharedRefReason(collection);
+  if (reason && result.expectedSharedRefs.length > 0) {
+    console.log(`  (${result.expectedSharedRefs.length} shared ids: ${reason})`);
+  }
+
+  if (result.sharedIdentityRefs.length === 0) return;
+
+  if (!verifySharedRefs) {
+    console.log(
+      `  shared ids, unverified — pass --verify-shared-refs to ask ` +
+        `${collection.retrievePrefix} which work each one names:`
+    );
+    for (const group of result.sharedIdentityRefs) {
+      console.log(
+        `    - ${group.apiRef}: ${group.works.map((w) => w.title).join(" | ")}`
+      );
+    }
+    return;
+  }
+
+  console.log(`  shared ids, as ${collection.retrievePrefix} reports them:`);
+  for (const check of result.identityChecks) {
+    if (check.error) {
+      console.log(`    - ${check.apiRef}: could not be asked (${check.error})`);
+      continue;
+    }
+    console.log(`    - ${check.apiRef} names "${check.apiTitle}"`);
+    const named = check.matches.map((w) => `${w.title} (${w.id})`);
+    console.log(`        it is:     ${named.join(", ") || "none of these"}`);
+    console.log(
+      `        it is not: ${check.mismatches
+        .map((w) => `${w.title} (${w.id})`)
+        .join(", ")}`
+    );
   }
 };
 

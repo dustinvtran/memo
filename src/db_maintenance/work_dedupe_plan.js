@@ -8,7 +8,12 @@
  * on what this returns, so the decisions are unit tested
  * (./work_dedupe_plan.test.js) rather than discovered in production.
  */
-const { parseApiRef, isEmptyValue } = require("./work_collections");
+const {
+  parseApiRef,
+  isEmptyValue,
+  normalizeTitle,
+  displayTitle,
+} = require("./work_collections");
 const {
   expectedFields,
   isCorruptField,
@@ -112,10 +117,8 @@ const planDedupe = (
 
     const [survivor, ...duplicates] = ranked;
 
-    const titles = ranked.map(
-      (w) => w.englishTranslatedTitle ?? w.originalTitle ?? "(untitled)"
-    );
-    const titlesAgree = new Set(titles.map(normalizeTitle)).size === 1;
+    const titles = ranked.map(displayTitle);
+    const titlesAgree = groupTitlesAgree(ranked);
 
     if (!titlesAgree && !includeTitleMismatches) continue;
 
@@ -135,11 +138,17 @@ const planDedupe = (
   return plans;
 };
 
-/** Punctuation and case vary between imports; a real difference doesn't. */
-const normalizeTitle = (title) =>
-  String(title)
-    .toLowerCase()
-    .replace(/[^\p{Letter}\p{Number}]/gu, "");
+/**
+ * Whether every work in a group tells the same story about what it is.
+ *
+ * The one rule for "these documents are copies of one another", shared with
+ * ./shared_ref_check.js so that the audit's duplicate count and the set of
+ * groups `planDedupe` will actually collapse cannot drift apart. Punctuation
+ * and case vary between imports; a real difference doesn't.
+ * @type {(works: any[]) => boolean}
+ */
+const groupTitlesAgree = (works) =>
+  new Set(works.map((work) => normalizeTitle(displayTitle(work)))).size === 1;
 
 /**
  * Nothing a duplicate knows is thrown away: any field the survivor is missing
@@ -183,7 +192,7 @@ const fillGapsFromDuplicates = (collection, survivor, duplicates) => {
 
 module.exports = {
   groupWorksByApiRef,
-  normalizeTitle,
+  groupTitlesAgree,
   groupKey,
   planDedupe,
   fillGapsFromDuplicates,

@@ -71,6 +71,15 @@ const collectionOf = (name) => (store[name] = store[name] ?? [])
 const collection = (name) => ({
   findOne: async (filter) =>
     collectionOf(name).find((doc) => matches(doc, filter)) ?? null,
+  // `limit` is honoured rather than ignored, because the cache lookup uses it
+  // to ask "is there exactly one of these" in a single round trip. A fake that
+  // returned everything regardless would pass a test the database would fail.
+  find: (filter, { limit } = {}) => ({
+    toArray: async () => {
+      const found = collectionOf(name).filter((doc) => matches(doc, filter))
+      return limit === undefined ? found : found.slice(0, limit)
+    },
+  }),
   insertOne: async (doc) => (collectionOf(name).push(doc), { insertedId: doc._id }),
 })
 
@@ -230,6 +239,56 @@ test('a logged-in retrieve of an uncached work retrieves it and writes it', opti
   assert.equal(store.films.length, 1)
   assert.equal(store.films[0].englishTranslatedTitle, 'Stalker')
   assert.equal(body.internalRef, store.films[0]._id)
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// An identity ref that two works carry. 25 of them exist in production:
+// `igdb__2933` sits on both `Kingdom Hearts III` and `Kingdom Hearts`, and
+// `tmdb__177572` on both `Hero` and `Big Hero 6`. The lookup was
+// `findOneByField_`, so the route answered with whichever document the server
+// reached first, and whoever was adding the other one got an entry pointed at
+// the wrong work — permanently, and with no symptom they could see. #290.
+
+const seedCollidingFilms = () => {
+  seed()
+  store.films = [
+    { _id: 'w1', ...retrievedFilm('177572'), englishTranslatedTitle: 'Hero' },
+    { _id: 'w2', ...retrievedFilm('177572'), englishTranslatedTitle: 'Big Hero 6' },
+  ]
+}
+
+test('a ref two works carry is not answered with one of them', options, async () => {
+  seedCollidingFilms()
+
+  const { statusCode, body } = await call('works/retrieve/films/177572', { as: 'u1' })
+
+  assert.equal(statusCode, 200)
+  // TMDB was asked, rather than a coin tossed between w1 and w2.
+  assert.deepEqual(adapterCalls, [{ action: 'retrieve', arg: '177572' }])
+  assert.ok(!['w1', 'w2'].includes(body.internalRef))
+})
+
+test('the work it answers with is the one the id really names', options, async () => {
+  seedCollidingFilms()
+
+  const { body } = await call('works/retrieve/films/177572', { as: 'u1' })
+
+  // The collision grows to three for as long as it lasts, and the third
+  // document is the only one of them that is right about the id.
+  assert.equal(store.films.length, 3)
+  assert.equal(body.englishTranslatedTitle, 'Stalker')
+  assert.equal(store.films.at(-1)._id, body.internalRef)
+})
+
+test('an unambiguous ref is still served from the cache', options, async () => {
+  // The fix must not cost the cache hit every other retrieve depends on.
+  seedCachedFilm()
+
+  const { body } = await call('works/retrieve/films/1234', { as: 'u1' })
+
+  assert.equal(body.internalRef, 'w1')
+  assert.deepEqual(adapterCalls, [])
+  assert.equal(store.films.length, 1)
 })
 
 test('a logged-in request for an unknown type is a 404', options, async () => {

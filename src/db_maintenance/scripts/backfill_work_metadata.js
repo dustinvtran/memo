@@ -35,6 +35,13 @@
  *   --delay-ms=N        override the per-type pause between API calls
  *   --json=path         write a machine-readable report
  *   --backup-dir=path   where to put backups (default ../backups)
+ *
+ * A work whose stored title the API disagrees with is **refused**, printed
+ * with a `!` and left alone: its apiRef belongs to another work, and filling
+ * it in from that work is how 53 documents came to carry someone else's year,
+ * playtime and links in the first place. See ../work_metadata_merge.js and
+ * `scripts/audit_database.js --verify-shared-refs`, which says which of the
+ * pair is the misfiled one. #290.
  */
 require("../env");
 const fs = require("fs");
@@ -49,6 +56,7 @@ const {
   selectCollections,
 } = require("../work_collections");
 const { hasGaps, mergeWork } = require("../work_metadata_merge");
+const { loadAdapter, describeError } = require("../load_adapter");
 
 const args = parseArgs(process.argv);
 
@@ -125,6 +133,7 @@ const backfillCollection = async (db, collection) => {
   const delayMs = options.delayMs ?? collection.defaultDelayMs;
   const changes = [];
   const failures = [];
+  const refusals = [];
   const unrefreshable = [];
   let unchanged = 0;
 
@@ -145,7 +154,22 @@ const backfillCollection = async (db, collection) => {
       continue;
     }
 
-    const { updates, notes } = mergeWork(collection, work, result.value, options);
+    const { updates, notes, refused } = mergeWork(
+      collection,
+      work,
+      result.value,
+      options
+    );
+
+    // The apiRef named a different work, so this call said nothing about this
+    // document. Reported rather than counted as "already current", and
+    // deliberately not `touch`ed: marking it checked would hide it from the
+    // next age-based run, and it is exactly what wants looking at. #290.
+    if (refused) {
+      console.log(`  ! ${title(work)}: ${refused}`);
+      refusals.push({ ...describe(work), refused });
+      continue;
+    }
 
     if (Object.keys(updates).length === 0) {
       unchanged += 1;
@@ -170,7 +194,8 @@ const backfillCollection = async (db, collection) => {
 
   console.log(
     `  ${changes.length} ${options.apply ? "updated" : "would be updated"}, ` +
-      `${unchanged} already current, ${failures.length} failed, ` +
+      `${unchanged} already current, ${refusals.length} refused (the apiRef ` +
+      `names another work), ${failures.length} failed, ` +
       `${unrefreshable.length} without a ${collection.retrievePrefix}__ ref`
   );
 
@@ -179,57 +204,10 @@ const backfillCollection = async (db, collection) => {
     processed: selected.length,
     changes,
     failures,
+    refusals,
     unrefreshable,
     unchanged,
   };
-};
-
-/**
- * Lazily required, so a films-only run never loads the other three. That used
- * to be about credentials as well — the games adapter built its IGDB client
- * while it was being read and threw without Twitch keys. All four build their
- * clients on first use now, which is what lets work_collections.test.js
- * require every one of them with nothing configured.
- *
- * The catch is narrow on purpose. Skipping a collection is the right answer to
- * "this run has no Twitch credentials" and the wrong answer to "the path in
- * the descriptor is wrong" — the second silently turns every run into a no-op
- * that reports nothing amiss, which is what it did until work_collections.js
- * started resolving these paths itself. That resolution means the adapter's
- * own module can no longer be the thing that isn't found, so if it is,
- * something is wrong with the wiring: say so and stop.
- *
- * The shape is checked here for the same reason, and outside the try. A module
- * that loads but has no `retrieve` is a wiring fault, not a missing key, and
- * it used to be found by the TypeError it threw halfway down the first
- * collection — #252, where an adapter ending in `export default` arrived
- * across the CommonJS boundary as `{ __esModule, default }` and sailed past
- * the truthiness check at the call site.
- */
-const loadAdapter = (collection) => {
-  let adapter;
-  try {
-    adapter = require(collection.adapterModule);
-  } catch (e) {
-    if (e?.code === "MODULE_NOT_FOUND" && e.requireStack?.[0] === __filename) {
-      throw e;
-    }
-    console.log(
-      `  skipping ${collection.works}: ${collection.adapterModule} failed to ` +
-        `load (${e?.message ?? e})`
-    );
-    return undefined;
-  }
-
-  if (typeof adapter?.retrieve !== "function") {
-    throw new Error(
-      `${collection.adapterModule} exports no retrieve (it has ` +
-        `${Object.keys(adapter ?? {}).join(", ") || "nothing"}), so nothing ` +
-        `here can refresh a ${collection.type}`
-    );
-  }
-
-  return adapter;
 };
 
 const needsRefresh = (collection, work) => {
@@ -266,9 +244,6 @@ const describe = (work) => ({
   title: title(work),
   apiRefs: work.apiRefs,
 });
-
-const describeError = (error) =>
-  typeof error === "string" ? error : error?.message ?? JSON.stringify(error);
 
 const summarizeUpdates = (work, updates) =>
   Object.entries(updates)

@@ -4,13 +4,15 @@
 
 `scripts/` holds the things you run. Everything beside this README is a
 library: the pure modules that decide what a script should write, and their
-tests.
+tests. `load_adapter.js` is the one exception — it `require`s the real
+adapters, so it is not in the no-install suite, and it lives up here rather
+than in `scripts/` only because two scripts need it.
 
 The scripts, and the section below that explains each:
 
 | Script | What it does | Writes? |
 | --- | --- | --- |
-| `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, dangling `workRef`s. Needs no API keys. | never |
+| `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, works filed under another work's id, dangling `workRef`s. Needs no API keys unless you pass `--verify-shared-refs`. | never |
 | `backup_database.js` | Takes a timestamped snapshot of every collection and prunes old ones to a retention policy. | to disk only |
 | `restore_backup.js` | Puts a snapshot, or one collection of it, back — matching on `_id`. | `--apply` |
 | `ensure_indexes.js` | Creates the indexes the site's queries need. Re-running is a no-op. | `--apply` |
@@ -162,16 +164,17 @@ building an index on a live collection costs I/O.
 
 ## Auditing and backfilling metadata
 
-`scripts/audit_database.js` is read-only, needs no API keys, and reports every
-inconsistency it can find: works that can't be refreshed because they
-have no usable apiRef, missing or corrupt metadata fields, games whose
-playtime has nothing to link it to, duplicate works sharing an apiRef,
-entries whose `workRef` names a work that is gone, and reviews whose entry is
-gone.
+`scripts/audit_database.js` is read-only, needs no API keys by default, and
+reports every inconsistency it can find: works that can't be refreshed because
+they have no usable apiRef, missing or corrupt metadata fields, games whose
+playtime has nothing to link it to, duplicate works sharing an apiRef, works
+filed under an id that belongs to another work, entries whose `workRef` names a
+work that is gone, and reviews whose entry is gone.
 
 ```
 node scripts/audit_database.js
 node scripts/audit_database.js --only=games,books --json=./audit.json
+node scripts/audit_database.js --verify-shared-refs
 ```
 
 The summary prints those under a per-collection list of problems, and then a
@@ -188,6 +191,57 @@ count:
   reading one as the other is a mistake that has already been made once.
 - **Cached works no entry points at** are leftovers of the metadata cache, not
   lost user data.
+- **Works sharing a show id** are how tv works. TMDB has one id per show and
+  the site tracks each season as its own entry, so nineteen of these exist,
+  they are all correct, and the right number is not zero.
+
+### Works sharing an id
+
+More than one work under one identity ref is three different things, and until
+#290 the audit printed all three as "duplicate works sharing an apiRef" — 44
+groups under one number nobody could act on. `../shared_ref_check.js` splits
+them:
+
+- **Duplicates**, whose titles agree. The same work cached twice, and what
+  `dedupe_works.js` collapses.
+- **Separate works by design**, which is tv and only tv. Reported as a note.
+- **Collisions**: one id, two works that are not the same work, in a type
+  where one id means one work. 25 of these, holding 53 works. `Among Us` is
+  filed under The Wolf Among Us's IGDB id and carries its nine-hour playtime
+  and its link; Dostoevsky's `Demons` is under The Da Vinci Code's ISBN and is
+  600 pages because that is how long The Da Vinci Code is. Every one was
+  filled in by a `--missing-only` backfill that took the apiRef at its word.
+
+Which *side* of a collision is the misfiled one cannot be worked out from the
+database — both documents look equally plausible — so `--verify-shared-refs`
+asks. It retrieves each shared id once, 25 calls, and prints which of the
+group's titles the id actually names:
+
+```
+- igdb__2933 names "Kingdom Hearts III"
+    it is:     Kingdom Hearts III (322745318825263691)
+    it is not: Kingdom Hearts (322745318981502539)
+```
+
+It is off by default because a diagnostic that spends someone else's rate
+limit every time it runs is a diagnostic that stops being run, and because
+that flag is the only thing here that wants the adapter keys.
+
+Fifteen of the 25 are settled outright — the id belongs to the sequel and the
+base game is wearing it, or the reverse. The other ten answer "none of these",
+which is a real answer rather than a failure: `igdb__127111` names *The Wolf
+Among Us: Episode 5 - Cry Wolf*, so both `The Wolf Among Us` and `Among Us`
+are wearing an id that is neither of theirs, and `9781781101032` comes back as
+*Harry Potter à L'école des Sorciers*. Those want a human, not a rule.
+
+**None of this is repaired yet.** Fixing a collision means replacing or
+clearing a ref and clearing the fields it poisoned, which is a write to real
+user-visible data and wants a snapshot first — see "Writing to the database"
+in the root `CLAUDE.md`. What is in place is the detection above and two
+guards that stop it getting worse: `mergeWork` refuses a work whose title the
+API disagrees with (below), and the retrieve route treats an ambiguous ref as
+a cache miss rather than picking one of the matches, so new entries stop
+landing on the wrong side of a collision that already exists.
 
 `reviews whose entry is gone` **is** a problem: a review is only ever found by
 `entryRef`, so one whose entry is gone holds text no code path can reach.
@@ -266,6 +320,15 @@ Notes on its behaviour:
 - A stored `duration` is only refreshed by the source that wrote it, which
   `durationSource` records. IGDB may update a playtime it supplied, but it
   never writes over a HowLongToBeat one. See "Playtimes" below.
+- **A work whose stored title the API disagrees with is refused**, printed
+  with a `!`, and left completely alone — the `entryType` repair included. The
+  apiRef is the only thing tying the two documents together and it is not
+  always telling the truth: filling a work in from whatever its ref names is
+  how 53 documents came to carry another work's year, playtime, image and
+  links, and a run without `--missing-only` would overwrite their titles too,
+  at which point the pairs cannot be told apart again. A genuine retitling
+  lands here as well, and is meant to — correct the stored title by hand and
+  the next run goes through. #290.
 - Duplicate works are reported, never merged — that's
   `scripts/dedupe_works.js`.
 
