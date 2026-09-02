@@ -14,6 +14,7 @@ The scripts, and the section below that explains each:
 | --- | --- | --- |
 | `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, works filed under another work's id, dangling `workRef`s. Needs no API keys unless you pass `--verify-shared-refs`. | never |
 | `backup_database.js` | Takes a timestamped snapshot of every collection and prunes old ones to a retention policy. | to disk only |
+| `verify_backup.js` | Checks a snapshot against its own manifest — every file present, hashing to the `sha256` recorded for it, holding the documents claimed. `--live` also counts the database beside it. | never |
 | `restore_backup.js` | Puts a snapshot, or one collection of it, back — matching on `_id`. | `--apply` |
 | `ensure_indexes.js` | Creates the indexes the site's queries need. Re-running is a no-op. | `--apply` |
 | `backfill_work_metadata.js` | Re-runs the API adapters over cached works, filling gaps and refreshing stale metadata. | `--apply` |
@@ -739,6 +740,107 @@ snapshots: a full dump includes the `users` collection. In particular, don't
 upload them as GitHub Actions artifacts from this repo — artifacts of a public
 repo can be downloaded by anyone.
 
+Daily is the cadence the retention policy was written for: "every snapshot
+from the last 14 days" assumes there is one most days. The snapshots taken
+before an `--apply` are not that — they are the trail of maintenance runs,
+and they leave the weeks with no maintenance in them empty.
+
+**Where a scheduled run should live.** The hook is already there:
+`MONGODB_URL` is read from the environment and dotenv never overwrites a
+variable that is already set, so `MONGODB_URL=... node scripts/backup_database.js
+--out=...` runs on a machine with no `.env`, no credentials on disk beyond
+what the runner holds, and no checkout of this repo beyond the scripts
+themselves. Two things decide where: it has to be **awake on the schedule** —
+a laptop that has to be open is not a schedule, which is what the current
+snapshot history is a picture of — and its `--out` should not be the same
+disk as the code and the `.env`, because the point of a backup is to survive
+whatever takes that disk out.
+
+Where it runs is the owner's call and nothing in this repo sets it up. When
+it is decided, write it down here: which host, which cadence, where `--out`
+points, and who sees it fail. **As of 2026-09-02 the answer is nowhere** —
+snapshots are taken by hand before `--apply` runs and at no other time.
+
+**How anyone would notice it had stopped.** A backup job that fails silently
+is worse than no job at all, because it buys the confidence of a backup
+without the backup. In increasing order of effort:
+
+- Run `scripts/verify_backup.js` immediately after the backup in the same
+  scheduled command. It exits non-zero when the snapshot isn't what the
+  backup wrote, so the runner's own failure mail becomes the alarm and
+  nothing new has to be built.
+- `node scripts/backup_database.js --list` prints every snapshot with its
+  date, so "when did we last have one" is one command. Cheap, but only
+  answers when someone asks.
+- A dead-man's switch — a cron-monitoring ping the job sends on success,
+  which alerts when it *doesn't* arrive. The only one of the three that fires
+  when the machine itself is off, which is exactly the failure the other two
+  cannot see.
+
+## Verifying a snapshot
+
+`scripts/verify_backup.js` answers one question: is this snapshot still what
+the backup wrote? It is read-only — there is no `--apply` to have — and with
+no flags it needs nothing but the files.
+
+```
+node scripts/verify_backup.js                       # the newest snapshot
+node scripts/verify_backup.js --from=snapshot-2026-08-26T07-27-44-541Z
+node scripts/verify_backup.js --live                # also count the database
+```
+
+For every collection the manifest lists it checks three things: that the file
+is there, that its bytes still hash to the `sha256` the manifest recorded,
+and that it parses as a list holding the number of documents the manifest
+claims. It prints a table and **exits non-zero if the manifest and the files
+disagree**, so it can gate a scheduled backup or a restore drill rather than
+being read by eye.
+
+`--live` adds a `countDocuments()` from the database beside each row and a
+`drift` column — how far the database has moved since the snapshot. That
+needs `MONGODB_URL`, which is why it is behind a flag: without it the check
+is a filesystem check and runs anywhere the snapshot does. Drift is never a
+failure. The database is *supposed* to have moved on; a drift of zero on a
+week-old snapshot would be the surprising result.
+
+```
+  collection       manifest   file   sha256   live now   drift
+  bookEntries           660    660   ok            660
+  entryRevisions         18     18   ok             22      +4
+  filmEntries          1528   1528   ok           1531      +3
+```
+
+Two things are reported without failing the run: a file sitting in the
+snapshot directory that the manifest doesn't list, and a collection the
+database has that the snapshot doesn't. Neither breaks a restore — a restore
+reads the manifest — but both are worth seeing, the second especially, since
+it means a collection created after the snapshot has no backup in it at all.
+
+**Why the `sha256` is the part that matters.** Counts answer "is this the
+right *amount* of data"; the digest answers "is this the *same* data". They
+are not the same question, and only the second one catches a file that was
+re-serialised, hand-edited, half-written or truncated by a filesystem — and
+this repo already distrusts the filesystem these snapshots live on (the root
+`CLAUDE.md` on Google Drive, and a Drive checkout losing files during
+ordinary git operations). A snapshot whose counts match and whose digests
+don't is a snapshot you must not restore from.
+
+CLAUDE.md asks for a fresh snapshot to be verified — "manifest counts, file
+counts and live `countDocuments()` should agree across every collection" —
+immediately before every `--apply`. This is that check, so it stops being
+retyped by hand each time:
+
+```
+node scripts/backup_database.js && node scripts/verify_backup.js --live
+```
+
+The comparison itself lives in `backup_verification.js`, pure and tested;
+the script reads, hashes and counts, and prints what comes back. It is the
+same rule `restore_backup.js` refuses a bad snapshot with, rather than a
+second copy of it — the restore path just takes the cheap half, hashing the
+files without parsing them, since all it needs to know before it writes is
+whether the bytes changed under it.
+
 ## Restoring from a snapshot
 
 `scripts/restore_backup.js` restores documents by `_id` from a snapshot. It
@@ -766,14 +868,97 @@ anything that grouped documents by those would merge unrelated records.
 Useful flags: `--dir=path`, `--from=name|path`, `--only=a,b`, `--prune`,
 `--no-safety-backup`, `--skip-verify`.
 
+### The restore drill
+
+A restore that has never been run is a hope, and it is the one script here
+whose failure mode would be discovered at the worst possible moment. It also
+cannot be rehearsed casually, because rehearsing it means writing. So it gets
+rehearsed against a scratch database, on purpose, and the result is recorded
+below.
+
+**Never point this at `memo`.** The safety is in the *deployment* the URL
+names, not in the database name: every script here calls `client.db("memo")`,
+so changing the database in the connection string changes nothing at all —
+a restore aimed at the production cluster restores into production whatever
+the URI says after the host. Use a deployment that holds nothing you care
+about: a local `mongod`, or a throwaway Atlas cluster. And pass
+`MONGODB_URL` inline on the command, which beats the `.env` in this folder
+(dotenv never overwrites a variable that is already set — see "How a script
+finds it"), rather than editing the `.env` and hoping to remember to put it
+back.
+
+1. **Verify the snapshot you are about to drill with**, so a failure later is
+   the restore's fault and not the snapshot's.
+
+   ```
+   node scripts/verify_backup.js
+   ```
+
+2. **Point `MONGODB_URL` at the scratch deployment** and confirm what you are
+   aimed at before writing anything. An empty database is the clearest start:
+   the counts afterwards should equal the manifest's exactly, with nothing to
+   subtract.
+
+3. **Restore the whole snapshot into it.** Dry run first — it prints what it
+   would write per collection — then apply. `--no-safety-backup` because
+   there is nothing in a scratch database worth snapshotting, and taking one
+   would drop an empty snapshot into `backups/`.
+
+   ```
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot>
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot> --apply --no-safety-backup
+   ```
+
+4. **Check the counts against the manifest**, which is what
+   `verify_backup.js --live` does when it is pointed at the scratch database:
+   every `drift` cell should be blank, because the database it is now
+   counting is the snapshot.
+
+   ```
+   MONGODB_URL=<scratch> node scripts/verify_backup.js --from=<snapshot> --live
+   ```
+
+5. **Spot-check documents, not just counts.** Counts survive a restore that
+   wrote the right number of wrong documents. Pick a few by `_id` — a review
+   with a long note is the best one, since a clobbered note is the whole
+   reason #78 exists — and compare the text in the database with the text in
+   the snapshot's `.json` for that collection.
+
+6. **Exercise `--only`**, because a real incident restores one collection and
+   not the database. Delete a handful of documents from one collection in the
+   scratch database, then put that collection back:
+
+   ```
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot> --only=bookReviews
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot> --only=bookReviews --apply --no-safety-backup
+   ```
+
+   The assertion is in the dry run: it should report exactly the number you
+   deleted as "to restore", the rest as unchanged, and nothing at all for the
+   other collections.
+
+7. **Record it below**, and drop the scratch database.
+
+Repeat the drill whenever the snapshot format changes — a new field in the
+manifest, a different file layout — since that is when a restore silently
+stops understanding what it is reading.
+
+**Last drill: never run.** When it is, replace this line with the date, the
+snapshot used, which collections were restored and spot-checked, and anything
+that surprised you. For example: `2026-09-15, snapshot-2026-09-14T…Z into a
+local mongod: all 14 collections restored, counts equal to the manifest,
+three bookReviews notes compared character for character, --only=bookReviews
+put back 12 deleted documents and touched nothing else.`
+
 ## Tests
 
 The parts that decide what to write (`work_metadata_merge.js`,
 `game_playtime_plan.js`), what to delete (`work_dedupe_plan.js`,
 `orphan_review_plan.js`, `dead_entry_fields_plan.js`), what to clear
 (`unusable_field_plan.js`), which snapshots a retention policy keeps
-(`backup_plan.js`) and which indexes are missing (`index_plan.js`) are pure
-and dependency-free, and are covered by `node --test`:
+(`backup_plan.js`), whether a snapshot is still what the backup wrote
+(`backup_verification.js`) and which indexes are missing (`index_plan.js`)
+are pure and dependency-free, and are covered by `node --test`:
 
 ```
 npm test
