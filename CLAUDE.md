@@ -210,8 +210,10 @@ entries. In order:
 
 1. **Snapshot first, always, no exceptions.** Take a fresh snapshot with
    `scripts/backup_database.js` immediately before every `--apply`, and
-   verify it — manifest counts, file counts and live `countDocuments()`
-   should agree across every collection. There is no write small enough,
+   verify it with `scripts/verify_backup.js --live` — manifest counts, file
+   counts, the `sha256` of every file and live `countDocuments()` should
+   agree across every collection, and it exits non-zero when the first three
+   don't. Don't hand-roll that check. There is no write small enough,
    safe-looking enough or reversible-looking enough to skip this: a snapshot
    costs seconds and is the only thing standing between a mistake and a
    restore. It applies to writes that touch no documents at all — an index

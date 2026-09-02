@@ -40,8 +40,10 @@ const {
   parseSnapshotDate,
   planPruning,
 } = require("../backup_plan");
-
-const MANIFEST_FILE = "manifest.json";
+const {
+  MANIFEST_FILE,
+  checkSnapshot,
+} = require("../backup_verification");
 
 const optionsFrom = (args) => ({
   outDir: String(args.out ?? path.join(__dirname, "..", "backups")),
@@ -165,20 +167,68 @@ const readManifest = (dir) => {
 /**
  * Reports which files of a snapshot don't match the manifest. An empty list
  * means the snapshot is exactly what the backup wrote.
+ *
+ * The checking is ../backup_verification.js's, so that what a restore refuses
+ * and what scripts/verify_backup.js reports are the same rule rather than two
+ * copies of it. This is the cheap half: the bytes are hashed, not parsed,
+ * since all a restore needs to know before it writes is whether the files
+ * changed under it.
  * @type {(dir: string) => string[]}
  */
 const verifySnapshot = (dir) => {
   const manifest = readManifest(dir);
-  if (!manifest) return [`${MANIFEST_FILE} is missing`];
+  const files = Object.fromEntries(
+    (manifest?.collections ?? []).map(({ name, file }) => {
+      const contents = path.join(dir, file);
+      return [
+        name,
+        fs.existsSync(contents)
+          ? { present: true, sha256: sha256(fs.readFileSync(contents)) }
+          : { present: false },
+      ];
+    })
+  );
+  return checkSnapshot({ manifest, files }).problems;
+};
 
-  return manifest.collections.flatMap(({ name, file, sha256: expected }) => {
-    const contents = path.join(dir, file);
-    if (!fs.existsSync(contents)) return [`${name}: ${file} is missing`];
-    const actual = sha256(fs.readFileSync(contents));
-    return actual === expected
-      ? []
-      : [`${name}: ${file} does not match its checksum`];
-  });
+/**
+ * Which snapshot a `--from` names: a path if it looks like one, a name in
+ * `dir` otherwise, the newest one if it names nothing. Prints why and sets a
+ * failing exit code when it can't answer, so a caller can stop on undefined.
+ *
+ * Here rather than in the script that asked for it first, because
+ * restore_backup.js and verify_backup.js have to resolve `--from` the same
+ * way — a drill that verifies one snapshot and restores another would prove
+ * nothing.
+ * @type {(options: { dir: string, from?: string }) => string | undefined}
+ */
+const resolveSnapshotDir = ({ dir, from }) => {
+  if (from && (from.includes("/") || from.includes("\\"))) {
+    if (fs.existsSync(from)) return from;
+    console.error(`No such snapshot: ${from}`);
+    process.exitCode = 1;
+    return undefined;
+  }
+
+  const names = listSnapshotDirs(dir);
+  if (names.length === 0) {
+    console.error(
+      `No snapshots in ${dir}. Take one with: node scripts/backup_database.js`
+    );
+    process.exitCode = 1;
+    return undefined;
+  }
+
+  // listSnapshotDirs sorts by name, which for snapshot names is chronological.
+  const name = from ?? names[names.length - 1];
+  if (!names.includes(name)) {
+    console.error(`No such snapshot in ${dir}: ${name}`);
+    console.error(`Available:\n  ${names.join("\n  ")}`);
+    process.exitCode = 1;
+    return undefined;
+  }
+
+  return path.join(dir, name);
 };
 
 const connect = async () => {
@@ -197,6 +247,7 @@ module.exports = {
   writeSnapshot,
   listSnapshotDirs,
   readManifest,
+  resolveSnapshotDir,
   verifySnapshot,
   connect,
 };

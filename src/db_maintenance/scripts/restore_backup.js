@@ -34,8 +34,8 @@ const { parseArgs } = require("../work_collections");
 const {
   connect,
   writeSnapshot,
-  listSnapshotDirs,
   readManifest,
+  resolveSnapshotDir,
   verifySnapshot,
 } = require("./backup_database");
 
@@ -56,7 +56,7 @@ const main = async () => {
     verify: args["skip-verify"] !== true,
   };
 
-  const snapshotDir = resolveSnapshot(options);
+  const snapshotDir = resolveSnapshotDir(options);
   if (!snapshotDir) return;
 
   const manifest = readManifest(snapshotDir);
@@ -157,36 +157,6 @@ const restoreCollection = async (db, snapshotDir, { name, file }, options) => {
     `  wrote ${toInsert.length + toUpdate.length} documents` +
       (options.prune ? `, deleted ${extra.length}` : "")
   );
-};
-
-/** @type {(options: { dir: string, from?: string }) => string | undefined} */
-const resolveSnapshot = ({ dir, from }) => {
-  if (from && (from.includes("/") || from.includes("\\"))) {
-    if (fs.existsSync(from)) return from;
-    console.error(`No such snapshot: ${from}`);
-    process.exitCode = 1;
-    return undefined;
-  }
-
-  const names = listSnapshotDirs(dir);
-  if (names.length === 0) {
-    console.error(
-      `No snapshots in ${dir}. Take one with: node scripts/backup_database.js`
-    );
-    process.exitCode = 1;
-    return undefined;
-  }
-
-  // listSnapshotDirs sorts by name, which for snapshot names is chronological.
-  const name = from ?? names[names.length - 1];
-  if (!names.includes(name)) {
-    console.error(`No such snapshot in ${dir}: ${name}`);
-    console.error(`Available:\n  ${names.join("\n  ")}`);
-    process.exitCode = 1;
-    return undefined;
-  }
-
-  return path.join(dir, name);
 };
 
 /** Key order is not meaningful in a document, so it must not count as a diff. */
