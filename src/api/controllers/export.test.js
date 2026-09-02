@@ -19,6 +19,12 @@
  * nobody would answer 404 for a real user too, and the test above it would
  * pass on that just as happily.
  *
+ * The headers after it are #300, and this route is where they are worth
+ * checking: it is the only one that answers two content types off one path,
+ * and `asText` builds the Markdown response's headers itself rather than
+ * going through `responses.js`, so JSON passing proves nothing about
+ * Markdown.
+ *
  * That needs the actual dependencies, so the file **skips itself** when they
  * aren't installed — which is how the `test` job runs the suite. The `build`
  * job installs them and asserts nothing skips.
@@ -131,26 +137,37 @@ const exportRoute = dependenciesInstalled ? await import('../routes/export.js') 
 /**
  * The handler, plus everything it wrote to the log while it ran. Both 404s
  * below are about which of the two a sentence came out of.
+ *
+ * `query` is how `?format=md` gets in — the route reads it out of
+ * `queryStringParameters`, and `rawUrl` carries it too because that is what
+ * Netlify hands a function. A Markdown body is returned as the string it is;
+ * only a JSON one is parsed.
  */
-const getExport = async (path) => {
+const getExport = async (path, query = undefined) => {
   const logged = []
   const realError = console.error
   console.error = (...args) => logged.push(args.join(' '))
+
+  const search = query ? `?${new URLSearchParams(query)}` : ''
 
   try {
     const response = await exportRoute.handler(
       {
         httpMethod: 'GET',
         path: `/.netlify/functions/export${path}`,
-        rawUrl: `https://nil.moe/api/export${path}`,
+        rawUrl: `https://nil.moe/api/export${path}${search}`,
         headers: {},
+        queryStringParameters: query ?? null,
         body: null,
       },
       {}
     )
+    const isJson = (response.headers?.['content-type'] ?? '')
+      .startsWith('application/json')
     return {
       statusCode: response.statusCode,
-      body: response.body ? JSON.parse(response.body) : undefined,
+      headers: response.headers,
+      body: response.body && isJson ? JSON.parse(response.body) : response.body,
       logged,
     }
   } finally {
@@ -244,4 +261,60 @@ test('a real user still gets their list, so the 404 above means something', opti
   assert.equal(body.lists[0].count, 1)
   assert.equal(body.lists[0].entries[0].title, 'A Film')
   assert.deepEqual(logged, [])
+})
+
+/**
+ * `_headers`' `/*` values, typed out rather than read from
+ * `responses.SECURITY_HEADERS`. Spread from the constant these would agree
+ * with whatever it holds, including holding nothing — the same reason
+ * `TYPES_SENTENCE` above is spelled out instead of joined from `LIST_TYPES`.
+ */
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
+}
+
+test('the JSON export carries the security headers, and still the CORS one', options, async () => {
+  seed()
+
+  const { statusCode, headers } = await getExport('/films/reader')
+
+  assert.equal(statusCode, 200)
+  assert.deepEqual(headers, {
+    'content-type': 'application/json; charset=utf-8',
+    ...SECURITY_HEADERS,
+    'access-control-allow-origin': '*',
+  })
+})
+
+test('the Markdown export carries the same set', options, async () => {
+  // The half a JSON assertion cannot reach. `?format=md` is answered by
+  // `asText` with headers of its own, and `nosniff` is in that list because
+  // this response and the one above come off the same url.
+  seed()
+
+  const { statusCode, headers, body } = await getExport('/films/reader', { format: 'md' })
+
+  assert.equal(statusCode, 200)
+  assert.equal(typeof body, 'string')
+  assert.deepEqual(headers, {
+    'content-type': 'text/markdown; charset=utf-8',
+    ...SECURITY_HEADERS,
+    'access-control-allow-origin': '*',
+  })
+})
+
+test('a 404 off this route carries them too', options, async () => {
+  // `asText` is the exception; everything else here is `responses.js`, and an
+  // error is the response a stranger can ask for at will.
+  seed()
+
+  const { statusCode, headers } = await getExport('/nosuchtype/reader')
+
+  assert.equal(statusCode, 404)
+  assert.deepEqual(headers, {
+    'content-type': 'application/json; charset=utf-8',
+    ...SECURITY_HEADERS,
+  })
 })
