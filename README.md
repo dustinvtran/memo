@@ -131,6 +131,27 @@ is in its source, and it points at these urls, so a reader that fetches
 `/api/*` onto `/.netlify/functions/*`, which is what makes every url in this
 README real rather than aspirational.
 
+**A url that does not exist still answers `200`, and that is not a bug in
+the router.** `_redirects` ends in a forced catch-all, so `/films/nobody`
+and `/does-not-exist` are both handed the homepage's HTML with a `200` and
+`Components.Router` draws `Error404` in the browser — the page says "Page
+not found" while the status line says the opposite. That soft 404 is the
+price of routing on the client rather than something to fix: `_redirects` is
+matched before anything has asked the database, so it cannot tell a real
+username from a typo, and a rule that answered `404` for what it did not
+recognise would have to recognise every list url, which means every
+username. Search engines are who pays for it, and readers are not.
+
+Two urls used to be caught by that same net and no longer are.
+`/robots.txt` and `/sitemap.xml` are emitted by `src/frontend/robots.njk`
+and `sitemap.njk`, each with a forced rule of its own in `_redirects`
+beside `/img/*`, `/js/*` and `/css/*` — writing the files is only half of
+it, because the catch-all overrides a file that has no rule (#302, and the
+same trap as #103, #141 and #142). `robots.txt` points at the sitemap and
+allows `/api/export`, which is the one url under `/api/` that is a document
+rather than a request. The sitemap lists the homepage alone: every other
+url here names a user, and the build knows no usernames.
+
 **Searching a list.** The box above each sublist takes a comma-separated list
 of terms, all of which have to match. A bare term is a case-insensitive
 substring, tried against the columns the table is currently showing; a

@@ -1,0 +1,35 @@
+---
+permalink: /sitemap.xml
+eleventyExcludeFromCollections: true
+---
+{#- Emitted, and forced-mapped to itself in `_redirects`, for the reasons at
+   the top of `robots.njk`. Without that rule this file is written and never
+   served: the catch-all hands `/sitemap.xml` the homepage's HTML, at `200`,
+   with `Content-Type: text/html`.
+
+   One url, and that is not an oversight. A sitemap can only list what the
+   build knows, and the build knows no usernames. Every real list url here is
+   `/:type/:username` and every profile is `/profile/:username`; the names come
+   out of the `users` collection at request time, the site publishes no
+   directory of them, and the homepage draws a welcome rather than a list to
+   anyone not logged in. Reaching the database or the API from `_data` to
+   enumerate them would put a network call and a live database between a
+   commit and a build that CI runs with neither. See the pull request for
+   #302, which weighs that and declines it.
+
+   The `<lastmod>` is left off deliberately. It would be the build's timestamp,
+   which changes on every deploy whether or not anything a reader can see did,
+   and a date that always says "just now" is one a crawler learns to ignore. -#}
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The homepage is the only url this build can name. The lists live at
+  /:type/:username and the profiles at /profile/:username, and the usernames
+  are not known until a request is served. What is worth fetching instead is
+  in /robots.txt: the export endpoint at /api/export serves any list as JSON
+  or Markdown, which is the same data the pages draw.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>{{ site.url }}/</loc>
+  </url>
+</urlset>

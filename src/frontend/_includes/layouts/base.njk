@@ -5,6 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
 
+    {# What the site says about itself, which until #302 was nothing at all:
+       the served HTML carried `charset`, `viewport` and a title, so a link
+       to any url here pasted into a chat or a search result was a bare url
+       with no summary — and since the body is drawn client-side there was no
+       text to build a snippet out of either.
+
+       These are static, one description for the whole site, and that is the
+       honest shape rather than a shortcut. `_redirects` rewrites every url to
+       this one document, so there is no per-page anything to describe without
+       a server that renders pages, and there isn't one.
+
+       No `og:url` and no `<link rel=canonical>`, for the same reason and on
+       purpose. Either would have to name one url, and naming the homepage on
+       `/films/nil` tells a crawler that a real page is a duplicate of a
+       different one, and tells a chat client to preview the wrong link. A tag
+       that is wrong everywhere but one url is worse than no tag.
+
+       The text is in `src/frontend/_data/site.js`, where `robots.njk` and
+       `sitemap.njk` also read the origin, so the description is written
+       once and the two copies below cannot drift apart. #}
+    <meta name="description" content="{{ site.description }}">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="{{ site.title }}">
+    <meta property="og:title" content="{{ title }}">
+    <meta property="og:description" content="{{ site.description }}">
+    {# Absolute, because Open Graph has no base to resolve a relative url
+       against: a scraper reads these tags out of the document and fetches
+       what they say. The logo is square, which is what `summary` wants —
+       `summary_large_image` would stretch it into a banner it is not. #}
+    <meta property="og:image" content="{{ site.url }}/img/memo_logo.png">
+    <meta name="twitter:card" content="summary">
+
     {# Everything below comes from a CDN, so every url is pinned to an exact
        version and carries the `integrity` hash of that version's bytes. A
        host that starts serving something else then serves it into a page

@@ -203,26 +203,43 @@ jobs:
             echo "ok: dist$url"
           done
 
-      # Neither of these is referenced by anything, so the scan above cannot
-      # reach them, and both are read by Netlify from the publish directory
-      # rather than from the repo. They arrive by passthrough copy, which is
-      # exactly the kind of thing that stops matching quietly.
+      # None of these is referenced by anything, so the scan above cannot
+      # reach them. Two are read by Netlify out of the publish directory
+      # rather than out of the repo; two are asked for by name by clients
+      # that never read a page first. They arrive by passthrough copy and by
+      # template, which is exactly the kind of thing that stops happening
+      # quietly.
       #
       # `_redirects` is the one whose absence breaks pages that are otherwise
       # fine: without it Netlify answers `/films/nil` with a 404 instead of
       # the app. `_headers` fails more quietly still — the site works, and
       # every hashed asset is re-fetched on every navigation, which is the
       # whole point of #142 undone with nothing to show for it.
-      - name: The routing and header files must ship
+      #
+      # `robots.txt` and `sitemap.xml` fail more quietly than either, which
+      # is why they are here (#302). The forced catch-all answers a file the
+      # build did not write with the homepage's HTML at `200`, so nothing
+      # errors anywhere: a crawler is handed a page where a rules file should
+      # be, which is #103 and #141 with a different filename. The `Sitemap:`
+      # line is read as well, because a `site.url` that came out empty leaves
+      # a robots.txt that ships, is non-empty, and points at nothing.
+      - name: The files nothing links to must ship
         run: |
-          for file in _redirects _headers; do
+          for file in _redirects _headers robots.txt sitemap.xml; do
             test -s "dist/$file" || {
-              echo "dist/$file is missing or empty, and Netlify reads it from" \
-                   "the publish directory — nothing else will notice"
+              echo "dist/$file is missing or empty — Netlify reads it from" \
+                   "the publish directory, or answers it with the homepage's" \
+                   "HTML, and nothing else will notice"
               exit 1
             }
             echo "ok: dist/$file"
           done
+          grep -qE '^Sitemap: https?://[^ ]+/sitemap\.xml$' dist/robots.txt || {
+            echo "dist/robots.txt names no absolute sitemap url, and a" \
+                 "crawler has nothing to resolve a relative one against —" \
+                 "see src/frontend/_data/site.js"
+            exit 1
+          }
 
       # Today `npm run build` is what actually goes red on a bundle that will
       # not parse, because #135 made the `jsmin` filter throw. This asserts the

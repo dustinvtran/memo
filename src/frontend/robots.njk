@@ -1,0 +1,36 @@
+---
+permalink: /robots.txt
+eleventyExcludeFromCollections: true
+---
+{#- Emitted the way `css/main.njk` emits the stylesheet: a template whose
+   `permalink` is the url it answers at.
+
+   This file needs a rule of its own in `_redirects` to be reachable at all.
+   The catch-all there is forced, so writing the file is only half the job —
+   without `/robots.txt  /robots.txt  200!` a crawler asking for it is handed
+   the homepage's HTML with a `200`, which is worse than the `404` it replaced:
+   a `404` means "no rules, crawl what you like", where a malformed `200` is a
+   file the crawler has to try to parse. #302, and the same trap as #103, #141
+   and #142. -#}
+# Memo is drawn in the browser. Every url on this site answers with the same
+# document and an empty <div id="site">, so there is nothing in the HTML to
+# index. The lists are served as data at /api/export, which is public by
+# design and is what a reader that is not a browser actually wants.
+
+User-agent: *
+
+# The export endpoint is named first so that a crawler reading these rules in
+# order allows it before reaching the Disallow below. The ones that instead
+# take the most specific match — Google and Bing both do — get the same answer
+# out of the longer path.
+Allow: /api/export/
+
+# The rest of /api/ is what the page calls while it draws: request-shaped urls
+# that answer one component's question, several of which need the reader's own
+# session and can say nothing without one. Nothing is hidden by this line. It
+# stops a crawler spending its budget on urls that are not documents.
+Disallow: /api/
+
+Allow: /
+
+Sitemap: {{ site.url }}/sitemap.xml
