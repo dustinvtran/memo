@@ -89,6 +89,26 @@ const typeToCollection = (type) => workTypes.byType(type)?.works
 /**
  * Tries each apiRef in turn and stops at the first cached work, or `null` if
  * none of them names one we have.
+ *
+ * **A ref that names more than one work names none of them.** This was
+ * `findOneByField_`, and a `findOne` on an ambiguous ref answers with whichever
+ * document the server happened to reach first. 25 identity refs in the work
+ * collections are ambiguous today — `igdb__2933` is carried by both `Kingdom
+ * Hearts III` and `Kingdom Hearts`, `igdb__127111` by both `The Wolf Among Us`
+ * and `Among Us` — so `GET /api/works/retrieve/games/2933` could hand back
+ * either, and whoever was adding the other one got an entry pointed at the
+ * wrong work, permanently and without a symptom they could see. New entries
+ * kept landing on the wrong side of a collision that already existed. #290.
+ *
+ * Two matches therefore count as a miss, and the caller retrieves the work
+ * from the API and caches it as a new document. That does grow the collision
+ * to three while it lasts, and it is still the better answer: the new document
+ * describes the id correctly, `scripts/audit_database.js` reports the group,
+ * and nobody's entry is silently attached to a work they did not choose.
+ * Guessing right half the time is not a cache hit.
+ *
+ * `limit: 2` because the question is "is there exactly one", which two
+ * documents already answer.
  * @type {(collection: any, apiRefs: string[]) => ResultAsync<any | null, Error>}
  */
 const findCachedWork = (collection, apiRefs) =>
@@ -96,7 +116,8 @@ const findCachedWork = (collection, apiRefs) =>
     (found, apiRef) => found.andThen((work) =>
       work
         ? okAsync(work)
-        : db.findOneByField_(collection, 'apiRefs', apiRef)
+        : db.findMany_(collection, { apiRefs: apiRef }, { limit: 2 })
+          .map((works) => works.length === 1 ? works[0] : null)
     ),
     okAsync(null)
   )

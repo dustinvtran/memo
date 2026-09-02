@@ -194,14 +194,85 @@ test("missingOnly fills gaps but refuses to overwrite usable values", () => {
   assert.deepEqual(updates, { imageUrl: "https://img" });
 });
 
-test("a changed title is applied but called out for review", () => {
-  const { updates, notes } = mergeWork(games, backfilled(), {
+///////////////////////////////////////////////////////////////////////////////
+// The apiRef is not evidence. #290: 25 groups of works carry an id that
+// belongs to a different work, and a --missing-only backfill filled every gap
+// in them from that other work. The titles are the only thing that survived,
+// because a title was never the missing field — and a run without
+// --missing-only would take those too.
+
+test("a work the apiRef disagrees with is refused, not filled", () => {
+  // `Among Us` really is stored under The Wolf Among Us's IGDB id, with its
+  // nine-hour playtime and its link already written onto it.
+  const amongUs = {
+    _id: "a",
+    entryType: "Game",
+    englishTranslatedTitle: "Among Us",
+    apiRefs: ["igdb__127111"],
+  };
+  const wolf = {
     ...freshGame,
+    englishTranslatedTitle: "The Wolf Among Us",
+    duration: 540,
+  };
+
+  const { updates, notes, refused } = mergeWork(games, amongUs, wolf);
+
+  assert.deepEqual(updates, {});
+  assert.match(refused, /Among Us.*The Wolf Among Us/);
+  assert.deepEqual(notes, [refused]);
+});
+
+test("a refusal stands whether or not the run is missing-only", () => {
+  // --missing-only is what wrote the damage; without it the same call would
+  // overwrite the titles, which is the point past which the pair cannot be
+  // told apart again.
+  const stranger = { ...freshGame, englishTranslatedTitle: "Silksong" };
+
+  for (const options of [{}, { missingOnly: true }, { missingOnly: false }]) {
+    const { updates, refused } = mergeWork(games, backfilled(), stranger, options);
+    assert.deepEqual(updates, {});
+    assert.match(refused, /Hollow Knight.*Silksong/);
+  }
+});
+
+test("a refusal writes nothing at all, the entryType repair included", () => {
+  // If the ref names another work then the call was about another work, and
+  // the safe amount to take from it is none of it.
+  const wrongType = {
+    ...staleGame,
+    entryType: "Film",
     englishTranslatedTitle: "Silksong",
+  };
+
+  assert.deepEqual(mergeWork(games, wrongType, freshGame).updates, {});
+});
+
+test("punctuation is not a disagreement, and a match is merged as before", () => {
+  const spelled = { ...staleGame, englishTranslatedTitle: "hollow knight!" };
+  const { updates, refused } = mergeWork(games, spelled, freshGame);
+
+  assert.equal(refused, undefined);
+  assert.equal(updates.releaseYear, 2017);
+});
+
+test("a work with no title yet is filled in rather than refused", () => {
+  // "We cannot tell" is not "they differ". A work missing its title is the
+  // ordinary case the backfill exists for.
+  const untitled = { ...staleGame, englishTranslatedTitle: undefined };
+  const { updates, refused } = mergeWork(games, untitled, freshGame);
+
+  assert.equal(refused, undefined);
+  assert.equal(updates.englishTranslatedTitle, "Hollow Knight");
+});
+
+test("an API answer with no title of its own cannot refuse anything", () => {
+  const { refused } = mergeWork(games, backfilled(), {
+    ...freshGame,
+    englishTranslatedTitle: undefined,
   });
 
-  assert.equal(updates.englishTranslatedTitle, "Silksong");
-  assert.match(notes.join("\n"), /Hollow Knight.*Silksong/);
+  assert.equal(refused, undefined);
 });
 
 test("legacy object-shaped apiRefs are normalised to flat strings", () => {
