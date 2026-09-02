@@ -29,9 +29,7 @@ const {
   COLLECTIONS,
   parseApiRef,
   isEmptyValue,
-  displayTitle,
   selectCollections,
-  sleep,
   parseArgs,
 } = require("../work_collections");
 const {
@@ -41,12 +39,14 @@ const {
 } = require("../work_metadata_merge");
 const {
   classifySharedRefs,
-  resolveIdentity,
   sharedRefReason,
+  // `describe` moved there when scripts/repair_shared_refs.js started joining
+  // its own reads onto the `id` it writes.
+  describeWork: describe,
 } = require("../shared_ref_check");
 const { implausibleDuration } = require("../duration_plausibility");
 const { toSummary, countProblems } = require("../audit_report");
-const { loadAdapter, describeError } = require("../load_adapter");
+const { verifyIdentities } = require("../load_adapter");
 
 const args = parseArgs(process.argv);
 
@@ -213,65 +213,12 @@ const hasRetrieveRef = (collection, work) =>
     (ref) => parseApiRef(ref)?.name === collection.retrievePrefix
   );
 
-const describe = (work) => ({
-  id: work._id,
-  title: displayTitle(work),
-  apiRefs: work.apiRefs,
-});
-
 const describeGroup = ({ key, ref, works }) => ({
   apiRef: key,
   ref,
   count: works.length,
   works: works.map(describe),
 });
-
-/**
- * Asks the adapter, once per collision group, what the shared id names.
- *
- * The pause between calls is the same one the backfill uses, out of the same
- * descriptor: IGDB caps at four requests a second and a retrieve costs three
- * of them. A group whose retrieve fails is recorded with its error rather than
- * dropped — "IGDB would not say" and "IGDB says neither of these" are
- * different answers, and only the second is a finding.
- *
- * @type {(collection: any, groups: any[]) => Promise<object[]>}
- */
-const verifyIdentities = async (collection, groups) => {
-  if (groups.length === 0) return [];
-
-  const adapter = loadAdapter(collection);
-  if (!adapter) return [];
-
-  const delayMs = collection.defaultDelayMs;
-  const checks = [];
-
-  for (const [index, group] of groups.entries()) {
-    if (index > 0) await sleep(delayMs);
-
-    const result = await adapter.retrieve(group.ref);
-    if (result.isErr()) {
-      checks.push({
-        apiRef: group.key,
-        ref: group.ref,
-        error: describeError(result.error),
-        works: group.works.map(describe),
-      });
-      continue;
-    }
-
-    const { apiTitle, matches, mismatches } = resolveIdentity(group, result.value);
-    checks.push({
-      apiRef: group.key,
-      ref: group.ref,
-      apiTitle,
-      matches: matches.map(describe),
-      mismatches: mismatches.map(describe),
-    });
-  }
-
-  return checks;
-};
 
 const printSummary = (collection, result) => {
   const { problems, notes } = toSummary(collection, result);

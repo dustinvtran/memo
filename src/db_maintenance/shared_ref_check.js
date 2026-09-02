@@ -145,10 +145,24 @@ const resolveIdentity = (group, fresh) => {
   };
 };
 
+/**
+ * How a report names one work. Shared so that the audit's findings and the
+ * `identityChecks` a repair reads back are the same shape rather than two
+ * spellings of it — scripts/repair_shared_refs.js joins on the `id` this
+ * writes.
+ * @type {(work: any) => { id: any, title: string, apiRefs: unknown }}
+ */
+const describeWork = (work) => ({
+  id: work._id,
+  title: displayTitle(work),
+  apiRefs: work.apiRefs,
+});
+
 module.exports = {
   SHARED_IDENTITY_REF_BY_DESIGN,
   sharedRefReason,
   classifySharedRefs,
   identityRefOf,
   resolveIdentity,
+  describeWork,
 };

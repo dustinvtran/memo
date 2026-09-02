@@ -6,7 +6,7 @@
 library: the pure modules that decide what a script should write, and their
 tests. `load_adapter.js` is the one exception — it `require`s the real
 adapters, so it is not in the no-install suite, and it lives up here rather
-than in `scripts/` only because two scripts need it.
+than in `scripts/` only because three scripts need it.
 
 The scripts, and the section below that explains each:
 
@@ -22,6 +22,7 @@ The scripts, and the section below that explains each:
 | `repair_durations.js` | Repairs `duration` values that cannot be true — a playtime multiplied by 60 one time too many. Only ever writes a value an entry override corroborates. | `--apply` |
 | `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
 | `clear_unusable_work_fields.js` | `$unset`s work fields whose stored value is present and unusable — `publishers: {}`, `externalUrls: [[]]`, `directors: [""]` — so the next backfill can fill them. | `--apply` |
+| `repair_shared_refs.js` | Takes another work's id off the works wearing it, and the year, playtime, image, links and credits that id wrote onto them. Asks each API which work the id names before it writes. | `--apply` |
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
 | `strip_dead_entry_fields.js` | Unsets `review` and `commonMetadata` from entry documents — a duplicated note and a stale copy of the work, neither of which any reader uses. | `--apply` |
 | `retype_entry_revisions.js` | Rewrites `entryRevisions.entryType` from the url spelling to the one every other collection uses: `films` to `Film`. | `--apply` |
@@ -236,14 +237,70 @@ Among Us: Episode 5 - Cry Wolf*, so both `The Wolf Among Us` and `Among Us`
 are wearing an id that is neither of theirs, and `9781781101032` comes back as
 *Harry Potter à L'école des Sorciers*. Those want a human, not a rule.
 
-**None of this is repaired yet.** Fixing a collision means replacing or
-clearing a ref and clearing the fields it poisoned, which is a write to real
-user-visible data and wants a snapshot first — see "Writing to the database"
-in the root `CLAUDE.md`. What is in place is the detection above and two
-guards that stop it getting worse: `mergeWork` refuses a work whose title the
-API disagrees with (below), and the retrieve route treats an ambiguous ref as
-a cache miss rather than picking one of the matches, so new entries stop
-landing on the wrong side of a collision that already exists.
+Two guards stop this getting worse, and both are already in: `mergeWork`
+refuses a work whose title the API disagrees with (below), and the retrieve
+route treats an ambiguous ref as a cache miss rather than picking one of the
+matches, so new entries stop landing on the wrong side of a collision that
+already exists. Nothing is deteriorating; what is left is undoing what already
+happened.
+
+### Repairing a collision
+
+`repair_shared_refs.js` is that. It runs the same identity checks
+`--verify-shared-refs` runs — live, immediately before it writes, so no verdict
+is ever older than the write it justifies — and hands them to
+`../shared_ref_repair_plan.js`, which decides everything that gets written. The
+verdicts come from the APIs and the plan reads nothing else; there is
+deliberately no list of ids in the script, because a list would be a second
+source of truth about which side of a pair is wrong and would be stale the
+first time somebody adds an entry.
+
+A misfiled work loses:
+
+- **the shared id**, and anything else the group holds in common. Two works an
+  API has just called different works cannot both be right about one external
+  id, and the document it called misfiled is not the one to give the benefit of
+  the doubt to. That is what takes `hltb__13157` off `Kingdom Hearts` — it is
+  Kingdom Hearts III's HowLongToBeat page and no grouping would have found it,
+  because an `hltb` ref is not an identity ref. An id only one work in the
+  group carries is left alone.
+- **every field an adapter fills**: the year, the playtime, the image, the
+  links, and the genres, platforms, studios, publishers, authors and cast too.
+  Not just the four the issue names. `authors: ["Dan Brown"]` on Dostoevsky's
+  `Demons` is exactly as wrong as its 600 pages. The reason it is all of them
+  is that nothing on these documents can be dated: the merge that did the
+  damage ran with `--missing-only`, so it wrote whichever fields happened to be
+  empty, and nothing records which those were.
+
+The titles stay, and so does `entryType`. A title is the one field the wrong id
+demonstrably did not write — a `--missing-only` merge only fills what is empty
+— and it is what a human needs in order to look the right id up. `apiRefs` is
+narrowed rather than unset, because an absent `apiRefs` is what the audit calls
+corrupt and an empty one honestly says we know of no id for this work.
+
+**A repaired work usually cannot be refreshed again**, and the script says so
+rather than reporting it as fixed. With the id gone there is nothing to
+retrieve from, so the work moves onto the "no `<prefix>__` ref (cannot be
+refreshed)" line of the audit and stays there until somebody supplies the right
+id by hand. That is the honest state for a work whose id nobody knows, and it
+is the only state a backfill can ever do the right thing from: `$unset` leaves
+a *missing* field, which is what `isEmptyValue` recognises, so a correct ref
+arriving later fills everything back in. The run prints the before and after of
+that count for each collection and for the run as a whole.
+
+The confirmed owners are never written to, and the check afterwards proves it
+rather than asserting it: each one is compared in full against the document
+read before the write.
+
+```
+node scripts/repair_shared_refs.js                  # dry run, 25 API calls
+node scripts/repair_shared_refs.js --only=books
+node scripts/repair_shared_refs.js --apply
+```
+
+It is a write to real user-visible data, so take a snapshot with
+`backup_database.js` and verify it with `verify_backup.js` first — see "Writing
+to the database" in the root `CLAUDE.md`.
 
 `reviews whose entry is gone` **is** a problem: a review is only ever found by
 `entryRef`, so one whose entry is gone holds text no code path can reach.
