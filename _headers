@@ -137,6 +137,14 @@
 # replaces it the way the cache rules above replace theirs — worth a look at
 # production after the merge, since it is the only place it shows.
 #
+# That holds for `/api/*` as well, and for the same reason rather than a
+# related one: #305's preview answered every API route
+# `max-age=31536000; includeSubDomains; preload`, which is the edge's value
+# and not the constant's — the `preload` gives it away, since nothing in this
+# repo asks for one. `nosniff` and the referrer policy did arrive from the
+# function on that preview, on JSON, on Markdown and on a 404, so what is
+# unconfirmed there is this header alone.
+#
 # These rules sit in this file rather than `netlify.toml` for the same reason
 # the cache rules above do — see that note. Netlify applies every rule whose
 # path matches, so `/js/*` keeps its `immutable` and gains these as well; a
