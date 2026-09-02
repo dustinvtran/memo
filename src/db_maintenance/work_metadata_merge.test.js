@@ -109,18 +109,43 @@ test("backfilling keeps the HowLongToBeat ref and link the game already has", ()
   assert.deepEqual(refreshed.genres, ["Platform"]);
 });
 
+test("a HowLongToBeat playtime with no stored link is searched for by title", () => {
+  // #201 gave the column a HowLongToBeat search to fall back on, so the 210
+  // games with a playtime and no ref to build a page url from are linked.
+  const noStoredLink = { ...staleGame, apiRefs: ["igdb__14593"], externalUrls: [] };
+
+  assert.equal(isMissingPlaytimeLink(games, noStoredLink), false);
+  assert.equal(
+    isMissingPlaytimeLink(games, {
+      ...noStoredLink,
+      englishTranslatedTitle: undefined,
+      originalTitle: "空の軌跡",
+    }),
+    false
+  );
+});
+
 test("a playtime with nothing to link to is reported but not chased", () => {
-  // No API can add a HowLongToBeat link any more, so re-running the adapter
-  // at these forever would only burn the call.
-  const unlinkable = { ...staleGame, apiRefs: ["igdb__14593"], externalUrls: [] };
+  // Nothing stored and no title to search on: the column renders this one as
+  // bare text. No API can add a HowLongToBeat link any more, so re-running
+  // the adapter at it forever would only burn the call.
+  const unlinkable = {
+    ...staleGame,
+    englishTranslatedTitle: undefined,
+    apiRefs: ["igdb__14593"],
+    externalUrls: [],
+  };
 
   assert.equal(isMissingPlaytimeLink(games, unlinkable), true);
+  assert.equal(isMissingPlaytimeLink(games, { ...unlinkable, originalTitle: "" }), true);
   assert.equal(hasGaps(games, { ...backfilled(), externalUrls: [] }), false);
 });
 
 test("an IGDB playtime is linked by its IGDB url, not a HowLongToBeat one", () => {
   const igdbSourced = { ...staleGame, duration: 750, durationSource: "igdb" };
 
+  // A title is no help here: case 1 has no search to fall back on, so an IGDB
+  // duration with no igdb url is the one thing still worth reporting.
   assert.equal(isMissingPlaytimeLink(games, igdbSourced), true);
   assert.equal(
     isMissingPlaytimeLink(games, {
