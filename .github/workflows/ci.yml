@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+# Nothing in this workflow writes anything: the two jobs below test, build,
+# and read two advisory feeds. The repository default is `write` (#301), and
+# this overrides it for this workflow whatever that setting happens to be —
+# which is the reason to say it here as well as in the settings, since the
+# file is the half that survives a settings change. A job that ever does need
+# more should raise it on itself rather than widening this.
+permissions:
+  contents: read
+
 # A branch that gets three pushes in a minute had three full runs going at
 # once, and the two the reviewer will never look at were still holding runners
 # the third one needed. Cancelling is right for a pull request, where only the

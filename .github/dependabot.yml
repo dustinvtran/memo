@@ -1,0 +1,53 @@
+# Dependabot's *alerts* were already on; what was off is anything that opens
+# the pull request (#301). This file is the routine half of that — a weekly
+# pass over the npm tree — and the repository setting for security updates is
+# the other half, which no file here can turn on and nothing in CI can
+# assert.
+#
+# The grouping is the whole point of this file rather than a detail of it.
+# 1319 of the 1575 packages in `package-lock.json` are `netlify-cli` and its
+# tree: a devDependency that exists so `npx netlify dev` works on a laptop,
+# that nothing in CI or on Netlify ever runs, and that CI already installs its
+# way around with `npm ci --omit=dev`. Ungrouped, that tree on its own would
+# open more pull requests in a week than this repo sees in a month, none of
+# them against anything a browser or a route can reach. So production and
+# development are separate groups, and the production one is the one to read.
+#
+# Majors are in neither group, deliberately, so each arrives as its own pull
+# request. A major here is not a routine bump: `uuid` 13 was ESM-only and 502'd
+# every route at once (#162), and `jose` 6 would have done it again (#168).
+# What catches that is a reviewer looking at one change against
+# docs/module_system.md, not a green tick on a group of eleven.
+#
+# `applies-to: version-updates` keeps the groups off security updates, so a
+# fix for an advisory still arrives alone and can be read, merged and deployed
+# without the week's other bumps riding along.
+#
+# None of this decides what is worth failing a build over.
+# `.github/scripts/check_audit.js` and `check_cdn_advisories.js` do that, from
+# the other direction: they read the advisories — against the production tree
+# and against the CDN pins respectively — and go red on a new one. Dependabot
+# proposes an upgrade and CI says whether the tree is clean afterwards; and
+# the CDN half watches nine libraries that are in no lockfile at all, so
+# Dependabot will never see them (#218).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # `feat:` / `fix:` / `docs:` / `chore:`, optionally scoped, is the
+    # convention in CLAUDE.md; `include: scope` makes that `chore(deps):`.
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      production:
+        applies-to: version-updates
+        dependency-type: production
+        update-types: [minor, patch]
+      development:
+        applies-to: version-updates
+        dependency-type: development
+        update-types: [minor, patch]
