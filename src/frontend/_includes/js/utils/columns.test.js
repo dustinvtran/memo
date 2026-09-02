@@ -61,6 +61,13 @@ const genres = (values) =>
     listOfLinksFormatter("genres")(null, { commonMetadata: { genres: values } })
   );
 
+const publishers = (values) =>
+  String(
+    listOfLinksFormatter("publishers")(null, {
+      commonMetadata: { publishers: values },
+    })
+  );
+
 test("a flat hltb apiRef links the playtime to HowLongToBeat", () => {
   assert.equal(
     playtime({ duration: 600, apiRefs: ["igdb__1", "hltb__555"] }),
@@ -193,6 +200,84 @@ test("a placeholder hltb ref is searched for, not linked to", () => {
   assert.equal(game(["hltb__N/A"]), searched);
   assert.equal(game(["hltb__"]), searched);
   assert.equal(game([{ name: "hltb", ref: "N/A" }]), searched);
+});
+
+///////////////////////////////////////////////////////////////////////////////
+// The shapes the database actually holds. A formatter is handed whatever is
+// stored, and what is stored is not always what the field is for.
+
+test("a list of publishers renders one link each, comma separated", () => {
+  assert.equal(
+    publishers(["Penguin", "Vintage"]),
+    '<a href="http://en.wikipedia.org/wiki/Special:Search?search=Penguin&amp;go=Go">' +
+      "Penguin</a>, " +
+      '<a href="http://en.wikipedia.org/wiki/Special:Search?search=Vintage&amp;go=Go">' +
+      "Vintage</a>"
+  );
+});
+
+test("`publishers: {}` draws what an absent value draws rather than throwing", () => {
+  // 587 of the 696 books hold exactly this: an unawaited Promise, which lands
+  // in Mongo as `{}`, written by a script that no longer exists and named in
+  // the comment at `db_maintenance/work_collections.js`. `{}` is not nullish,
+  // so the `?? []` that used to stand here handed it straight to `.reduce`.
+  //
+  // The blast radius is what made it a p1 rather than a blank cell: `draw` in
+  // `table_view.js` builds the whole `<tbody>` as one template before it
+  // assigns it, so ticking Publishers on a books list threw before
+  // `grid.innerHTML` was ever reached — stale rows, ticked checkbox, and the
+  // column now in `state`, so every later search and sort threw too (#292).
+  assert.equal(publishers({}), publishers(undefined));
+  assert.equal(publishers({}), "");
+});
+
+test("any other non-list draws the same nothing", () => {
+  assert.equal(publishers(null), "");
+  assert.equal(publishers([]), "");
+  assert.equal(publishers("Penguin"), "");
+  assert.equal(publishers(0), "");
+});
+
+test("an empty string in the list is still drawn as an empty link", () => {
+  // 8 films and tv shows hold `directors: [""]`; `[[]]` is the same class of
+  // thing and comes out identically, because `encodeURIComponent([])` is the
+  // empty string too. Both draw an anchor with no text in it.
+  //
+  // Deliberately not filtered here, and this test is the record of that
+  // choice rather than an endorsement of the output. It is a blemish, not a
+  // break: the cell draws, the table lives, and the reader sees a row missing
+  // a name. `isCorruptStringArray` in `db_maintenance/work_collections.js`
+  // already counts these among the corrupt values and #291 unsets them —
+  // dropping them here would erase the only symptom anyone would ever notice
+  // and leave an audit count as the sole evidence of a field that looks fine
+  // on the page. The `{}` guard above is different in kind: it is what stops
+  // one document taking the table down, which no data cleanup can promise for
+  // the shape nobody has stored yet.
+  const emptyLink =
+    '<a href="http://en.wikipedia.org/wiki/Special:Search?search=&amp;go=Go"></a>';
+  assert.equal(publishers([""]), emptyLink);
+  assert.equal(publishers([[]]), emptyLink);
+});
+
+test("a corrupt apiRefs or externalUrls costs the link, not the row", () => {
+  // `?.find` and `?.map` guard against nullish and nothing else — the same
+  // guard `?? []` was, and the same one `{}` walks straight through. The issue
+  // reads these two as already safe; they were not. No games document is known
+  // to hold this shape today, and the books did not hold theirs either until a
+  // script wrote it.
+  assert.equal(playtime({ duration: 600, apiRefs: {} }), "10h");
+  assert.equal(playtime({ duration: 600, externalUrls: {} }), "10h");
+  assert.equal(
+    playtime({ duration: 600, durationSource: "igdb", externalUrls: {} }),
+    "10h"
+  );
+});
+
+test("a healthy apiRef still links, with the guard in place", () => {
+  assert.equal(
+    playtime({ duration: 600, apiRefs: ["hltb__555"], externalUrls: [] }),
+    '<a href="https://howlongtobeat.com/game?id=555">10h</a>'
+  );
 });
 
 ///////////////////////////////////////////////////////////////////////////////
