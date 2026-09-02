@@ -85,8 +85,11 @@
 # themselves — Bootstrap's glyphicons, then Font Awesome's webfonts — and #269
 # has removed the last of them, so the page loads no CSS and no font it did not
 # serve itself. `style-src` keeps `'unsafe-inline'` for the reason above and
-# loses only the two hosts. What still comes from a CDN is three scripts, which
-# is `script-src`'s business and unchanged.
+# loses only the two hosts. What still comes from a CDN is four scripts, which
+# is `script-src`'s business and unchanged: DOMPurify and marked from cdnjs,
+# as tags in `layouts/base.njk`, and ApexCharts and litepicker from jsDelivr,
+# injected on demand by `js/utils/load_script.js`, which is where those two
+# pins live. Both hosts in the rule below still have a caller.
 #
 # `img-src` is the loose one: cover art urls are stored on the work documents
 # and come from whatever TMDB, IGDB or Google Books handed back, so an
