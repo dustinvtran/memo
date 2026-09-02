@@ -265,11 +265,29 @@ const listOfLinksFormatter = (prop, toLink) => (_, row) => {
   const containerOfVal = get(row, [prop])
   const val = containerOfVal[prop]
   const transformer = toLink ?? toWikipediaLink
-  return (val ?? []).reduce(
+  return asList(val).reduce(
     (all, el, i) => (i === 0 ? html`${transformer(el)}` : html`${all}, ${transformer(el)}`),
     html``
   )
 }
+
+/**
+ * The stored value when it is a list, and an empty one when it is anything
+ * else — so a field holding a shape no reader expects draws what an absent one
+ * draws, rather than throwing.
+ *
+ * This is not defensive programming for its own sake: 587 of the 696 books
+ * hold `publishers: {}`, an unawaited Promise written to Mongo years ago and
+ * named in the comment at `db_maintenance/work_collections.js`. `{}` is not
+ * nullish, so the `?? []` and `?.map` that used to stand here passed it
+ * straight into `.reduce` and `.map`. A formatter is handed whatever the
+ * database holds, and `Array.isArray` is the only test that answers the
+ * question these callers are actually asking.
+ *
+ * Cleaning the 587 documents is #291. This is what stops the frontend caring
+ * either way.
+ */
+const asList = (val) => (Array.isArray(val) ? val : [])
 
 const toWikipediaLink = (name, label) =>
   html`<a href="${toWikipediaUrl(name)}">${label ?? name}</a>`
@@ -355,7 +373,7 @@ const toPlaytimeUrl = (row) => {
  */
 const toIgdbUrl = (row) => {
   const { externalUrls } = get(row, ['externalUrls'])
-  return externalUrls?.find((link) => link?.name === 'igdb')?.url
+  return asList(externalUrls).find((link) => link?.name === 'igdb')?.url
 }
 
 /**
@@ -367,18 +385,18 @@ const toIgdbUrl = (row) => {
 const toHltbUrl = (row) => {
   const { apiRefs, externalUrls } = get(row, ['apiRefs', 'externalUrls'])
 
-  const url = externalUrls?.find((link) => link?.name === 'hltb')?.url
+  const url = asList(externalUrls).find((link) => link?.name === 'hltb')?.url
   if (url) return url
 
   // Some games carry `hltb__N/A` rather than an id. Only a numeric id makes a
   // page that exists, so anything else is treated as no link at all.
-  const ref = apiRefs
-    ?.map((apiRef) =>
+  const ref = asList(apiRefs)
+    .map((apiRef) =>
       typeof apiRef === 'string'
         ? apiRef.startsWith('hltb__') ? apiRef.slice('hltb__'.length) : undefined
         : apiRef?.name === 'hltb' ? String(apiRef.ref) : undefined
     )
-    ?.find((hltbRef) => /^\d+$/.test(hltbRef ?? ''))
+    .find((hltbRef) => /^\d+$/.test(hltbRef ?? ''))
 
   return ref ? `https://howlongtobeat.com/game?id=${ref}` : undefined
 }

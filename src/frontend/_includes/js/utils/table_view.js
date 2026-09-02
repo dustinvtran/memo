@@ -299,9 +299,42 @@ const cell = (column, row, index) => html`
 const cellContent = (column, row, index) => {
   const value = TableModel.valueAt(row, column.field)
   const content = column.formatter
-    ? column.formatter(value, row, index, column.field)
+    ? formatted(column, value, row, index)
     : value
   return content === null || content === undefined ? TableModel.EMPTY_CELL : content
+}
+
+/**
+ * One cell's formatter, and a dash if it throws.
+ *
+ * `draw` builds the whole `<tbody>` as one template before it assigns it, so
+ * without this a formatter that throws on one row's stored value costs the
+ * table rather than the cell: `grid.innerHTML` is never reached, the rows on
+ * screen are the ones from before the redraw, and the state that caused it is
+ * already committed — so every later search, sort and column toggle rebuilds
+ * through the same cell and throws again. Ticking Publishers on a books list
+ * did exactly that (#292), and the reader is given no way back but a reload.
+ *
+ * A cell has no way to know what any given formatter needs, so it cannot
+ * repair one. What it can do is refuse to let one cell decide whether the
+ * other few thousand get drawn.
+ *
+ * `console.error` rather than a silent dash: a formatter throwing is a bug in
+ * the formatter or a shape in the database nobody has seen yet, and both are
+ * worth finding. A dash is what the reader sees, and it is what an absent
+ * value has always drawn — this is the cell admitting it has nothing, not the
+ * table pretending nothing happened.
+ */
+const formatted = (column, value, row, index) => {
+  try {
+    return column.formatter(value, row, index, column.field)
+  } catch (error) {
+    console.error(
+      `formatter for column "${column.field}" threw on entry ${row?.dbRef}`,
+      error
+    )
+    return undefined
+  }
 }
 
 const cellStyle = (column, row, index) =>
