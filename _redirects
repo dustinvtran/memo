@@ -7,6 +7,15 @@
 /js/*	/js/:splat	200!
 /css/*	/css/:splat	200!
 
+# The same forced rule, for the two files nothing on the site links to and
+# every crawler asks for by name. `src/frontend/robots.njk` and `sitemap.njk`
+# emit them; without these two lines each is answered with the homepage's
+# HTML at `200 text/html`, and a malformed `200` at `/robots.txt` is worse
+# than the `404` it replaced — a `404` says "no rules, crawl what you like".
+# #302.
+/robots.txt	/robots.txt	200!
+/sitemap.xml	/sitemap.xml	200!
+
 # The functions answer at `/.netlify/functions/*`, which is not a url anyone
 # would type or hand to a language model. `/api/*` is the one the README and
 # the export endpoint advertise. `getUrlSegments` strips either prefix, so it
