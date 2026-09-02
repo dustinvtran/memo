@@ -18,6 +18,7 @@ The scripts, and the section below that explains each:
 | `backfill_game_playtimes.js` | Fills in games with no playtime, from IGDB's `/game_time_to_beats`. | `--apply` |
 | `repair_durations.js` | Repairs `duration` values that cannot be true — a playtime multiplied by 60 one time too many. Only ever writes a value an entry override corroborates. | `--apply` |
 | `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
+| `clear_unusable_work_fields.js` | `$unset`s work fields whose stored value is present and unusable — `publishers: {}`, `externalUrls: [[]]`, `directors: [""]` — so the next backfill can fill them. | `--apply` |
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
 | `strip_dead_entry_fields.js` | Unsets `review` and `commonMetadata` from entry documents — a duplicated note and a stale copy of the work, neither of which any reader uses. | `--apply` |
 | `retype_entry_revisions.js` | Rewrites `entryRevisions.entryType` from the url spelling to the one every other collection uses: `films` to `Film`. | `--apply` |
@@ -393,6 +394,101 @@ the work and the entry collection are backed up before anything is written.
 Run it before a full `scripts/backfill_work_metadata.js`, so you aren't
 paying for an API call per duplicate.
 
+## Field values that are present and unusable
+
+`audit_database.js` reports 637 field values across the four work collections
+whose stored shape is unusable — not missing, but there and wrong:
+
+```
+   587  books.publishers   = {}
+    24  tv.apiRefs         = absent
+    14  films.externalUrls = [[]]
+     6  films.directors    = [""]
+     4  books.apiRefs      = absent
+     2  tv.directors       = [""]
+```
+
+Each shape has a known cause. `{}` is an unawaited Promise written to Mongo —
+`work_collections.js` names the script that did it. `[[]]` is an empty array
+wrapped in an array, so `externalUrls[0].url` is `undefined` and the Title
+column falls back to a Wikipedia search for the title. `[""]` is an array
+holding one empty string, which the Director column renders as an empty
+clickable `<a>` pointing at a search for nothing. See #291 for the census, and
+#292 for the render crash `publishers: {}` causes in `listOfLinksFormatter`.
+
+None of it heals itself, and that is `mergeWork` working as intended: it only
+ever writes a field the adapter returned a **non-empty** value for, and its
+first rule is that a field the API has nothing to say about is never cleared.
+That rule is what stops a bad API day emptying the database. But it means a
+corrupt value can be replaced and never removed, so the 78 books Google Books
+has no publisher for keep their `{}` however many times the backfill runs.
+
+`scripts/clear_unusable_work_fields.js` `$unset`s them. It is a **dry run
+unless you pass `--apply`**, and it dumps each work collection before writing
+to it.
+
+```
+node scripts/clear_unusable_work_fields.js
+node scripts/clear_unusable_work_fields.js --only=books --fields=publishers
+node scripts/clear_unusable_work_fields.js --apply
+```
+
+Flags: `--only=films,tv,games,books`, `--fields=publishers,externalUrls,...`,
+`--json=path`, `--backup-dir=path`.
+
+**`$unset`, not `$set`.** The point is not to replace a bad value with a
+harmless one — it is to leave the field *missing*, because missing is what
+`isEmptyValue` recognises. A cleared field reads as a gap, so `hasGaps` picks
+the work up on the next ordinary `backfill_work_metadata.js` and fills it if
+the API has anything to say. Written as `[]` or `null` instead, the value
+would still be stored, still be read out of Atlas on every list load, and
+still be something the merge has to have an opinion about.
+
+**What counts as unusable is the audit's own answer, not a second copy of
+it.** `unusable_field_plan.js` calls `isCorruptStringArray`, `isCorruptNumber`
+and `isCorruptExternalUrls` from `work_collections.js`, which is what
+`corruptFieldsOf` counts the 637 with. A script that restated the rules would
+be a second thing to drift, and it would drift towards clearing values the
+audit never complained about.
+
+**Two of the fields the audit calls corrupt are out of its reach.** `apiRefs`
+is reported when it is *absent* — 24 tv and 4 books — so there is nothing to
+unset and those works belong on the cannot-be-refreshed list instead.
+`entryType` is reported when it disagrees with the collection it sits in, and
+the answer to that is the right constant, which `mergeWork` writes on every
+refresh; unsetting would take a wrong value to no value. Naming either in
+`--fields` is refused by name rather than quietly planning nothing.
+
+**A value that still holds something usable is printed and left alone.**
+`["", "Christopher Nolan"]` is corrupt by the same predicate as `[""]`, and an
+unset would take the director with it; salvaging one is a `$set`, which is a
+different decision from this one. Which elements survive is asked of the same
+predicate one element at a time, so it cannot answer differently from the
+check that flagged the field. All 609 values in production are unusable end to
+end, so this list is expected to be empty — which is why it is printed.
+
+It writes only to the **work** collections, so it needs no exception to
+"write only to the work collections" and no `*Entries` document is in reach by
+construction — the same guarantee the two backfills have. What else bounds it:
+
+- It only ever `$unset`s. It cannot create, delete or repoint a document, and
+  it cannot write a value of any kind.
+- It touches no `metadataUpdatedDate`. That records when an adapter last had
+  something to say about a work, and removing a value nothing can read is not
+  the adapter saying anything.
+- Re-running is a no-op: an absent field is not an unusable one, so a second
+  pass plans nothing.
+- It re-reads each collection afterwards and re-plans against it, so a run
+  that did something other than what it planned says so rather than exiting
+  quietly.
+
+**Not yet applied to production.** The dry run of 2026-09-02 found 609 values
+across 603 work documents — 587 `books.publishers`, 14 `films.externalUrls`,
+6 `films.directors` and 2 `tvShows.directors`, which is the census above less
+the 28 absent `apiRefs` — and nothing it had to leave alone. Applying it wants
+a fresh snapshot taken and verified immediately beforehand, as everything in
+this folder does.
+
 ## Dead fields on entry documents
 
 Two fields on an entry document are written and never read back:
@@ -611,10 +707,10 @@ Useful flags: `--dir=path`, `--from=name|path`, `--only=a,b`, `--prune`,
 
 The parts that decide what to write (`work_metadata_merge.js`,
 `game_playtime_plan.js`), what to delete (`work_dedupe_plan.js`,
-`orphan_review_plan.js`, `dead_entry_fields_plan.js`), which snapshots a
-retention policy keeps (`backup_plan.js`) and which indexes are missing
-(`index_plan.js`) are pure and dependency-free, and are covered by
-`node --test`:
+`orphan_review_plan.js`, `dead_entry_fields_plan.js`), what to clear
+(`unusable_field_plan.js`), which snapshots a retention policy keeps
+(`backup_plan.js`) and which indexes are missing (`index_plan.js`) are pure
+and dependency-free, and are covered by `node --test`:
 
 ```
 npm test
@@ -643,7 +739,9 @@ new id, both ids hardcoded.
 `scripts/backfill_work_metadata.js` repairs books whose `publishers` is an
 empty object rather than a list of strings, left by an un-awaited Promise in
 `mongodb_add_missing_book_publishers.js` — which did that repair first,
-badly, and is gone too.
+badly, and is gone too. It can only repair one Google Books still has a
+publisher for; `scripts/clear_unusable_work_fields.js` is what removes the
+rest, since a merge never clears a field.
 
 Games added between the `howlongtobeat` package's silent death and 2026-08-11
 have no playtime at all; `scripts/backfill_game_playtimes.js` fills those.
