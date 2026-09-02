@@ -254,6 +254,52 @@ test("an interleaved repeat is refused, not only an adjacent one", () => {
   assert.equal(hasExplosiveShape(".*[^~]*.*[^~]*~"), true);
 });
 
+test("an interleave of classes that differ is refused too", () => {
+  // #279: what replaced adjacency still asked whether two quantified atoms
+  // were spelled the same, and an interleaved attack never had to spell them
+  // the same to be one. `[^~]`, `[^!]`, `[^@]` and `[^#]` are four distinct
+  // texts, every one of which matches every letter of every title, so no two
+  // of them were ever the same atom twice and the whole thing was compiled and
+  // run. Measured on the real module against the one title `The Lord of the
+  // Rings: The Fellowship of the Ring`: 37 characters spent 1.2 seconds, 47
+  // spent 58, and the 57 below spent 424 — seven minutes of a tab, from a link
+  // somebody else wrote.
+  assert.equal(hasExplosiveShape("[^~]*[^!]*[^@]*[^#]*[^$]*[^%]*~"), true);
+  assert.equal(
+    hasExplosiveShape("[^~]*[^!]*[^@]*[^#]*[^$]*[^%]*[^&]*[^+]*[^=]*[^;]*~"),
+    true
+  );
+  // The smallest version: three quantified atoms with nothing mandatory
+  // between them and no two of them alike, so only counting them says so.
+  assert.equal(hasExplosiveShape("[^~]*[^!]*[^@]*~"), true);
+  assert.equal(hasExplosiveShape("a*b*c*d"), true);
+  // Two of them is still a regex, which is what the bound keeps and what the
+  // whole distinction between a run of two and a run of three is for.
+  assert.equal(hasExplosiveShape("a*b*c"), false);
+});
+
+test("a distinct-class interleave is read as text, like every other refusal", () => {
+  // The classification above, through `filterEntries` rather than beside it:
+  // the pattern is a substring test, so the title that holds it literally is
+  // what comes back and the reader gets an answer instead of a frozen tab.
+  // Compiled against the first row, this one does not return today.
+  const rows = [
+    entry({ title: "The Lord of the Rings: The Fellowship of the Ring" }),
+    entry({ title: "Classes [^~]*[^!]*[^@]*~ in a Title" }),
+  ];
+
+  const { elapsed, kept } = millisecondsToSearch(
+    rows,
+    "title:[^~]*[^!]*[^@]*~"
+  );
+
+  assert.ok(elapsed < 1000, `took ${elapsed}ms`);
+  assert.deepEqual(titlesOf(kept), ["Classes [^~]*[^!]*[^@]*~ in a Title"]);
+  // Refused as a shape rather than abandoned on the clock, so "no matching
+  // records" is the honest message and not "too slow to finish".
+  assert.equal(wasAbandoned(kept), false);
+});
+
 test("what stands between the two halves has to be able to match nothing", () => {
   // Which is the whole of what replaced adjacency. Two quantified atoms trade
   // characters only while nothing in between has to match one, so a nullable
