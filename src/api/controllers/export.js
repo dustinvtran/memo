@@ -43,17 +43,25 @@ const exportUserLists = async (event) => {
 
   const collections = Result.combine(types.map(toEntryCollection))
   // Whoever hit this is likely guessing at the url, so say what would have
-  // worked rather than only that this didn't.
+  // worked rather than only that this didn't. Second argument: `detail` is
+  // logged and never sent, and this line is the whole point of the 404.
   if (collections.isErr()) {
     return responses.fromError(
-      errors.notFound(`no such list type; try one of ${LIST_TYPES.join(', ')}`)
+      errors.notFound(undefined, `no such list type; try one of ${LIST_TYPES.join(', ')}`)
     )
   }
 
   const userId = await findIdOfName(username).unwrapOr(undefined)
   // A name nobody has taken and a name whose lists happen to be empty are
   // different things, and only the first is a 404.
-  if (!userId) return responses.fromError(errors.notFound(`no such user: ${username}`))
+  //
+  // `message` again, and `detail` deliberately empty: the name came out of an
+  // unauthenticated route's own url, so logging it would let anyone write a
+  // line to the function log by asking after profiles at random. That is the
+  // reason `findOneByFieldOrFail_` carries no detail either. #280.
+  if (!userId) {
+    return responses.fromError(errors.notFound(undefined, `no such user: ${username}`))
+  }
 
   const limit = toLimit(event)
   const lists = await Promise.all(
