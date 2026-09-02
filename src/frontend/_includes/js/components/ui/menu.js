@@ -37,7 +37,7 @@ const Menu = () => initComponent({
       .map(({ username }) => {
         if (username) {
           el('#home-menu-item')?.insertAdjacentHTML('afterend', String(html`
-            <li id="home-menu-item"><a href="/profile/${encodeURIComponent(username)}">Profile</a></li>
+            <li id="profile-menu-item"><a href="/profile/${encodeURIComponent(username)}">Profile</a></li>
           `))
         }
       })

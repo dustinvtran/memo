@@ -15,11 +15,17 @@
  * the concatenation is one broken 140KB file, and every page on this site is
  * drawn by that file, so the build is green, the deploy is green, and the whole
  * site is blank.
+ *
+ * The third is the quiet one, and the reason this file loads the bundle rather
+ * than only reading it: there is no module system here, so every file opens by
+ * destructuring the globals the files above it set, and a name the object does
+ * not have binds `undefined` instead of throwing.
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const plan = require("./asset_plan");
 
@@ -357,6 +363,89 @@ test("icons.js comes before the files that destructure it", () => {
     files.indexOf("js/utils/general.js") < icons,
     "js/utils/icons.js is bundled above js/utils/general.js, whose `Utils` " +
       "it destructures as it loads"
+  );
+});
+
+test("every name a bundled file destructures is one the bundle sets", () => {
+  // `Tables.col` and `Components.Profile.UsernameSetter` (#284) both bound
+  // `undefined` for years, in files that never read them. The version that is
+  // not dead code reads the same: a call site getting `undefined is not a
+  // function` from a line that looks exactly like the working one two files
+  // over. Nothing else asks this question — not `node --check`, not the
+  // build, and least of all the per-file tests, which hand a file a context of
+  // stubs named after whatever it destructures: `profile_stats.test.js`
+  // supplied a `Tables.col` for years, because the file asked for one.
+  //
+  // So the bundle is run rather than read. Each file goes into one vm context
+  // in BUNDLED_FILES order, wrapped by the same `wrapInIife` that ships, and
+  // each file's destructures are resolved *before* it is loaded — which is
+  // when the browser resolves them. That makes this the general case of the
+  // three order tests above as well: a name set below the file that reads it
+  // fails here too, and so does a global that is not there at all.
+  const context = vm.createContext({
+    // The whole of what the bundle touches while loading rather than while
+    // drawing: `components/router.js` picks a page off the path as it loads,
+    // and `js/boot.js` schedules the first draw. Everything else these files
+    // do at load time is define a function or assign a global.
+    window: { location: { pathname: "/" }, setTimeout: () => {} },
+  });
+
+  // Resolved inside the context so a built-in target (`Array`, `Math`) answers
+  // the same way a bundled one does, and a global that does not exist yet
+  // answers `undefined` rather than throwing.
+  const resolve = (expression) =>
+    vm.runInContext(
+      `(() => { try { return ${expression} } catch { return undefined } })()`,
+      context
+    );
+
+  // `const { a, b } = X`, with `X` a global or a path into one, at column 0.
+  // Everything top-level in these files is unindented; a destructure anywhere
+  // else is a local rather than the bundle's version of an import.
+  const destructures =
+    /^const\s*\{([^}]*)\}\s*=\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*;?\s*$/gm;
+
+  const missing = [];
+  let checked = 0;
+
+  plan.BUNDLED_FILES.forEach((includePath) => {
+    const source = read(path.join(INCLUDES, includePath));
+
+    [...source.matchAll(destructures)].forEach(([, names, target]) => {
+      const object = resolve(target);
+
+      names
+        .split(",")
+        // `{ a: b }` and `{ a = 1 }` ask the object for `a`, not `b` or `1`.
+        .map((name) => name.trim().split(/[:=]/)[0].trim())
+        .filter((name) => name && !name.startsWith("..."))
+        .forEach((name) => {
+          checked += 1;
+          // `in` rather than `!== undefined`: a global may legitimately hold
+          // an undefined value, and it is the name being published that is
+          // the question here.
+          if (object === null || object === undefined || !(name in object))
+            missing.push(`${includePath} reads ${target}.${name}`);
+        });
+    });
+
+    vm.runInContext(plan.wrapInIife(source), context, { filename: includePath });
+  });
+
+  // A regex that quietly stopped matching would pass this test without
+  // asking anything. The count is in the hundreds; the floor only has to be
+  // high enough that an empty sweep cannot clear it.
+  assert.ok(
+    checked > 100,
+    `only ${checked} destructured names found; the sweep is not reaching the ` +
+      `bundle any more`
+  );
+
+  assert.deepEqual(
+    missing,
+    [],
+    "these files destructure a name their global does not have, so the " +
+      "binding is undefined at runtime and nothing says so"
   );
 });
 

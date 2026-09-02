@@ -1,5 +1,4 @@
 const { entryTypes, getStats } = Netlify
-const { col } = Tables
 const { typeToTitle } = Conversions
 const { html, css, timeAgo, dateTime } = Utils
 const { initComponent, WithRemoteData } = Components
