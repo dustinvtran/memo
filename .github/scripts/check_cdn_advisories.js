@@ -103,19 +103,38 @@ const BLOCKING = new Set(['moderate', 'high', 'critical'])
 
 /**
  * Every pinned url in `base.njk`: the `src` or `href` of a tag carrying
- * `integrity`.
+ * `integrity`. And, as the second value, every absolute one carrying no such
+ * attribute.
  *
  * That attribute is the marker of a pinned third-party url, and keying on it
  * keeps the site's own content-hashed `/js` and `/css` links out without
- * naming them.
+ * naming them. Being relative is what those have in common, so the same test
+ * decides the other half: an absolute `http(s):` url here belongs to a third
+ * party, and one with no hash beside it is both unverified and unwatched.
+ * Unverified because the browser then runs whatever the host serves into a
+ * page holding the reader's `nf_jwt`, which is the thing #106 ended.
+ * Unwatched because this check keys on `integrity` to decide what to ask npm
+ * about, so that tag is also absent from the advisory report #218 added —
+ * and the count printed at the end would still say four.
+ *
+ * #281 is where those came back: this returned the empty array
+ * unconditionally, and dropping a tag at the `integrity` filter meant nothing
+ * downstream ever learned there had been one. `urlsInScript` below has always
+ * reported its own.
  */
-const urlsInMarkup = (text) => ({
-  urls: (text.match(/<(?:script|link)\b[^>]*>/g) ?? [])
-    .filter((tag) => /\sintegrity=/.test(tag))
-    .map((tag) => tag.match(/\s(?:src|href)="([^"]+)"/)?.[1])
-    .filter(Boolean),
-  unhashed: [],
-})
+const urlsInMarkup = (text) => {
+  const tags = text.match(/<(?:script|link)\b[^>]*>/g) ?? []
+  const urlIn = (tag) => tag.match(/\s(?:src|href)="([^"]+)"/)?.[1]
+  const hashed = (tag) => /\sintegrity=/.test(tag)
+
+  return {
+    urls: tags.filter(hashed).map(urlIn).filter(Boolean),
+    unhashed: tags
+      .filter((tag) => !hashed(tag))
+      .map(urlIn)
+      .filter((url) => url && /^https?:\/\//.test(url)),
+  }
+}
 
 /**
  * Every pinned url in a module that injects its own tag: a `url` in an object
