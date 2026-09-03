@@ -14,6 +14,7 @@ const {
 
 const games = COLLECTIONS.find((c) => c.type === "games");
 const books = COLLECTIONS.find((c) => c.type === "books");
+const films = COLLECTIONS.find((c) => c.type === "films");
 
 /** What the games adapter returns now: IGDB for the metadata and the playtime. */
 const freshGame = {
@@ -85,7 +86,6 @@ test("IGDB may refresh a playtime it wrote itself", () => {
 });
 
 test("a film's runtime still refreshes, having never carried a source", () => {
-  const films = COLLECTIONS.find((c) => c.type === "films");
   const { updates } = mergeWork(
     films,
     { entryType: "Film", duration: 140, apiRefs: ["tmdb__1"] },
@@ -254,6 +254,44 @@ test("punctuation is not a disagreement, and a match is merged as before", () =>
 
   assert.equal(refused, undefined);
   assert.equal(updates.releaseYear, 2017);
+});
+
+test("a leading article is not a disagreement either", () => {
+  // #327: 69 works are stored without the article the API puts on the front,
+  // and every one of them had been unrefreshable since #290. The guard is
+  // doing its job on 288 others and stays.
+  const truman = {
+    _id: "t",
+    entryType: "Film",
+    englishTranslatedTitle: "Truman Show",
+    apiRefs: ["tmdb__37165"],
+  };
+  const { updates, refused } = mergeWork(films, truman, {
+    entryType: "Film",
+    englishTranslatedTitle: "The Truman Show",
+    releaseYear: 1998,
+  });
+
+  assert.equal(refused, undefined);
+  assert.equal(updates.releaseYear, 1998);
+});
+
+test("one title containing the other is still refused", () => {
+  // The bucket the misfilings live in: `Ex Machina` was typed and `Digitaria
+  // Ex Machina` was picked. Forgiving containment would pass every one of them.
+  const { updates, refused } = mergeWork(
+    films,
+    {
+      _id: "e",
+      entryType: "Film",
+      englishTranslatedTitle: "Ex Machina",
+      apiRefs: ["tmdb__264660"],
+    },
+    { entryType: "Film", englishTranslatedTitle: "Digitaria Ex Machina" }
+  );
+
+  assert.deepEqual(updates, {});
+  assert.match(refused, /Ex Machina.*Digitaria Ex Machina/);
 });
 
 test("a work with no title yet is filled in rather than refused", () => {

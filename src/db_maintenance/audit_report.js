@@ -119,12 +119,40 @@ const FINDINGS = [
     label: (c) =>
       `same title and year, and one of them has no ${c.retrievePrefix}__ ref`,
   },
+  // A fifth meaning of the same defect, and the one with no database-only
+  // shape at all: one document under one id that names something else agrees
+  // with itself perfectly, so the three findings above are blind to it and
+  // only the API can be asked. These three counts are **zero unless
+  // `--verify-titles` was passed**, which is the price of a finding that costs
+  // 1,400 calls to look for; the script says so on a run that did not.
+  // ../title_match_check.js and #327.
+  {
+    key: "titleRefContained",
+    kind: "problem",
+    label: (c) =>
+      `${c.retrievePrefix}__ ref names a title one of the two contains`,
+  },
+  {
+    key: "titleRefDifferent",
+    kind: "problem",
+    label: (c) =>
+      `${c.retrievePrefix}__ ref names a different work (cannot be refreshed)`,
+  },
   {
     key: "orphanReviews",
     kind: "problem",
     label: () => "reviews whose entry is gone (unreachable)",
   },
-  // Notes. Neither is damage; see the header comment.
+  // Notes. None is damage; see the header comment.
+  // The stored title needed forgiving, which is worth reading, but #327's
+  // normalisation forgives it and the work refreshes — so this is a note in
+  // the same sense the tv line below is one, and not a milder problem.
+  {
+    key: "titleRefSpelling",
+    kind: "note",
+    label: (c) =>
+      `${c.retrievePrefix}__ ref names the same title, spelled differently`,
+  },
   {
     key: "entriesWithoutWorkRef",
     kind: "note",
