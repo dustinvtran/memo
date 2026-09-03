@@ -36,13 +36,24 @@
  * by hand and putting it back; the title is deliberately left intact so there
  * is something to search on.
  *
- * **The poisoned fields go too.** Clearing the ref alone would leave the wrong
- * work's year, playtime, cover, links, studios and authors in place with
- * nothing left to correct them from — see ../shared_ref_repair_plan.js for
- * which fields those are and why it is all of them rather than the four #290
- * names. `$unset` rather than `$set`, for clear_unusable_work_fields.js's
- * reason: a missing field is what `isEmptyValue` recognises, so a later
- * backfill fills it if a correct ref is ever found.
+ * **The values that id wrote go too.** Clearing the ref alone would leave the
+ * wrong work's year, playtime, cover, links, studios and authors in place with
+ * nothing left to correct them from. Which values those are is decided by
+ * whether another work in the same group holds the same one — a `missingOnly`
+ * merge copies, so an identical value is the evidence, and #313 is why a value
+ * no partner shares stays put on a work this run leaves unrefreshable. The
+ * links and the cover come off either way, since they name the wrong id's page
+ * and its artwork whatever they say. ../shared_ref_repair_plan.js is the
+ * argument in full. `$unset` rather than `$set`, for
+ * clear_unusable_work_fields.js's reason: a missing field is what
+ * `isEmptyValue` recognises, so a later backfill fills it if a correct ref is
+ * ever found.
+ *
+ * `--clear-all-fields` unsets every field an adapter fills instead, which is
+ * defensible for the confirmed-owner groups: `Hero` is carrying Big Hero 6's
+ * cover, runtime, genres, directors and entire cast, and only its `releaseYear`
+ * is its own. It is not the default because the same run cannot tell those
+ * groups from the ones where it would delete the only copy of something true.
  *
  * It writes only to the **work** collections, so no `*Entries` document and no
  * `entry.overrides` is reachable from it. What else bounds it:
@@ -74,6 +85,8 @@
  * Flags:
  *   --apply             actually write (default: dry run)
  *   --only=a,b          restrict to these types (films, tv, games, books)
+ *   --clear-all-fields  unset every field an adapter fills, not only the ones
+ *                       another work in the group holds the same value for
  *   --json=path         write a machine-readable report
  *   --backup-dir=path   where to put the pre-run backups (default ../backups)
  */
@@ -98,6 +111,7 @@ const args = parseArgs(process.argv);
 
 const options = {
   apply: args.apply === true,
+  clearAllFields: args["clear-all-fields"] === true,
   backupDir: String(args["backup-dir"] ?? path.join(__dirname, "..", "backups")),
 };
 
@@ -120,6 +134,13 @@ const main = async () => {
       ? "APPLY MODE: ids that name another work, and the metadata they wrote, " +
           "will be removed."
       : "DRY RUN: nothing will be written. Re-run with --apply to commit."
+  );
+  console.log(
+    options.clearAllFields
+      ? "--clear-all-fields: every field an adapter fills comes off a misfiled " +
+          "work, whether or not anything else in its group shares the value."
+      : "Values come off where another work in the same group holds the same " +
+          "one, plus the links and the cover. --clear-all-fields takes the rest."
   );
 
   client = new MongoClient(process.env.MONGODB_URL, {
@@ -177,7 +198,9 @@ const repairCollection = async (db, collection) => {
     console.log("  nothing could be asked, so nothing is repaired here.");
   }
 
-  const plan = planSharedRefRepair(collection, works, identityChecks);
+  const plan = planSharedRefRepair(collection, works, identityChecks, {
+    clearAllFields: options.clearAllFields,
+  });
   if (plan.blocked) {
     console.error(`  REFUSED: ${plan.blocked}`);
     return { blocked: plan.blocked };

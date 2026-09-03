@@ -22,7 +22,7 @@ The scripts, and the section below that explains each:
 | `repair_durations.js` | Repairs `duration` values that cannot be true — a playtime multiplied by 60 one time too many. Only ever writes a value an entry override corroborates. | `--apply` |
 | `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
 | `clear_unusable_work_fields.js` | `$unset`s work fields whose stored value is present and unusable — `publishers: {}`, `externalUrls: [[]]`, `directors: [""]` — so the next backfill can fill them. | `--apply` |
-| `repair_shared_refs.js` | Takes another work's id off the works wearing it, and the year, playtime, image, links and credits that id wrote onto them. Asks each API which work the id names before it writes. | `--apply` |
+| `repair_shared_refs.js` | Takes another work's id off the works wearing it, and the links, the cover and every value another work in the same group also holds. Asks each API which work the id names before it writes. | `--apply` |
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
 | `strip_dead_entry_fields.js` | Unsets `review` and `commonMetadata` from entry documents — a duplicated note and a stale copy of the work, neither of which any reader uses. | `--apply` |
 | `retype_entry_revisions.js` | Rewrites `entryRevisions.entryType` from the url spelling to the one every other collection uses: `films` to `Film`. | `--apply` |
@@ -264,13 +264,34 @@ A misfiled work loses:
   Kingdom Hearts III's HowLongToBeat page and no grouping would have found it,
   because an `hltb` ref is not an identity ref. An id only one work in the
   group carries is left alone.
-- **every field an adapter fills**: the year, the playtime, the image, the
-  links, and the genres, platforms, studios, publishers, authors and cast too.
-  Not just the four the issue names. `authors: ["Dan Brown"]` on Dostoevsky's
-  `Demons` is exactly as wrong as its 600 pages. The reason it is all of them
-  is that nothing on these documents can be dated: the merge that did the
-  damage ran with `--missing-only`, so it wrote whichever fields happened to be
-  empty, and nothing records which those were.
+- **every value another work in its group also holds**, of the fields an
+  adapter fills: the year, the playtime, the genres, platforms, studios,
+  publishers, authors and cast. Not just the four the issue names —
+  `authors: ["Dan Brown"]` on Dostoevsky's `Demons` is exactly as wrong as its
+  600 pages — but not everything either. The merge that did the damage ran with
+  `--missing-only` and it copies, so a value it wrote here is still on the
+  document it was copied from: an identical value is the evidence that the
+  wrong id wrote this one, and a value no partner shares has none against it
+  (#313). On the production dry run that is 234 values rather than 276, the 42
+  it keeps being 27 release years, 12 playtimes and page counts, and the
+  authors of `Demons`, `The Da Vinci Code` and `Numerical Linear Algebra`.
+- **the links and the cover**, `externalUrls` and `imageUrl`, whether or not
+  anything else in the group has the same ones. They name the wrong id's page
+  and its artwork whatever they say, and they are what a reader clicks. So do
+  `metadataUpdatedDate` and `durationSource`, which are bookkeeping about an
+  id that is going away.
+
+`--clear-all-fields` takes every field an adapter fills instead, which is the
+behaviour before #313 and is defensible for a confirmed-owner group: `Hero` is
+carrying Big Hero 6's cover, runtime, genres, directors and entire cast, and
+only its `releaseYear` is its own. It is not the default because one run cannot
+tell those groups from the ones where it would delete the only copy of
+something true, on a work it is about to make unrefreshable.
+
+The identity test errs towards clearing, and the place it shows is a series:
+five Haruhi volumes filed under one ISBN share an author honestly, and lose it
+anyway. Nine of the twelve stored `authors` on the misfiled books go for that
+reason.
 
 The titles stay, and so does `entryType`. A title is the one field the wrong id
 demonstrably did not write — a `--missing-only` merge only fills what is empty
@@ -295,6 +316,7 @@ read before the write.
 ```
 node scripts/repair_shared_refs.js                  # dry run, 25 API calls
 node scripts/repair_shared_refs.js --only=books
+node scripts/repair_shared_refs.js --clear-all-fields   # the pre-#313 clear
 node scripts/repair_shared_refs.js --apply
 ```
 
