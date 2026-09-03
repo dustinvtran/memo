@@ -136,6 +136,23 @@ test("notes are not counted as problems", () => {
   assert.equal(countProblems([FILMS, GAMES], report), 3);
 });
 
+/**
+ * #327. The two buckets that stay refused are damage; the third is a stored
+ * title somebody typed without its article, which the merge now forgives, so
+ * it belongs with the tv seasons and the user-authored entries rather than in
+ * a count a reader is meant to drive to zero.
+ */
+test("a title an id resolves to differently is a problem, a spelling is not", () => {
+  const { problems, notes } = toSummary(
+    FILMS,
+    withCounts({ titleRefDifferent: 103, titleRefContained: 171, titleRefSpelling: 69 })
+  );
+
+  assert.equal(countOf(problems, "titleRefDifferent"), 103);
+  assert.equal(countOf(problems, "titleRefContained"), 171);
+  assert.equal(countOf(notes, "titleRefSpelling"), 69);
+});
+
 test("every finding is one kind or the other, and no key repeats", () => {
   for (const finding of FINDINGS) {
     assert.ok(["problem", "note"].includes(finding.kind), finding.key);

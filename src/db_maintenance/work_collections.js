@@ -163,6 +163,95 @@ const normalizeTitle = (title) =>
     .toLowerCase()
     .replace(/[^\p{Letter}\p{Number}]/gu, "");
 
+/**
+ * The same title reduced further, for deciding whether two documents are the
+ * same work rather than for keying them.
+ *
+ * `normalizeTitle` above answers a different question and keeps its own
+ * answer: it is the key ./title_year_check.js groups on and the one
+ * ./work_dedupe_plan.js decides a merge by. **This one must not become
+ * either.** It is deliberately loose enough that two unrelated books collide
+ * under it — `The Stranger (Animorphs, #7)` and Camus' `The Stranger` reduce
+ * to the same string — and that is harmless only because what it compares is
+ * one stored work against the answer its own id gave, never one stored work
+ * against another. A second function rather than an edit to the first is what
+ * keeps those two uses apart.
+ *
+ * The four things it forgives, all of them ways one catalogue spells what
+ * another spells differently, none of them a way one work is mistaken for
+ * another (#327):
+ *
+ *   - **Diacritics**, via NFD — the marks fall out as their own codepoints and
+ *     the final strip takes them with the punctuation. `Salò` and `Salo` are
+ *     the same film. Letters that carry their difference in the letter rather
+ *     than in a mark — `ø`, `ł`, `ß` — do not decompose and are not forgiven.
+ *   - **A trailing parenthetical.** 177 of the 696 books carry a series suffix
+ *     a bookseller added and the ISBN names the book without — `Hatchet
+ *     (Brian's Saga, #1)`, `涼宮ハルヒの暴走 (Suzumiya Haruhi, #5)`. Trailing
+ *     only, because a parenthetical anywhere else is part of the name:
+ *     `Kizumonogatari (傷物語) (Monogatari, #3)` has one of each. A title that
+ *     is *nothing but* a parenthetical keeps it — `[REC]` and `(Poetry)` are
+ *     both real films here, and the alternative is no title at all.
+ *   - **A leading English article.** This is #327's headline: 69 works are
+ *     stored as `Truman Show` under the id for `The Truman Show` and have been
+ *     unrefreshable ever since. Only `the`, `a` and `an`, and only with
+ *     something left after them.
+ *   - **A spelled-out number below twenty**, so `The Trial of the Chicago
+ *     Seven` and `The Trial of the Chicago 7` are one film. Twenty is where it
+ *     stops because `one hundred` is two words and mapping each in turn would
+ *     make it `1100`.
+ *
+ * What it deliberately does not forgive is one title *containing* the other.
+ * That is the shape a search-result mistake takes — somebody typed `Ex
+ * Machina` and picked `Digitaria Ex Machina` — so it stays a disagreement and
+ * is reported as one by ./title_match_check.js.
+ */
+const comparableTitle = (title) => {
+  const withoutMarks = String(title ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Mark}/gu, "");
+
+  return withoutNumberWords(
+    withoutTrailingParentheticals(withoutMarks).replace(LEADING_ARTICLE, "")
+  ).replace(/[^\p{Letter}\p{Number}]/gu, "");
+};
+
+/**
+ * The articles dropped, and the lookahead that keeps `The` from becoming the
+ * empty string. English only: these are the ones the stored titles actually
+ * lose, and `Le`, `El` and `Der` are words that begin real titles in the
+ * originalTitle field.
+ */
+const LEADING_ARTICLE = /^(?:the|a|an)\s+(?=\S)/;
+
+/**
+ * One trailing `(...)` or `[...]` at a time, so `Title (Series, #1) (1996)`
+ * loses both. The original is kept rather than returning nothing when the
+ * title is a parenthetical and nothing else.
+ */
+const withoutTrailingParentheticals = (text) => {
+  let title = text.trim();
+  for (;;) {
+    const shorter = title.replace(/[([][^()[\]]*[)\]]\s*$/, "").trim();
+    if (shorter === title) return title;
+    if (shorter === "") return title;
+    title = shorter;
+  }
+};
+
+/** Words for the numbers a sequel or a headline count is spelled with. */
+const NUMBER_WORDS = new Map(
+  [
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+    "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+    "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
+  ].map((word, value) => [word, String(value)])
+);
+
+const withoutNumberWords = (text) =>
+  text.replace(/\p{Letter}+/gu, (word) => NUMBER_WORDS.get(word) ?? word);
+
 /** The title to show a reader for a work, or for an adapter's response. */
 const displayTitle = (work) =>
   work?.englishTranslatedTitle ?? work?.originalTitle ?? "(untitled)";
@@ -173,12 +262,24 @@ const titlesOf = (work) =>
     .map(normalizeTitle)
     .filter((title) => title !== "");
 
+/** The same titles, reduced the way a comparison wants them. */
+const comparableTitlesOf = (work) =>
+  [work?.englishTranslatedTitle, work?.originalTitle]
+    .map(comparableTitle)
+    .filter((title) => title !== "");
+
 /**
  * Whether two documents claim to be the same work — a stored work and a fresh
  * API response, most often. Either title of one matching either title of the
  * other is enough: the two APIs disagree about which spelling is the original
  * often enough that insisting on the same *field* would report a difference
  * where there is none.
+ *
+ * `comparableTitle` and not `normalizeTitle`, since #327: the strict spelling
+ * refused 357 works — 23% of the library — from a `--missing-only` backfill,
+ * and 69 of those differed by a leading article and nothing else. Equality
+ * after that reduction, though, and never containment: the containment bucket
+ * is where the real misfilings live.
  *
  * `undefined`, and not `false`, when either side carries no title at all.
  * Nothing was compared, so there is nothing to conclude, and a caller that
@@ -187,8 +288,8 @@ const titlesOf = (work) =>
  * @type {(a: unknown, b: unknown) => boolean | undefined}
  */
 const titlesAgree = (a, b) => {
-  const ours = titlesOf(a);
-  const theirs = titlesOf(b);
+  const ours = comparableTitlesOf(a);
+  const theirs = comparableTitlesOf(b);
   if (ours.length === 0 || theirs.length === 0) return undefined;
   return ours.some((title) => theirs.includes(title));
 };
@@ -282,8 +383,10 @@ module.exports = {
   parseApiRef,
   findApiRef,
   normalizeTitle,
+  comparableTitle,
   displayTitle,
   titlesOf,
+  comparableTitlesOf,
   titlesAgree,
   isEmptyValue,
   isCorruptStringArray,

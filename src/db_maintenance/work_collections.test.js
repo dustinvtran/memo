@@ -7,6 +7,9 @@ const {
   COLLECTIONS,
   isEmptyValue,
   isCorruptNumber,
+  normalizeTitle,
+  comparableTitle,
+  titlesAgree,
 } = require("./work_collections");
 
 /**
@@ -108,6 +111,81 @@ test("only the zero is empty — falsiness in general is not", () => {
       `${JSON.stringify(value) ?? String(value)} is not an empty value`
     );
   }
+});
+
+///////////////////////////////////////////////////////////////////////////////
+// Comparing titles. #327: the strict spelling refused 357 works — 23% of the
+// library — from a --missing-only backfill, and 69 of them differed from the
+// title their own id names by a leading article and nothing else.
+
+test("the four differences a comparison forgives", () => {
+  const same = (a, b) =>
+    assert.equal(comparableTitle(a), comparableTitle(b), `${a} / ${b}`);
+
+  same("Truman Show", "The Truman Show");
+  same("Salò", "Salo");
+  same("Hatchet (Brian's Saga, #1)", "Hatchet");
+  same("The Trial of the Chicago Seven", "The Trial of the Chicago 7");
+});
+
+test("a title that is nothing but a parenthetical keeps it", () => {
+  // `[REC]` and `(Poetry)` are both real films in the database, and stripping
+  // a trailing bracket from either leaves no title to compare at all.
+  assert.equal(comparableTitle("[REC]"), "rec");
+  assert.equal(comparableTitle("(Poetry)"), "poetry");
+});
+
+test("a parenthetical that is not trailing is part of the name", () => {
+  assert.equal(
+    comparableTitle("Kizumonogatari (傷物語) (Monogatari, #3)"),
+    comparableTitle("Kizumonogatari (傷物語)")
+  );
+});
+
+test("an article is only dropped when something follows it", () => {
+  assert.equal(comparableTitle("The"), "the");
+  assert.equal(comparableTitle("A.I."), "ai");
+});
+
+test("only numbers up to twenty are spelled out", () => {
+  // `one hundred` is two words, and mapping each in turn would make it `1100`.
+  assert.equal(comparableTitle("Twenty"), "20");
+  assert.equal(comparableTitle("One Hundred"), "1hundred");
+});
+
+/**
+ * The key stays strict while the comparison loosens. `normalizeTitle` is what
+ * ./title_year_check.js groups on and what ./work_dedupe_plan.js decides a
+ * merge by, and both would start putting unrelated documents together:
+ * `The Stranger (Animorphs, #7)` and Camus' `The Stranger` are both in the
+ * books collection today.
+ */
+test("the grouping key is not loosened along with the comparison", () => {
+  assert.notEqual(
+    normalizeTitle("The Stranger (Animorphs, #7)"),
+    normalizeTitle("The Stranger")
+  );
+  assert.equal(
+    comparableTitle("The Stranger (Animorphs, #7)"),
+    comparableTitle("The Stranger")
+  );
+});
+
+test("containment is not agreement, whatever the normalisation", () => {
+  // The bucket the real misfilings live in: somebody typed `Ex Machina` and
+  // picked `Digitaria Ex Machina` out of the search results.
+  const agree = (a, b) =>
+    titlesAgree({ englishTranslatedTitle: a }, { englishTranslatedTitle: b });
+
+  assert.equal(agree("Ex Machina", "Digitaria Ex Machina"), false);
+  assert.equal(agree("X-Men: First Class", "X-Men: First Class 35mm Special"), false);
+  assert.equal(agree("Truman Show", "The Truman Show"), true);
+});
+
+test("a missing title is still `don't know` rather than a disagreement", () => {
+  const work = { englishTranslatedTitle: "Hollow Knight" };
+  assert.equal(titlesAgree(work, {}), undefined);
+  assert.equal(titlesAgree({}, work), undefined);
 });
 
 /**

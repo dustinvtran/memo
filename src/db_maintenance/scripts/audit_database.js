@@ -22,11 +22,25 @@
  * group, 37 against production today. Off by default for the same reason.
  * #319.
  *
+ * `--verify-titles` is the third, and much the most expensive. A work whose
+ * only id resolves to a different title is the same defect again — a document
+ * wearing another work's id — but it disagrees with nothing in the database,
+ * so unlike the two above there is no group to narrow the question down to and
+ * every work carrying a retrievable id has to be asked: some 1,400 calls, and
+ * a quarter of an hour for the books alone. It is worth spending because
+ * `backfill_work_metadata.js` refuses 357 works over it, 23% of the library,
+ * and until now the only trace was a line in a log. ../title_match_check.js
+ * and #327.
+ *
+ * The three counts it fills are zero on a run without it, and the run says so
+ * rather than letting a reader take the zero for an answer.
+ *
  * Usage:
  *   node scripts/audit_database.js
  *   node scripts/audit_database.js --only=games,books
  *   node scripts/audit_database.js --verify-shared-refs
  *   node scripts/audit_database.js --verify-title-years
+ *   node scripts/audit_database.js --only=films --verify-titles
  *   node scripts/audit_database.js --json=./audit.json
  */
 require("../env");
@@ -55,14 +69,24 @@ const {
   classifyTitleYearGroups,
   reasonFor,
 } = require("../title_year_check");
+const {
+  TITLE_MATCH_BUCKETS,
+  titleMatchTargets,
+  classifyTitleMatches,
+} = require("../title_match_check");
 const { implausibleDuration } = require("../duration_plausibility");
 const { toSummary, countProblems } = require("../audit_report");
-const { verifyIdentities, verifyTitleYearGroups } = require("../load_adapter");
+const {
+  verifyIdentities,
+  verifyTitleYearGroups,
+  verifyWorkTitles,
+} = require("../load_adapter");
 
 const args = parseArgs(process.argv);
 
 const verifySharedRefs = args["verify-shared-refs"] === true;
 const verifyTitleYears = args["verify-title-years"] === true;
+const verifyTitles = args["verify-titles"] === true;
 
 let client;
 
@@ -186,6 +210,21 @@ const auditCollection = async (db, collection) => {
     ? await verifyTitleYearGroups(collection, titleYearGroups(titleYear))
     : [];
 
+  // And a fifth, which no amount of reading can find: one work under one id
+  // that names something else. Only the API knows, so the counts below are
+  // zero without --verify-titles — `titleRefAsked` is what a run would cost,
+  // and is worth printing either way. ../title_match_check.js and #327.
+  const titleTargets = titleMatchTargets(collection, works);
+  const titles = classifyTitleMatches(
+    verifyTitles
+      ? await verifyWorkTitles(
+          collection,
+          titleTargets,
+          progressReporter(collection)
+        )
+      : []
+  );
+
   const entriesWithoutWorkRef = entries
     .filter((e) => !e.workRef)
     .map((e) => ({ id: e._id, userId: e.userId, status: e.status }));
@@ -223,6 +262,13 @@ const auditCollection = async (db, collection) => {
     titleYearUnidentified: titleYear.unidentified,
     titleYearUndecided: titleYear.undecided,
     titleYearChecks,
+    titleRefAsked: titleTargets.length,
+    titleRefAgreed: titles.same.length,
+    titleRefSpelling: titles.spelling,
+    titleRefContained: titles.contained,
+    titleRefDifferent: titles.different,
+    titleRefUnanswered: titles.unanswered,
+    titleRefUncompared: titles.uncompared,
     orphanWorks,
     entriesWithoutWorkRef,
     entriesWithDanglingWorkRef,
@@ -273,6 +319,7 @@ const printSummary = (collection, result) => {
 
   printSharedRefs(collection, result);
   printTitleYears(collection, result);
+  printTitleMatches(collection, result);
 
   const examples = result.missingFields.slice(0, 5);
   if (examples.length > 0) {
@@ -406,6 +453,63 @@ const printTitleYears = (collection, result) => {
 
 /** What a document with nothing to retrieve it by shows in the ref column. */
 const NO_REF = "(no identity ref)";
+
+/**
+ * What each work's own id turned out to name, in full and in three sections.
+ *
+ * The three are printed apart because they want three different answers, and a
+ * reader who sees them in one list will act on the wrong one: the spelling
+ * bucket is a stored title to tidy, the contained bucket is triage — half of
+ * it is an edition or series suffix and half is somebody having picked the
+ * wrong search result — and only the last is a straightforwardly misfiled id.
+ *
+ * On a run that did not ask, the cost of asking is printed instead of the
+ * three zeroes being left to speak for themselves.
+ */
+const printTitleMatches = (collection, result) => {
+  if (!verifyTitles) {
+    console.log(
+      `  ${result.titleRefAsked} works carry a ${collection.retrievePrefix}__ ` +
+        `ref and none of them was asked what it names — pass --verify-titles`
+    );
+    return;
+  }
+
+  console.log(
+    `  ${collection.retrievePrefix} answered for ${result.titleRefAsked} ` +
+      `works: ${result.titleRefAgreed} named the work filed under them, ` +
+      `${result.titleRefUnanswered.length} could not be asked, ` +
+      `${result.titleRefUncompared.length} had no title to compare`
+  );
+
+  for (const { key, heading } of TITLE_MATCH_BUCKETS) {
+    const found = result[key] ?? [];
+    if (found.length === 0) continue;
+
+    console.log(`    ${heading}:`);
+    for (const check of found) {
+      console.log(
+        `      - ${check.apiRef} names "${check.apiTitle}", stored as ` +
+          `"${check.title}" (${check.id})`
+      );
+    }
+  }
+};
+
+/**
+ * A line every fifty calls, because --verify-titles is a quarter of an hour of
+ * silence for the books otherwise, and a script that prints nothing for that
+ * long is one somebody kills half way through. Named by collection, since this
+ * is the only output that arrives before the `=== collection ===` heading the
+ * summary prints when the reads are done.
+ */
+const progressReporter = (collection) => (asked, total) => {
+  if (asked % 50 === 0 || asked === total) {
+    console.log(
+      `${collection.works}: asked ${asked} of ${total} ids what they name`
+    );
+  }
+};
 
 /** What the adapter said about one group, when it was asked. */
 const printTitleYearCheck = (collection, check) => {

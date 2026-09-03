@@ -19,10 +19,17 @@
  * id in a title-and-year group rather than one question about a shared id —
  * and is here so that both sit next to the rate limit and the adapter loading
  * they share rather than next to each other's copy of them.
+ *
+ * `verifyWorkTitles` is the third and much the most expensive, because the
+ * finding it is after (#327) has no database-only shape to narrow it down
+ * first: one document under one id that names something else disagrees with
+ * nothing, so every work carrying a retrievable id has to be asked. That is
+ * some 1,400 calls against production rather than 25.
  */
 const { sleep } = require("./work_collections");
 const { resolveIdentity, describeWork } = require("./shared_ref_check");
 const { resolveTitleYear } = require("./title_year_check");
+const { resolveTitleMatch } = require("./title_match_check");
 
 /**
  * Lazily required, so a films-only run never loads the other three. That used
@@ -178,9 +185,55 @@ const verifyTitleYearGroups = async (collection, groups) => {
   return checks;
 };
 
+/**
+ * Asks the adapter, once per work, what the id that work is filed under really
+ * names. #327.
+ *
+ * The same pause between calls out of the same descriptor, and a failed
+ * retrieve recorded with its error rather than dropped — `classifyTitleMatches`
+ * keeps those out of every verdict bucket, because "Google Books would not
+ * say" is not "the ISBN names another book".
+ *
+ * `onProgress` exists only here, and only because of the scale: a films-and-tv
+ * run is minutes of silence and a books run is a quarter of an hour, and a
+ * script that prints nothing for that long is one somebody kills. It is called
+ * with the number asked so far and the total.
+ *
+ * @type {(collection: any, targets: any[], onProgress?: (asked: number, total: number) => void) => Promise<object[]>}
+ */
+const verifyWorkTitles = async (collection, targets, onProgress) => {
+  if (targets.length === 0) return [];
+
+  const adapter = loadAdapter(collection);
+  if (!adapter) return [];
+
+  const delayMs = collection.defaultDelayMs;
+  const checks = [];
+
+  for (const [index, target] of targets.entries()) {
+    if (index > 0) await sleep(delayMs);
+
+    const result = await adapter.retrieve(target.ref);
+    checks.push(
+      result.isErr()
+        ? {
+            ...describeWork(target.work),
+            apiRef: target.apiRef,
+            ref: target.ref,
+            error: describeError(result.error),
+          }
+        : resolveTitleMatch(target, result.value)
+    );
+    onProgress?.(index + 1, targets.length);
+  }
+
+  return checks;
+};
+
 module.exports = {
   loadAdapter,
   verifyIdentities,
   verifyTitleYearGroups,
+  verifyWorkTitles,
   describeError,
 };

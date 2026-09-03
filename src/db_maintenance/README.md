@@ -12,7 +12,7 @@ The scripts, and the section below that explains each:
 
 | Script | What it does | Writes? |
 | --- | --- | --- |
-| `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, works filed under another work's id, dangling `workRef`s. Needs no API keys unless you pass `--verify-shared-refs`. | never |
+| `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, works filed under another work's id, dangling `workRef`s. Needs no API keys unless you pass `--verify-shared-refs`, `--verify-title-years` or `--verify-titles`. | never |
 | `backup_database.js` | Takes a timestamped snapshot of every collection and prunes old ones to a retention policy. | to disk only |
 | `verify_backup.js` | Checks a snapshot against its own manifest — every file present, hashing to the `sha256` recorded for it, holding the documents claimed. `--live` also counts the database beside it. | never |
 | `restore_backup.js` | Puts a snapshot, or one collection of it, back — matching on `_id`. | `--apply` |
@@ -178,6 +178,7 @@ work that is gone, and reviews whose entry is gone.
 node scripts/audit_database.js
 node scripts/audit_database.js --only=games,books --json=./audit.json
 node scripts/audit_database.js --verify-shared-refs
+node scripts/audit_database.js --only=films --verify-titles
 ```
 
 The summary prints those under a per-collection list of problems, and then a
@@ -324,6 +325,41 @@ It is a write to real user-visible data, so take a snapshot with
 `backup_database.js` and verify it with `verify_backup.js` first — see "Writing
 to the database" in the root `CLAUDE.md`.
 
+### Works whose own id names something else
+
+The section above is about two works sharing an id, which the database can be
+asked about because the two documents disagree with each other. **One** work
+under **one** id that belongs to something else disagrees with nothing, so no
+amount of reading finds it — and it is by far the commonest case. A
+`--missing-only` backfill dry run refuses 357 works over it, 23% of the
+library, and until #327 the only trace was a line in the log: the audit's "no
+`<prefix>__` ref (cannot be refreshed)" count is about works with no id at all,
+and these have one, and it resolves.
+
+`--verify-titles` asks. It retrieves every work carrying the ref its type is
+refreshed by — about 1,400 calls, a quarter of an hour for the books alone,
+which is why it is off by default and why a run without it prints how many
+works it did not ask rather than three zeroes. `../title_match_check.js` splits
+the answers three ways, because the three want three different answers:
+
+- **The same title, spelled differently.** A leading article, a diacritic, a
+  bookseller's series suffix, `Seven` against `7`. `comparableTitle` forgives
+  all four, so these merge rather than being refused — this is the 69 works
+  #327 recovered, `Truman Show` under the id for `The Truman Show`. Reported as
+  a note, not a problem: nothing is broken, but a stored title that needed
+  forgiving is one somebody may want to tidy.
+- **One title contains the other**, which is triage and not a finding to act
+  on. `Heart of Darkness` against `Heart of Darkness By Joseph Conrad` is one
+  book; `House of Flying Daggers` against `Making of House of Flying Daggers`
+  and `Ex Machina` against `Digitaria Ex Machina` are two works apiece.
+  Containment is exactly the shape a search-result mistake takes, so it is
+  never forgiven — and it cannot be condemned wholesale either.
+- **A different title entirely**, which is mostly #290's damage reached from a
+  third direction: `Pinnochio` under the id for `The Adventures of Buratino`.
+
+Nothing here writes. Which of the two names the work is a human's call, and
+correcting the stored title by hand is what lets the next backfill through.
+
 `reviews whose entry is gone` **is** a problem: a review is only ever found by
 `entryRef`, so one whose entry is gone holds text no code path can reach.
 There are 248 — 44 films, 14 tv, 150 games, 40 books.
@@ -410,6 +446,14 @@ Notes on its behaviour:
   at which point the pairs cannot be told apart again. A genuine retitling
   lands here as well, and is meant to — correct the stored title by hand and
   the next run goes through. #290.
+- **The titles are compared after a normalisation, not letter for letter.**
+  Case, punctuation, diacritics, a trailing parenthetical, a leading English
+  article and a spelled-out number below twenty are all forgiven, so `Truman
+  Show` and `The Truman Show` are one film — 69 works were unrefreshable over
+  exactly that. Equality after the normalisation and never containment, since
+  containment is what a wrong search result looks like. `comparableTitle` in
+  `../work_collections.js`, and `--verify-titles` above lists what is still
+  refused. #327.
 - Duplicate works are reported, never merged — that's
   `scripts/dedupe_works.js`.
 
