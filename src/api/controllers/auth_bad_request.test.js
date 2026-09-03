@@ -61,7 +61,11 @@ process.env.URL = 'https://nil.moe'
 process.env.AUTH0_DOMAIN = 'nil.eu.auth0.com'
 process.env.AUTH0_CLIENT_ID = 'a-client-id'
 
-const cookie = dependenciesInstalled ? await import('cookie') : undefined
+/* `stringifyCookie` builds a `Cookie` *request* header, which is what a
+   browser sends and therefore what these fixtures are. It is the wrong half of
+   `cookie` 2's API for anything that answers a `Set-Cookie`, and `auth.js`
+   uses `stringifySetCookie` for all of those — see the note at the top of it. */
+const { stringifyCookie } = dependenciesInstalled ? await import('cookie') : {}
 const { JSON_CONTENT_TYPE } = dependenciesInstalled
   ? await import('../utils/responses.js')
   : {}
@@ -77,7 +81,7 @@ const {
 
 /** A cookie header carrying `value` as the login cookie, whatever it is. */
 const loginCookieHeader = (value) =>
-  cookie.serialize('auth0_login_cookie', value)
+  stringifyCookie({ auth0_login_cookie: value })
 
 /** The header a browser sends back mid-login, for the login that got `route`. */
 const goodCookieHeader = (route) =>
@@ -330,4 +334,58 @@ test('and a login that works still redirects to Auth0', options, async () => {
   assert.equal(response.headers.Location, 'https://nil.eu.auth0.com/authorize')
   // The nonce and state it just sent, to be compared with what comes back.
   assert.match(response.headers['Set-Cookie'], /^auth0_login_cookie=/)
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// The header the login actually sets
+
+/* Nothing in this repo reads a `Set-Cookie` back, so the header these handlers
+   build is only ever read by a browser — which means an attribute that stops
+   being written is invisible from in here unless it is asserted as a string.
+   `cookie` 2 makes that worth doing rather than paranoid: the obvious
+   replacement for the old `serialize` is `stringifyCookie`, which answers a
+   perfectly good-looking `name=value` with every attribute below silently
+   dropped. On this cookie that is `HttpOnly` and `Secure` gone from the thing
+   that carries a login's nonce across a cross-site form post. */
+test('the login cookie is set with every attribute it needs', options, async () => {
+  const response = await withLoader(auth0, () =>
+    handleLogin({ headers: { referer: 'https://nil.moe/films' } })
+  )
+
+  const state = generateEncodedStateString('https://nil.moe/films', 'entropy')
+  const value = encodeURIComponent(
+    JSON.stringify({ nonce: 'a-nonce', state })
+  )
+
+  /* Spelled out in full rather than matched attribute by attribute, so that an
+     attribute *appearing* fails too. `SameSite=None` is the one that has to be
+     there: Auth0 posts the callback back cross-site, and a browser sends this
+     cookie along on that request only for None — which in turn is only honoured
+     alongside `Secure`. `Max-Age=1800` is LOGIN_COOKIE_MAX_AGE, in seconds. */
+  assert.equal(
+    response.headers['Set-Cookie'],
+    `auth0_login_cookie=${value}; Max-Age=1800; Path=/; HttpOnly; Secure; SameSite=None`
+  )
+})
+
+test('and the browser sending it back is a login readLoginCookie reads', options, async () => {
+  /* The round trip, end to end and through the real `cookie` both ways: what
+     `handleLogin` writes as a `Set-Cookie` is what the browser echoes as a
+     `Cookie`, and `readLoginCookie` is what has to get the nonce and the state
+     back out of it byte for byte. Percent-encoding is the reason to do this
+     rather than trust the two sides separately — the value is JSON, so it is
+     encoded on the way out and has to be decoded on the way back in. */
+  const response = await withLoader(auth0, () =>
+    handleLogin({ headers: { referer: 'https://nil.moe/films?sort=year' } })
+  )
+  const [nameValue] = response.headers['Set-Cookie'].split(';')
+
+  const login = readLoginCookie(`other=1; ${nameValue}; nf_jwt=something`)
+
+  assert.equal(login.nonce, 'a-nonce')
+  assert.equal(
+    login.state,
+    generateEncodedStateString('https://nil.moe/films?sort=year', 'entropy')
+  )
+  assert.equal(login.route, '/films?sort=year')
 })

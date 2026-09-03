@@ -83,9 +83,20 @@ if (dependenciesInstalled) {
 }
 
 const jose = dependenciesInstalled ? await import('jose') : undefined
-const cookie = dependenciesInstalled ? await import('cookie') : undefined
+/* The two halves of `cookie` 2 that this file is on either side of.
+   `stringifyCookie` builds the `Cookie` request header a browser sends;
+   `parseSetCookie` reads back the `Set-Cookie` the handlers answer with, which
+   the old `parse` could only do by accident — it read a `Set-Cookie` as though
+   it were a request header, took the first pair and threw the attributes away.
+   Reading them is now the point, so it is the right function as well as the
+   surviving one. */
+const { parseSetCookie, stringifyCookie } = dependenciesInstalled
+  ? await import('cookie')
+  : {}
 const { getUserId } = dependenciesInstalled ? await import('./utils.js') : {}
-const { handleRenew, handleCallback } = dependenciesInstalled ? await import('./auth.js') : {}
+const { handleRenew, handleCallback, handleLogout } = dependenciesInstalled
+  ? await import('./auth.js')
+  : {}
 
 /* The rules themselves are dependency-free, which is the point of the module. */
 import * as sessionToken from '../utils/session_token.js'
@@ -116,6 +127,22 @@ const sign = ({ sub = 'auth0|somebody', exp, sessionStartedAt, key = secret() } 
 
 const asEvent = (token) => ({
   headers: token === undefined ? {} : { authorization: `Bearer ${token}` },
+})
+
+/** The same token, presented the other way `getNetlifyJWTFromEvent` takes it. */
+const asCookieEvent = (token, extra = {}) => ({
+  headers: { ...extra, cookie: stringifyCookie({ other: '1', nf_jwt: token }) },
+})
+
+/** A callback as Auth0 posts it, for a login whose cookie carried `state`. */
+const callbackEvent = (state) => ({
+  headers: {
+    host: 'memo.test',
+    cookie: stringifyCookie({
+      auth0_login_cookie: JSON.stringify({ nonce: 'a-nonce', state }),
+    }),
+  },
+  body: '',
 })
 
 const claimsOf = async (token) =>
@@ -334,22 +361,13 @@ test('logging in mints the session start the cap is measured from', options, asy
     JSON.stringify({ route: '/films/nil', nonce: 'a-nonce' }),
   ).toString('base64')
 
-  const response = await handleCallback({
-    headers: {
-      host: 'memo.test',
-      cookie: cookie.serialize(
-        'auth0_login_cookie',
-        JSON.stringify({ nonce: 'a-nonce', state }),
-      ),
-    },
-    body: '',
-  })
+  const response = await handleCallback(callbackEvent(state))
 
   assert.equal(response.statusCode, 302)
   assert.equal(response.headers.Location, '/films/nil')
 
   const [netlifyCookie] = response.multiValueHeaders['Set-Cookie']
-  const claims = await claimsOf(cookie.parse(netlifyCookie).nf_jwt)
+  const claims = await claimsOf(parseSetCookie(netlifyCookie).value)
 
   assert.equal(claims.sub, 'auth0|somebody')
   assert.deepEqual(claims.app_metadata.authorization.roles, ['user'])
@@ -361,18 +379,9 @@ test('a login and the renewals after it share one session start', options, async
   // The cap is only a cap if this holds: two renewals, and the start is still
   // the one the login wrote.
   const state = Buffer.from(JSON.stringify({ route: '/' })).toString('base64')
-  const login = await handleCallback({
-    headers: {
-      host: 'memo.test',
-      cookie: cookie.serialize(
-        'auth0_login_cookie',
-        JSON.stringify({ nonce: 'a-nonce', state }),
-      ),
-    },
-    body: '',
-  })
+  const login = await handleCallback(callbackEvent(state))
 
-  let token = cookie.parse(login.multiValueHeaders['Set-Cookie'][0]).nf_jwt
+  let token = parseSetCookie(login.multiValueHeaders['Set-Cookie'][0]).value
   const startedAt = (await claimsOf(token)).session_started_at
 
   for (let i = 0; i < 2; i++) {
@@ -381,4 +390,123 @@ test('a login and the renewals after it share one session start', options, async
     token = JSON.parse(renewal.body).token
     assert.equal((await claimsOf(token)).session_started_at, startedAt)
   }
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// The headers the session is carried in
+
+/* Everything above is about what the token says. This is about the header it
+   travels in, which nothing in this repo ever reads back — only a browser
+   does — so an attribute that stops being written is invisible here unless it
+   is asserted as a string.
+
+   `cookie` 2 is why that stopped being a theoretical worry. The old
+   `serialize` is gone and the two functions that replaced it are not
+   interchangeable: `stringifySetCookie` writes the attributes, and
+   `stringifyCookie` — the one whose name reads like the obvious replacement —
+   builds a `Cookie` request header and quietly has nowhere to put a single one
+   of them. Picking the wrong one answers a plausible `nf_jwt=<jwt>`, sets the
+   session, passes every assertion about the token, and ships a session cookie
+   with no `Secure` and no `SameSite` on it.
+
+   So each of the four is spelled out in full, in order, rather than matched
+   attribute by attribute — which fails on an attribute appearing as well as on
+   one going missing. */
+
+/** What `generateNetlifyCookie` writes for `token`. */
+const sessionCookie = (token) =>
+  // Deliberately not HttpOnly: `Http.getToken` reads this out of
+  // `document.cookie`. See the file comment in `auth_cookie.test.js` (#173).
+  `nf_jwt=${token}; Max-Age=1209600; Path=/; Secure; SameSite=Lax`
+
+/** And what clearing a cookie looks like: same name and path, `Max-Age=0`. */
+const cleared = (name) => `${name}=; Max-Age=0; Path=/; HttpOnly; Secure`
+
+test('a login sets the session cookie and clears the login cookie', options, async () => {
+  const state = Buffer.from(
+    JSON.stringify({ route: '/', nonce: 'a-nonce' }),
+  ).toString('base64')
+
+  const response = await handleCallback(callbackEvent(state))
+  const [netlifyCookie, loginCookie] = response.multiValueHeaders['Set-Cookie']
+
+  /* A JWT is base64url and dots, all of which `cookie` leaves unencoded — but
+     that is its judgement rather than ours, so the value is read back out and
+     verified as a token before the header is rebuilt around it. */
+  const token = parseSetCookie(netlifyCookie).value
+  assert.equal((await claimsOf(token)).sub, 'auth0|somebody')
+  assert.equal(netlifyCookie, sessionCookie(token))
+
+  /* The login cookie has done its job by here and is half a login's worth of
+     state that a browser would otherwise keep for another half hour. Cleared
+     with the attributes it was set with, or a browser keeps the one it has
+     alongside the new one and the next login reads the stale nonce. */
+  assert.equal(loginCookie, cleared('auth0_login_cookie'))
+})
+
+test('a renewal sets the same cookie, with the same attributes', options, async () => {
+  // The renewed cookie is the one whose Max-Age is a real duration rather than
+  // 0, so it pins the units too: 1209600 is a fortnight in seconds, not ms.
+  const response = await handleRenew(asEvent(await sign()))
+
+  assert.equal(response.statusCode, 200)
+  assert.equal(
+    response.headers['Set-Cookie'],
+    sessionCookie(JSON.parse(response.body).token),
+  )
+})
+
+test('logging out clears the session cookie', options, async () => {
+  assert.equal((await handleLogout()).headers['Set-Cookie'], cleared('nf_jwt'))
+})
+
+test('and so does a session that has run past its cap', options, async () => {
+  /* The other place a session ends. `Max-Age=0` is the whole of it: an empty
+     value alone leaves a cookie the browser goes on sending, and a `Path` that
+     does not match the one it was set with leaves the old cookie sitting
+     beside the new one. Asserted here as the same string as the logout above,
+     because clearing has to be clearing wherever it is done from. */
+  const response = await handleRenew(asEvent(await sign({
+    sessionStartedAt: now() - sessionToken.MAX_SESSION_SECONDS - 1,
+  })))
+
+  assert.equal(response.statusCode, 401)
+  assert.equal(response.headers['Set-Cookie'], cleared('nf_jwt'))
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// And the header it arrives in
+
+test('the session cookie is read back off a real Cookie header', options, async () => {
+  /* `getNetlifyJWTFromEvent` takes the token from `Authorization` or from the
+     cookie, and every other test in this file uses the header. This is the
+     other branch — the one that has to find `nf_jwt` among the other cookies a
+     browser sends, which is the whole of what `parseCookie` is here for. */
+  const response = await handleRenew(asCookieEvent(await sign()))
+
+  assert.equal(response.statusCode, 200)
+  assert.equal((await claimsOf(JSON.parse(response.body).token)).sub, 'auth0|somebody')
+})
+
+test('a cookie holding a token of somebody else\'s is refused like any other', options, async () => {
+  // The cookie branch is not a way past the check, only a second way in.
+  const otherKey = new TextEncoder().encode('not the secret we sign with')
+
+  assert.equal((await handleRenew(asCookieEvent(await sign({ key: otherKey })))).statusCode, 401)
+})
+
+test('the Authorization header wins over the cookie', options, async () => {
+  /* Both can be present — the frontend reads the cookie and repeats it as a
+     bearer header — and which one is believed decides whose session it is.
+     A stale cookie left over from an earlier login must not be the one that
+     counts when the caller has said which token it means. */
+  const bearer = await sign({ sub: 'auth0|the-header' })
+  const response = await handleRenew(
+    asCookieEvent(await sign({ sub: 'auth0|the-cookie' }), {
+      authorization: `Bearer ${bearer}`,
+    }),
+  )
+
+  assert.equal(response.statusCode, 200)
+  assert.equal((await claimsOf(JSON.parse(response.body).token)).sub, 'auth0|the-header')
 })
