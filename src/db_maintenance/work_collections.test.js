@@ -3,7 +3,11 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { COLLECTIONS } = require("./work_collections");
+const {
+  COLLECTIONS,
+  isEmptyValue,
+  isCorruptNumber,
+} = require("./work_collections");
 
 /**
  * The consumer is scripts/backfill_work_metadata.js, a directory below this
@@ -63,6 +67,45 @@ test("every shared work type gets its script-only fields", () => {
     assert.ok(
       collection.adapterModule && collection.retrievePrefix,
       `${collection.type} has no SCRIPT_FIELDS entry`
+    );
+  }
+});
+
+/**
+ * #318. The 49 works holding `duration: 0` were unreachable: present enough
+ * that the audit, `hasGaps` and a `missingOnly` merge all left them alone, and
+ * a number, so `isCorruptNumber` would not let the clear script take them
+ * either. This is the line that decides it, so this is where the decision is
+ * pinned.
+ */
+test("a stored 0 is empty, so a zero duration is a gap and not a value", () => {
+  assert.equal(isEmptyValue(0), true);
+
+  // The states it already recognised, unchanged.
+  for (const value of [undefined, null, "", []]) {
+    assert.equal(isEmptyValue(value), true, `${JSON.stringify(value)}`);
+  }
+
+  // Empty and corrupt are the two ways a value can be unusable, and a zero is
+  // the first. Calling it the second would send it to
+  // scripts/clear_unusable_work_fields.js, which would unset it to produce the
+  // gap it already is.
+  assert.equal(isCorruptNumber(0), false);
+});
+
+/**
+ * The guard the comment on `isEmptyValue` promises. `!value` would have been
+ * the short way to write the zero case and would have made every falsy value
+ * a gap for every field, including the string arrays. A field where zero is a
+ * real answer does not exist today; if one is ever added, it must arrive as a
+ * decision rather than as a surprise from this predicate.
+ */
+test("only the zero is empty — falsiness in general is not", () => {
+  for (const value of [false, NaN, "0", [0], {}, -1]) {
+    assert.equal(
+      isEmptyValue(value),
+      false,
+      `${JSON.stringify(value) ?? String(value)} is not an empty value`
     );
   }
 });

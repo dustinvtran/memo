@@ -267,7 +267,16 @@ Tests that do need the dependencies skip themselves when they aren't there.
   under one show id, five Haruhi Suzumiya volumes under one ISBN. Merging on
   an apiRef alone destroys data.
 - **A stored `duration` of `0` is not a duration.** It renders as `-` exactly
-  as a missing one does.
+  as a missing one does, and since #318 `isEmptyValue` says so, so the audit
+  reports it missing, `hasGaps` picks the work up and a `missingOnly` merge
+  overwrites it. Before that it was a value nothing could replace: present
+  enough to satisfy all three, and a number, so `isCorruptNumber` would not
+  let `clear_unusable_work_fields.js` take it either. 49 works sat that way.
+  The rule now is that **`0` is empty for every field**, which is safe only
+  because every numeric field is a `duration`, a `releaseYear` or an
+  `episodes` count and none of them has a meaningful zero. A field where zero
+  is a real answer would need this decided again, in `isEmptyValue`, not
+  worked around at the call site.
 - **`durationSource` records where a playtime came from.** `"igdb"` means
   IGDB's `/game_time_to_beats`; absent means it predates the field and came
   from HowLongToBeat. Never write one without writing the duration it

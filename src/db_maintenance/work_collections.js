@@ -193,11 +193,45 @@ const titlesAgree = (a, b) => {
   return ours.some((title) => theirs.includes(title));
 };
 
-/** Empty means "there is nothing usable here", so it's safe to overwrite. */
+/**
+ * Empty means "there is nothing usable here", so it's safe to overwrite.
+ *
+ * **A stored `0` is empty**, and this is the only place that can say so. #318:
+ * 49 works hold `duration: 0` — 14 films, 16 games, 19 books — and until this
+ * line they were unreachable by every mechanism the repo has. `0` is not
+ * `undefined`, so the audit did not report the field missing, `hasGaps` did
+ * not pick the work up and `mergeWork` in `missingOnly` mode left the value
+ * alone as a usable one; `0` is a number, so `isCorruptNumber` did not call it
+ * damage and scripts/clear_unusable_work_fields.js would not clear it either.
+ * The API has the runtime, the page draws a `-`, and nothing was ever going to
+ * ask.
+ *
+ * Deciding it here rather than in the clear script is the difference between a
+ * rule and a one-off repair. A zero is not damage to be removed, it is an
+ * absence stored badly, and one line reaches the audit, `hasGaps`, `mergeWork`
+ * and `completeness` at once with no write to production at all — clearing the
+ * 49 would have been a production write whose whole result was the gaps this
+ * produces for free. It also ends a disagreement rather than starting one:
+ * `hasStoredPlaytime` in ./game_playtime_plan.js and `implausibleDuration` in
+ * ./duration_plausibility.js each already say a `duration` of `0` is not a
+ * duration, in their own words, because this function would not say it for
+ * them.
+ *
+ * **`0` is named, not `!value`.** A falsiness test would be shorter and would
+ * also swallow `false`, and it would hand the same rule to the string-array
+ * fields this predicate is equally asked about, so a field for which zero is a
+ * real answer would become a permanent gap the day someone added it. There is
+ * no such field today: every entry in a `numberFields` list is a `duration`, a
+ * `releaseYear` or an `episodes` count, and a work released in year 0, a film
+ * 0 minutes long and a show with 0 episodes all mean "nobody knows" rather
+ * than a measurement. Saying that here is what makes the next one a decision
+ * instead of an accident.
+ */
 const isEmptyValue = (value) =>
   value === undefined ||
   value === null ||
   value === "" ||
+  value === 0 ||
   (Array.isArray(value) && value.length === 0);
 
 /**
