@@ -22,6 +22,16 @@ const POSTER_IMAGE_URL_PREFIX = 'https://www.themoviedb.org/t/p/w300_and_h450_be
 const MAX_ACTORS = 10
 const MIN_ACTOR_POPULARITY = 6
 
+/**
+ * The crew jobs a director is filed under, per media type.
+ *
+ * A show gets the longer list because `Series Director` is a job only a show
+ * has — Digimon Adventure's five crew members include one. It is not, though,
+ * where a show's director reliably lives; see `directorNames`.
+ */
+const FILM_DIRECTOR_JOBS = ['Director']
+const SHOW_DIRECTOR_JOBS = ['Director', 'Series Director']
+
 /** @type {(posterPath: any, prefix: string) => string | undefined} */
 const posterUrl = (posterPath, prefix) =>
   typeof posterPath === 'string' && posterPath ? prefix + posterPath : undefined
@@ -59,9 +69,18 @@ const genreNames = (genres) =>
     .filter((name) => typeof name === 'string')
 
 /**
- * The names of everyone in the crew doing one of `jobs`. TMDB files a show's
- * own director under `Series Director` and an episode's under `Director`,
- * where a film only ever has the latter.
+ * The names of everyone in the crew doing one of `jobs`.
+ *
+ * For a film that is the director, every time. For a show it is whatever the
+ * show-level crew happens to carry, which is usually nothing at all:
+ * `/tv/{id}/credits` is the production crew, and a show's directors are
+ * per-episode — `/tv/{id}/season/{n}/episode/{m}/credits`, or rolled up in
+ * `aggregate_credits`. Twin Peaks answers with 45 crew members and not one of
+ * them is filed as a director; Archer answers with two and Rick and Morty with
+ * seventeen, same result. This comment used to claim the opposite, and 456 of
+ * 510 shows were missing a director because of it (#328), so the show mapping
+ * now reads `created_by` first and keeps this as a fallback. See
+ * `showDirectors`.
  * @type {(crew: any, jobs: string[]) => string[]}
  */
 const directorNames = (crew, jobs) =>
@@ -69,6 +88,41 @@ const directorNames = (crew, jobs) =>
     .filter((person) => jobs.includes(person?.job))
     .map((person) => person.name)
     .filter((name) => typeof name === 'string')
+
+/**
+ * A show's creators, from `created_by` on the `/tv/{id}` details response.
+ * Films have no such key — `/movie/{id}` does not carry one at all.
+ * @type {(createdBy: any) => string[]}
+ */
+const creatorNames = (createdBy) =>
+  (Array.isArray(createdBy) ? createdBy : [])
+    .map((person) => person?.name)
+    .filter((name) => typeof name === 'string')
+
+/**
+ * Who goes in a show's Director column: its creators, or failing that whoever
+ * the show-level crew files as a director.
+ *
+ * `created_by` first because for a show the creator is the closest true
+ * analogue of a film's director, and it is what a reader of that column
+ * expects to see — Twin Peaks gives Mark Frost and David Lynch. It is on the
+ * details response `../tmdb_adapter.js` already fetches, so it costs no extra
+ * request, which is what ruled `aggregate_credits` out: one more call per show
+ * to answer with every director who has ever done an episode of Archer.
+ *
+ * The crew filter stays as a fallback rather than being deleted, so that
+ * nothing which works today regresses. Planet Earth II (Alastair Fothergill)
+ * and Digimon Adventure (Hiroyuki Kakudou) each have a crew director and no
+ * `created_by` whatsoever; dropping the filter would blank them on the next
+ * full refresh.
+ * @type {(data: any, credits: any) => string[]}
+ */
+const showDirectors = (data, credits) => {
+  const creators = creatorNames(data?.created_by)
+  return creators.length
+    ? creators
+    : directorNames(credits?.crew, SHOW_DIRECTOR_JOBS)
+}
 
 /**
  * The notable actors, most popular first.
@@ -119,7 +173,9 @@ const episodeCount = (seasons) => {
  * @property {string} title
  * @property {string} originalTitle
  * @property {string} releaseDate
- * @property {string[]} directorJobs
+ * @property {(data: any, credits: any) => string[]} directors takes both
+ *   responses, because a show's come off the details one and a film's off the
+ *   credits one
  * @property {string} notFoundMessage what a 404 tells the caller (#105)
  * @property {(data: any) => number | undefined} duration
  * @property {(data: any) => object} [extraFields] anything only one type has
@@ -132,7 +188,7 @@ const FILM_MAPPING = {
   title: 'title',
   originalTitle: 'original_title',
   releaseDate: 'release_date',
-  directorJobs: ['Director'],
+  directors: (_data, credits) => directorNames(credits?.crew, FILM_DIRECTOR_JOBS),
   notFoundMessage: 'no such film',
   duration: (data) => data?.runtime || undefined,
 }
@@ -144,7 +200,7 @@ const TV_SHOW_MAPPING = {
   title: 'name',
   originalTitle: 'original_name',
   releaseDate: 'first_air_date',
-  directorJobs: ['Director', 'Series Director'],
+  directors: showDirectors,
   notFoundMessage: 'no such tv show',
   // A show's `duration` is one episode's; TMDB lists the runtimes it has seen.
   duration: (data) => data?.episode_run_time?.[0] || undefined,
@@ -172,7 +228,7 @@ const toWork = (mapping, ref, data, credits) => ({
   duration: mapping.duration(data),
   imageUrl: posterUrl(data?.poster_path, POSTER_IMAGE_URL_PREFIX),
   genres: genreNames(data?.genres),
-  directors: directorNames(credits?.crew, mapping.directorJobs),
+  directors: mapping.directors(data, credits),
   actors: notableActors(credits?.cast),
   apiRefs: [`tmdb__${ref}`],
   externalUrls: [{
@@ -187,6 +243,8 @@ export {
   POSTER_IMAGE_URL_PREFIX,
   MAX_ACTORS,
   MIN_ACTOR_POPULARITY,
+  FILM_DIRECTOR_JOBS,
+  SHOW_DIRECTOR_JOBS,
   FILM_MAPPING,
   TV_SHOW_MAPPING,
   posterUrl,
@@ -194,6 +252,8 @@ export {
   releaseYear,
   genreNames,
   directorNames,
+  creatorNames,
+  showDirectors,
   notableActors,
   episodeCount,
   toSearchResults,

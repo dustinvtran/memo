@@ -284,3 +284,10 @@ Tests that do need the dependencies skip themselves when they aren't there.
 - **IGDB replaced `external_games.category`** with
   `external_games.external_game_source` (`1` = Steam). Querying the old field
   returns zero rows silently instead of erroring.
+- **TMDB's `/tv/{id}/credits` has no director in it.** It is the production
+  crew: Twin Peaks lists 45 people and not one is filed as `Director` or
+  `Series Director`. A show's Director column comes from `created_by` on the
+  details response, with the crew filter kept only as a fallback for the shows
+  that do carry one — see `showDirectors` in `tmdb_mapping.js` and #328, which
+  is what 456 of 510 shows missing a director for ever looked like. Films are
+  different and fine: `/movie/{id}/credits` really does carry `Director`.

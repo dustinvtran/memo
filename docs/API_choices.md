@@ -832,6 +832,25 @@ _nothing!_
 This API has all the information we need!! With no rate limit!! The node wrapper
 is a little barebones but that is okay.
 
+One exception, found in #328 and worth writing down because the research above
+is all film-shaped. **`/tv/{id}/credits` carries the production crew and no
+director.** Twin Peaks answers with 45 crew members — photography, sound, art,
+three executive producers — and not one of them is filed as `Director` or
+`Series Director`; Archer answers with two crew members and Rick and Morty
+with seventeen, same result. A show's directors are per-episode, on
+`/tv/{id}/season/{n}/episode/{m}/credits`, or rolled up in
+`/tv/{id}/aggregate_credits`.
+
+So a show's Director column comes from **`created_by` on the details
+response** instead: the creator is the closest true analogue of a film's
+director, the field is on a response the adapter already fetches, and Twin
+Peaks gives Mark Frost and David Lynch. `aggregate_credits` was the literal
+answer and the wrong one — another request per show, to list every director
+who has ever done an episode. The crew filter stays as a fallback for the
+shows that do carry one and no `created_by` (Planet Earth II, Digimon
+Adventure). Films are unaffected: `/movie/{id}/credits` does file the
+director under `Director`, and `/movie/{id}` has no `created_by` key at all.
+
 ## Book API (draft)
 
 <details>
