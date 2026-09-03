@@ -16,10 +16,17 @@
  * spends someone else's rate limit every time it is run is a diagnostic that
  * stops being run. #290.
  *
+ * `--verify-title-years` is the same bargain for the opposite finding. Two
+ * works with one title and one year may be one work under two ids or two works
+ * that share a name, and the ids can be asked which — one call per id in a
+ * group, 37 against production today. Off by default for the same reason.
+ * #319.
+ *
  * Usage:
  *   node scripts/audit_database.js
  *   node scripts/audit_database.js --only=games,books
  *   node scripts/audit_database.js --verify-shared-refs
+ *   node scripts/audit_database.js --verify-title-years
  *   node scripts/audit_database.js --json=./audit.json
  */
 require("../env");
@@ -44,13 +51,18 @@ const {
   // its own reads onto the `id` it writes.
   describeWork: describe,
 } = require("../shared_ref_check");
+const {
+  classifyTitleYearGroups,
+  reasonFor,
+} = require("../title_year_check");
 const { implausibleDuration } = require("../duration_plausibility");
 const { toSummary, countProblems } = require("../audit_report");
-const { verifyIdentities } = require("../load_adapter");
+const { verifyIdentities, verifyTitleYearGroups } = require("../load_adapter");
 
 const args = parseArgs(process.argv);
 
 const verifySharedRefs = args["verify-shared-refs"] === true;
+const verifyTitleYears = args["verify-title-years"] === true;
 
 let client;
 
@@ -164,6 +176,16 @@ const auditCollection = async (db, collection) => {
     ? await verifyIdentities(collection, shared.collisions)
     : [];
 
+  // A fourth meaning, found the other way round: two documents that agree on a
+  // title and a year but sit under two different ids share no key with the
+  // three findings above and were invisible to all of them. ../title_year_check.js
+  // and #319.
+  const titleYear = classifyTitleYearGroups(collection, works, entries);
+
+  const titleYearChecks = verifyTitleYears
+    ? await verifyTitleYearGroups(collection, titleYearGroups(titleYear))
+    : [];
+
   const entriesWithoutWorkRef = entries
     .filter((e) => !e.workRef)
     .map((e) => ({ id: e._id, userId: e.userId, status: e.status }));
@@ -197,6 +219,10 @@ const auditCollection = async (db, collection) => {
     expectedSharedRefs,
     sharedIdentityRefs,
     identityChecks,
+    titleYearDuplicates: titleYear.duplicates,
+    titleYearUnidentified: titleYear.unidentified,
+    titleYearUndecided: titleYear.undecided,
+    titleYearChecks,
     orphanWorks,
     entriesWithoutWorkRef,
     entriesWithDanglingWorkRef,
@@ -246,6 +272,7 @@ const printSummary = (collection, result) => {
   }
 
   printSharedRefs(collection, result);
+  printTitleYears(collection, result);
 
   const examples = result.missingFields.slice(0, 5);
   if (examples.length > 0) {
@@ -297,6 +324,114 @@ const printSharedRefs = (collection, result) => {
         .join(", ")}`
     );
   }
+};
+
+/**
+ * The three buckets as one list, in the order they are printed, which is also
+ * the order they are asked about. Every group is worth a call: a duplicate is
+ * confirmed by one, an undecided pair is settled by one, and an unidentified
+ * pair has exactly one id to ask — whose answer says which of the two stored
+ * titles it belongs to.
+ */
+const titleYearGroups = (titleYear) => [
+  ...titleYear.duplicates,
+  ...titleYear.unidentified,
+  ...titleYear.undecided,
+];
+
+/**
+ * The title-and-year groups in full, with the signals that discriminate beside
+ * each work — a shared secondary ref, the duration, and how many entries point
+ * at it. A count of these is not something anyone can act on and the pairs are
+ * the whole finding, so all of them are printed rather than a sample, exactly
+ * as the collision groups above are.
+ *
+ * The three headings are separate because the three mean different things and
+ * a reader who sees them in one list will act on the wrong one. Only the last
+ * is expected to survive: `mother|2009` is three films.
+ */
+const printTitleYears = (collection, result) => {
+  const sections = [
+    ["titleYearDuplicates", "one work under two ids"],
+    ["titleYearUnidentified", "same title and year, one side has no id"],
+    ["titleYearUndecided", "same title and year, different ids, undecided"],
+  ];
+
+  const groups = sections.flatMap(([key]) => result[key] ?? []);
+  if (groups.length === 0) return;
+
+  if (!verifyTitleYears) {
+    console.log(
+      `  same title and year, unverified — pass --verify-title-years to ask ` +
+        `${collection.retrievePrefix} whether each is one work:`
+    );
+  } else {
+    console.log(
+      `  same title and year, as ${collection.retrievePrefix} reports them:`
+    );
+  }
+
+  const checksByKey = new Map(
+    (result.titleYearChecks ?? []).map((check) => [check.key, check])
+  );
+
+  for (const [key, heading] of sections) {
+    const found = result[key] ?? [];
+    if (found.length === 0) continue;
+
+    console.log(`    ${heading}:`);
+    for (const group of found) {
+      console.log(
+        `      - ${group.title} (${group.releaseYear}) — ${group.reason}`
+      );
+      // The refs padded to one width, because the durations beside them are
+      // the point and two numbers a reader has to hunt for are two numbers a
+      // reader does not compare.
+      const refWidth = Math.max(
+        ...group.works.map((work) => (work.identityRef ?? NO_REF).length)
+      );
+      for (const work of group.works) {
+        console.log(
+          `          ${(work.identityRef ?? NO_REF).padEnd(refWidth)}  ` +
+            `"${work.title}"  ` +
+            `${work.duration === undefined ? "no duration" : `${work.duration} min`}, ` +
+            `${work.entries} entr${work.entries === 1 ? "y" : "ies"}  ` +
+            `(${work.id})`
+        );
+      }
+      printTitleYearCheck(collection, checksByKey.get(group.key));
+    }
+  }
+};
+
+/** What a document with nothing to retrieve it by shows in the ref column. */
+const NO_REF = "(no identity ref)";
+
+/** What the adapter said about one group, when it was asked. */
+const printTitleYearCheck = (collection, check) => {
+  if (!check) return;
+
+  // Deliberately a sentence about the *ids* and not about the documents. A
+  // pair the signals called one work, whose ids name two, is one work wearing
+  // another's id — #290's damage, found from the side the shared-ref check
+  // cannot see — and "different works" would read as the opposite of that.
+  const verdict =
+    check.sameWork === true
+      ? "these ids name one work"
+      : check.sameWork === false
+        ? "these ids name different works"
+        : "not settled";
+
+  const named = check.names.map((name) =>
+    name.error !== undefined
+      ? `${name.apiRef} could not be asked (${name.error})`
+      : `${name.apiRef} names "${name.apiTitle}" ` +
+        `(${name.releaseYear ?? "no year"}, ${name.duration ?? "no"} min)`
+  );
+
+  console.log(
+    `          ${collection.retrievePrefix} says: ${verdict} — ${named.join("; ")}`
+  );
 };
 
 main().catch(async (e) => {

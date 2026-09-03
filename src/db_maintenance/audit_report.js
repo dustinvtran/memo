@@ -104,6 +104,21 @@ const FINDINGS = [
     label: () => "ids shared by works that are not the same work",
     except: "tv",
   },
+  // The other direction, and a third meaning again: one work filed under two
+  // *different* ids shares no key with itself, so neither line above can see
+  // it. Split by what discriminates, because a title is a much weaker key than
+  // an id — see ../title_year_check.js and #319.
+  {
+    key: "titleYearDuplicates",
+    kind: "problem",
+    label: () => "one work under two ids (same title, year and duration)",
+  },
+  {
+    key: "titleYearUnidentified",
+    kind: "problem",
+    label: (c) =>
+      `same title and year, and one of them has no ${c.retrievePrefix}__ ref`,
+  },
   {
     key: "orphanReviews",
     kind: "problem",
@@ -125,6 +140,15 @@ const FINDINGS = [
     key: "orphanWorks",
     kind: "note",
     label: () => "cached works no entry points at",
+  },
+  // A note, and not a milder problem, for the same reason the tv line above is
+  // one: `mother|2009` is three different films and `stalker|1979` is two, so
+  // this count can never go to zero and no script should be written to make
+  // it. `--verify-title-years` is how one of these becomes a decision.
+  {
+    key: "titleYearUndecided",
+    kind: "note",
+    label: () => "same title and year, different ids (may be different works)",
   },
 ];
 
