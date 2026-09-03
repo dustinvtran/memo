@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const { COLLECTIONS } = require("./work_collections");
 const {
+  ALWAYS_CLEARED,
   KEPT_FIELDS,
   poisonedFields,
   planSharedRefRepair,
@@ -330,7 +331,7 @@ test("apiRefs is narrowed to an empty array, never unset", () => {
 ///////////////////////////////////////////////////////////////////////////////
 // Which fields come off
 
-test("every field an adapter fills is unset, and the titles are not", () => {
+test("a work copied wholesale loses every field an adapter fills", () => {
   const [repair] = planSharedRefRepair(
     games,
     [kingdomHeartsIII, kingdomHearts],
@@ -423,18 +424,299 @@ test("a field the work does not have is not listed as something to unset", () =>
   assert.deepEqual(fieldsOf(repair), ["releaseYear"]);
 });
 
-test("a duration of 0 is a value, and is unset with the rest", () => {
+test("a duration of 0 is a value, and is unset like any other copy of one", () => {
   // CLAUDE.md: a stored duration of 0 renders as `-` exactly as a missing one
-  // does, but it is still a number the wrong work put there.
+  // does, but it is still a number, and `isEmptyValue` is not what decides
+  // whether the wrong id wrote it — the other document holding it is.
   const zero = { ...kingdomHearts, duration: 0 };
+  const zeroOwner = { ...kingdomHeartsIII, duration: 0 };
   const [repair] = planSharedRefRepair(
     games,
-    [kingdomHeartsIII, zero],
+    [zeroOwner, zero],
     [kingdomHeartsCheck]
   ).repairs;
 
-  assert.ok(fieldsOf(repair).includes("duration"));
+  assert.equal(
+    repair.unset.find((entry) => entry.field === "duration").value,
+    0
+  );
   assert.ok(fieldsOf(repair).includes("durationSource"));
+});
+
+///////////////////////////////////////////////////////////////////////////////
+// Which values come off: #313's identity test
+
+/**
+ * The films group as production holds it: `tmdb__177572` is Big Hero 6's, and
+ * Zhang Yimou's `Hero` is wearing it with Big Hero 6's cover, genres and cast
+ * copied onto it — but its own 2002, which no `missingOnly` merge could have
+ * written while Big Hero 6 says 2014.
+ */
+const bigHero6 = {
+  _id: "bh6",
+  entryType: "Film",
+  englishTranslatedTitle: "Big Hero 6",
+  apiRefs: ["tmdb__177572"],
+  imageUrl: "https://image.tmdb.org/big-hero-6.jpg",
+  releaseYear: 2014,
+  duration: 102,
+  genres: ["Animation", "Family"],
+  directors: ["Don Hall"],
+  actors: ["Ryan Potter"],
+  externalUrls: [
+    { name: "tmdb", url: "https://www.themoviedb.org/movie/177572" },
+  ],
+  metadataUpdatedDate: 1750000000000,
+};
+
+const hero = {
+  ...bigHero6,
+  _id: "hero",
+  englishTranslatedTitle: "Hero",
+  releaseYear: 2002,
+};
+
+const heroCheck = check({
+  apiRef: "tmdb__177572",
+  ref: "177572",
+  apiTitle: "Big Hero 6",
+  matches: [bigHero6],
+  mismatches: [hero],
+});
+
+test("a value another work in the group also holds is cleared", () => {
+  // An identical value is the wrong id's fingerprint: a missingOnly merge
+  // copies, so what it wrote here is still sitting on what it was copied from.
+  const [repair] = planSharedRefRepair(films, [bigHero6, hero], [heroCheck])
+    .repairs;
+
+  for (const field of ["duration", "genres", "directors", "actors"]) {
+    assert.ok(fieldsOf(repair).includes(field), `${field} should be cleared`);
+  }
+});
+
+test("a value that differs from every work in the group is kept", () => {
+  // Hero is a 2002 film and Big Hero 6 a 2014 one, so no merge copied that 2002
+  // from anywhere in this group. Clearing it would delete a right answer on a
+  // work the same run leaves unrefreshable.
+  const [repair] = planSharedRefRepair(films, [bigHero6, hero], [heroCheck])
+    .repairs;
+
+  assert.ok(!fieldsOf(repair).includes("releaseYear"));
+  assert.equal(repair.unrefreshable, true);
+});
+
+test("externalUrls and imageUrl go whether they match or not", () => {
+  // They name the wrong id's page and its artwork whatever they say, and they
+  // are what a reader clicks.
+  const ownArt = {
+    ...hero,
+    imageUrl: "https://image.tmdb.org/hero-poster.jpg",
+    externalUrls: [
+      { name: "tmdb", url: "https://www.themoviedb.org/movie/177572-hero" },
+    ],
+  };
+
+  const differing = planSharedRefRepair(
+    films,
+    [bigHero6, ownArt],
+    [
+      check({
+        apiRef: "tmdb__177572",
+        ref: "177572",
+        apiTitle: "Big Hero 6",
+        matches: [bigHero6],
+        mismatches: [ownArt],
+      }),
+    ]
+  ).repairs[0];
+  const identical = planSharedRefRepair(films, [bigHero6, hero], [heroCheck])
+    .repairs[0];
+
+  for (const repair of [differing, identical]) {
+    assert.ok(fieldsOf(repair).includes("imageUrl"));
+    assert.ok(fieldsOf(repair).includes("externalUrls"));
+  }
+  assert.equal(
+    differing.unset.find((entry) => entry.field === "imageUrl").value,
+    "https://image.tmdb.org/hero-poster.jpg"
+  );
+});
+
+test("a duration that survives outlives its durationSource", () => {
+  // One game on the production dry run. `durationSource` names the API that
+  // produced a duration under an id that names something else, so it goes;
+  // absent, it reads as "predates the field", which is truer than "igdb".
+  const ownPlaytime = { ...kingdomHearts, duration: 660, durationSource: "igdb" };
+  const [repair] = planSharedRefRepair(
+    games,
+    [kingdomHeartsIII, ownPlaytime],
+    [
+      check({
+        apiRef: "igdb__2933",
+        ref: "2933",
+        apiTitle: "Kingdom Hearts III",
+        matches: [kingdomHeartsIII],
+        mismatches: [ownPlaytime],
+      }),
+    ]
+  ).repairs;
+
+  assert.ok(!fieldsOf(repair).includes("duration"));
+  assert.ok(fieldsOf(repair).includes("durationSource"));
+});
+
+test("the bookkeeping fields go whether they match or not", () => {
+  const ownDates = {
+    ...hero,
+    durationSource: "igdb",
+    metadataUpdatedDate: 1600000000000,
+  };
+  const [repair] = planSharedRefRepair(
+    films,
+    [bigHero6, ownDates],
+    [
+      check({
+        apiRef: "tmdb__177572",
+        ref: "177572",
+        apiTitle: "Big Hero 6",
+        matches: [bigHero6],
+        mismatches: [ownDates],
+      }),
+    ]
+  ).repairs;
+
+  assert.ok(fieldsOf(repair).includes("metadataUpdatedDate"));
+  assert.ok(fieldsOf(repair).includes("durationSource"));
+});
+
+test("two books whose authors disagree keep them", () => {
+  // #313's regression, as far as the identity test reaches it. Four book groups
+  // name a work that is neither of the documents filed under it, and the wide
+  // clear took `authors` off both sides of each — from works the same run
+  // leaves unrefreshable, so the Authors column on /books/:user goes blank and
+  // stays blank. Dostoevsky and Dan Brown are not the same author, so no merge
+  // wrote one of these from the other.
+  const demons = {
+    _id: "d",
+    entryType: "Book",
+    englishTranslatedTitle: "Demons",
+    apiRefs: ["ISBN__9782709637411"],
+    authors: ["Fyodor Dostoyevsky"],
+    duration: 600,
+    imageUrl: "https://books.google.com/anges-et-demons.jpg",
+    publishers: ["Lattès"],
+  };
+  const daVinciCode = {
+    ...demons,
+    _id: "dv",
+    englishTranslatedTitle: "The Da Vinci Code",
+    authors: ["Dan Brown"],
+  };
+
+  const plan = planSharedRefRepair(
+    books,
+    [demons, daVinciCode],
+    [
+      check({
+        apiRef: "9782709637411",
+        ref: "9782709637411",
+        apiTitle: "Anges et démons",
+        mismatches: [demons, daVinciCode],
+      }),
+    ]
+  );
+
+  for (const repair of plan.repairs) {
+    assert.ok(!fieldsOf(repair).includes("authors"), `${repair.title} kept authors`);
+    assert.ok(fieldsOf(repair).includes("imageUrl"));
+    assert.equal(repair.unrefreshable, true);
+  }
+  // The 600 pages and the French publisher are on both, so both go.
+  assert.deepEqual(fieldsOf(plan.repairs[0]), [
+    "imageUrl",
+    "duration",
+    "publishers",
+  ]);
+});
+
+test("a partner that is itself misfiled still counts as a partner", () => {
+  // Ten groups have no confirmed owner, so on those the only documents to
+  // compare against are the other mismatches. A value two of them share is
+  // still one retrieve's output written twice — and an author two volumes of
+  // one series share honestly is cleared too, which is the false positive this
+  // test is here to keep visible. The years, which no retrieve could have
+  // written onto both, are what survive.
+  const fifth = {
+    _id: "h5",
+    entryType: "Book",
+    englishTranslatedTitle: "涼宮ハルヒの暴走 (Suzumiya Haruhi, #5)",
+    apiRefs: ["ISBN__4047138312"],
+    authors: ["Nagaru Tanigawa"],
+    genres: ["Light Novel"],
+    duration: 180,
+    releaseYear: 2004,
+  };
+  const ninth = {
+    ...fifth,
+    _id: "h9",
+    englishTranslatedTitle: "涼宮ハルヒの分裂 (Suzumiya Haruhi, #9)",
+    releaseYear: 2007,
+  };
+
+  const plan = planSharedRefRepair(
+    books,
+    [fifth, ninth],
+    [
+      check({
+        apiRef: "4047138312",
+        ref: "4047138312",
+        apiTitle: "涼宮ハルヒの驚愕",
+        mismatches: [fifth, ninth],
+      }),
+    ]
+  );
+
+  assert.deepEqual(plan.repairs.map(fieldsOf), [
+    ["duration", "genres", "authors"],
+    ["duration", "genres", "authors"],
+  ]);
+});
+
+test("--clear-all-fields restores the wide clear", () => {
+  // Defensible for a confirmed-owner group: Hero is carrying Big Hero 6's
+  // cover, runtime, genres, directors and entire cast, and only its 2002 is
+  // its own.
+  const plan = planSharedRefRepair(films, [bigHero6, hero], [heroCheck], {
+    clearAllFields: true,
+  });
+
+  assert.ok(fieldsOf(plan.repairs[0]).includes("releaseYear"));
+  assert.deepEqual(
+    fieldsOf(plan.repairs[0]),
+    poisonedFields(films).filter((field) => field in hero)
+  );
+  assert.equal(plan.totals.values, poisonedFields(films).filter((f) => f in hero).length);
+});
+
+test("the always-cleared fields are candidates in the first place", () => {
+  // A field listed here that no descriptor produces would be a rule about
+  // nothing, and one missing from a descriptor would be a link left on a work
+  // whose id it names.
+  assert.deepEqual(Object.keys(ALWAYS_CLEARED), [
+    "externalUrls",
+    "imageUrl",
+    "durationSource",
+    "metadataUpdatedDate",
+  ]);
+  for (const collection of COLLECTIONS) {
+    for (const field of Object.keys(ALWAYS_CLEARED)) {
+      assert.ok(
+        poisonedFields(collection).includes(field),
+        `${collection.type} never clears ${field}`
+      );
+    }
+  }
 });
 
 ///////////////////////////////////////////////////////////////////////////////
