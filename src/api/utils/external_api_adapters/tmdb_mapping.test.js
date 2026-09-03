@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { SEARCH_IMAGE_URL_PREFIX, POSTER_IMAGE_URL_PREFIX, MAX_ACTORS, FILM_MAPPING, TV_SHOW_MAPPING, releaseYearString, releaseYear, genreNames, directorNames, notableActors, episodeCount, toSearchResults, toWork } from './tmdb_mapping.js'
+import { SEARCH_IMAGE_URL_PREFIX, POSTER_IMAGE_URL_PREFIX, MAX_ACTORS, FILM_DIRECTOR_JOBS, SHOW_DIRECTOR_JOBS, FILM_MAPPING, TV_SHOW_MAPPING, releaseYearString, releaseYear, genreNames, directorNames, creatorNames, showDirectors, notableActors, episodeCount, toSearchResults, toWork } from './tmdb_mapping.js'
 /** A `/movie/{id}` response, cut down to the fields that are read. */
 const aFilm = {
   title: 'Spirited Away',
@@ -140,22 +140,99 @@ test('the cast TMDB sent is left in the order it arrived in', () => {
 })
 
 ///////////////////////////////////////////////////////////////////////////////
-// The rest of the shared mapping.
+// Who ends up in the Director column, which is #328.
 
 test('a missing genres or crew is an empty list, not a throw', () => {
   assert.deepEqual(genreNames(undefined), [])
   assert.deepEqual(genreNames([{ id: 1 }]), [])
-  assert.deepEqual(directorNames(undefined, ['Director']), [])
+  assert.deepEqual(directorNames(undefined, FILM_DIRECTOR_JOBS), [])
+  assert.deepEqual(creatorNames(undefined), [])
+  assert.deepEqual(creatorNames([{ id: 1 }]), [])
 })
 
 test('a show counts its series directors and a film does not', () => {
-  assert.deepEqual(directorNames(credits.crew, FILM_MAPPING.directorJobs), [
+  assert.deepEqual(directorNames(credits.crew, FILM_DIRECTOR_JOBS), [
     'Hayao Miyazaki',
   ])
-  assert.deepEqual(directorNames(credits.crew, TV_SHOW_MAPPING.directorJobs), [
+  assert.deepEqual(directorNames(credits.crew, SHOW_DIRECTOR_JOBS), [
     'Hayao Miyazaki',
     'Adam Bernstein',
   ])
+})
+
+test('a show whose crew has no director takes its creators instead', () => {
+  // Twin Peaks: 45 crew members on `/tv/1920/credits` and not one of them is
+  // filed as a director, because that endpoint carries the production crew.
+  // Filtering it for `Director`/`Series Director` is what left 456 of 510
+  // shows without one for ever. `created_by` is on the details response the
+  // adapter already fetches, and it has the two names a reader expects.
+  const twinPeaksCrew = [
+    { job: 'Director of Photography', name: 'Ron Garcia' },
+    { job: 'Executive Producer', name: 'David Lynch' },
+    { job: 'Original Music Composer', name: 'Angelo Badalamenti' },
+  ]
+
+  assert.deepEqual(directorNames(twinPeaksCrew, SHOW_DIRECTOR_JOBS), [])
+  assert.deepEqual(
+    showDirectors(
+      { created_by: [{ id: 1, name: 'Mark Frost' }, { id: 2, name: 'David Lynch' }] },
+      { crew: twinPeaksCrew }
+    ),
+    ['Mark Frost', 'David Lynch']
+  )
+})
+
+test('the creators win over a crew director when a show has both', () => {
+  // Fawlty Towers has John Howard Davies in the crew and Connie Booth and
+  // John Cleese in `created_by`. The column is one cell, and the creators are
+  // the show's own answer to "whose show is this".
+  assert.deepEqual(
+    showDirectors(
+      { created_by: [{ name: 'Connie Booth' }, { name: 'John Cleese' }] },
+      { crew: [{ job: 'Director', name: 'John Howard Davies' }] }
+    ),
+    ['Connie Booth', 'John Cleese']
+  )
+})
+
+test('a show with no creators falls back to its crew director', () => {
+  // Planet Earth II and Digimon Adventure each carry a crew director and no
+  // `created_by` at all. Dropping the filter would blank them, which is why
+  // it stays.
+  assert.deepEqual(
+    showDirectors({}, { crew: [{ job: 'Director', name: 'Alastair Fothergill' }] }),
+    ['Alastair Fothergill']
+  )
+  assert.deepEqual(
+    showDirectors(
+      { created_by: [] },
+      { crew: [{ job: 'Series Director', name: 'Hiroyuki Kakudou' }] }
+    ),
+    ['Hiroyuki Kakudou']
+  )
+})
+
+test('a show TMDB knows no director or creator for gets an empty list', () => {
+  assert.deepEqual(showDirectors(undefined, undefined), [])
+  assert.deepEqual(showDirectors({}, { crew: [] }), [])
+})
+
+test('a film reads its director off the crew and ignores created_by', () => {
+  // `/movie/{id}` carries no `created_by` key whatsoever, and
+  // `/movie/{id}/credits` does file the director under `Director` — verified
+  // against Spirited Away, Chungking Express and Fargo. The film half of #328
+  // is that there is nothing to fix.
+  assert.deepEqual(FILM_MAPPING.directors(aFilm, credits), ['Hayao Miyazaki'])
+  assert.deepEqual(
+    FILM_MAPPING.directors(
+      // A `created_by` on a film response would be a TMDB change, not a
+      // reason to prefer it: the crew answer is the right one for a film.
+      { ...aFilm, created_by: [{ name: 'Not A Director' }] },
+      credits
+    ),
+    ['Hayao Miyazaki']
+  )
+  assert.deepEqual(FILM_MAPPING.directors(aFilm, { crew: [] }), [])
 })
 
 test('a film maps to a film work', () => {
@@ -177,6 +254,7 @@ test('a film maps to a film work', () => {
 })
 
 test('a show maps to a tv show work, episodes and all', () => {
+  // `aShow` has no `created_by`, so the directors here come from the fallback.
   const work = toWork(TV_SHOW_MAPPING, '60622', aShow, credits)
 
   assert.deepEqual(work, {
@@ -194,6 +272,17 @@ test('a show maps to a tv show work, episodes and all', () => {
     externalUrls: [{ name: 'tmdb', url: 'https://www.themoviedb.org/tv/60622' }],
     episodes: 20,
   })
+})
+
+test('a show with creators maps them as its directors', () => {
+  const work = toWork(
+    TV_SHOW_MAPPING,
+    '60622',
+    { ...aShow, created_by: [{ id: 1, name: 'Noah Hawley' }] },
+    credits
+  )
+
+  assert.deepEqual(work.directors, ['Noah Hawley'])
 })
 
 test('a film work carries no episodes key at all', () => {
