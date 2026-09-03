@@ -424,10 +424,14 @@ test("a field the work does not have is not listed as something to unset", () =>
   assert.deepEqual(fieldsOf(repair), ["releaseYear"]);
 });
 
-test("a duration of 0 is a value, and is unset like any other copy of one", () => {
-  // CLAUDE.md: a stored duration of 0 renders as `-` exactly as a missing one
-  // does, but it is still a number, and `isEmptyValue` is not what decides
-  // whether the wrong id wrote it — the other document holding it is.
+test("a duration of 0 is not a value, so it is not reported as one being lost", () => {
+  // This test used to assert the opposite, and #318 is why it turned over: a
+  // stored 0 is now empty, and `clearedFields` skips an empty field for the
+  // reason it has always skipped a `[]` — an unset that removes nothing is not
+  // a value this document gives up. Nothing is lost by leaving the key: the
+  // audit reports the duration missing either way, `hasGaps` picks the work up
+  // either way, and the page draws `-` for a 0 exactly as it does for an
+  // absent field. `durationSource` still goes, as ALWAYS_CLEARED says it must.
   const zero = { ...kingdomHearts, duration: 0 };
   const zeroOwner = { ...kingdomHeartsIII, duration: 0 };
   const [repair] = planSharedRefRepair(
@@ -436,10 +440,7 @@ test("a duration of 0 is a value, and is unset like any other copy of one", () =
     [kingdomHeartsCheck]
   ).repairs;
 
-  assert.equal(
-    repair.unset.find((entry) => entry.field === "duration").value,
-    0
-  );
+  assert.equal(fieldsOf(repair).includes("duration"), false);
   assert.ok(fieldsOf(repair).includes("durationSource"));
 });
 

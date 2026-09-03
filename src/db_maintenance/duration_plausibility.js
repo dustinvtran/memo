@@ -57,12 +57,16 @@ const bandFor = (collection) => DURATION_BANDS[collection?.type];
  * it. Reporting it here as damage would be a second, louder opinion about a
  * state two other modules have already agreed to treat as empty.
  *
+ * The zero used to be tested for again here, next to `isEmptyValue`. Since
+ * #318 `isEmptyValue` says it, so the second test is gone rather than left to
+ * be read as a hint that the first one might not cover it.
+ *
  * @type {(collection: any, work: any) => string | undefined}
  */
 const implausibleDuration = (collection, work) => {
   const band = bandFor(collection);
   const duration = work?.duration;
-  if (!band || isEmptyValue(duration) || duration === 0) return undefined;
+  if (!band || isEmptyValue(duration)) return undefined;
   if (typeof duration !== "number" || !Number.isFinite(duration)) {
     return `duration is ${JSON.stringify(duration)}, which is not a number`;
   }
