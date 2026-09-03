@@ -32,7 +32,7 @@ const readForm = (data, type) => ({
   // commonMetadata to null" — 3267 entries carry the field for that reason.
   // The create path never did, because `_create` parses and zod drops it. #171.
   workRef: data?.commonMetadata?.internalRef,
-  overrides: getOverrides(data?.apiData, type),
+  overrides: getOverrides(baselineMetadata(data), type),
   status: valueOf('status'),
   score: parseInt(valueOf('score')) || null,
   completedDate: Date.parse(valueOf('completed-date')) || null,
@@ -151,67 +151,133 @@ const setDate = (id, timestamp) => {
   )
 }
 
-const getOverrides = (api, type) => {
-  const englishTranslatedTitle = getIfDifferent(
-    api?.englishTranslatedTitle,
-    valueOf('title')
-  )
-  const duration =
-    api?.duration === getFloat('duration') * (type === 'games' ? 60 : 1)
-      ? null
-      : getFloat('duration') * (type === 'games' ? 60 : 1)
-  getIfDifferent(api?.duration, getFloat('duration'))
-  return {
-    englishTranslatedTitle,
-    originalTitle:
-      getIfDifferent(api?.originalTitle, valueOf('original-title')) ?? null,
-    releaseYear: getIfDifferent(api?.releaseYear, getIntOrNull('release-year')),
-    duration,
-    imageUrl: getIfDifferent(api?.imageUrl, valueOf('image-url')),
-    genres: getIfDifferent(api?.genres, getCommaSeparated('genres')),
-    ...(type === 'films'
-      ? {
-          directors: getIfDifferent(
-            api?.directors,
-            getCommaSeparated('directors')
-          ),
-          actors: getIfDifferent(api?.actors, getCommaSeparated('actors')),
-        }
-      : type === 'books'
-      ? {
-          authors: getIfDifferent(api?.authors, getCommaSeparated('authors')),
-        }
-      : type === 'games'
-      ? {
-          platforms: getIfDifferent(
-            api?.platforms,
-            getCommaSeparated('platforms')
-          ),
-          studios: getIfDifferent(api?.studios, getCommaSeparated('studios')),
-          publishers: getIfDifferent(
-            api?.publishers,
-            getCommaSeparated('publishers')
-          ),
-        }
-      : /* type === 'tv' */ {
-          directors: getIfDifferent(
-            api?.directors,
-            getCommaSeparated('directors')
-          ),
-          actors: getIfDifferent(api?.actors, getCommaSeparated('actors')),
-          episodes: getIfDifferent(api?.episodes, getInt('episodes')),
-        }),
-  }
+/**
+ * The work's metadata as the API gave it, which the form's values are compared
+ * against so that only a field the user actually changed is stored.
+ *
+ * This used to ask for `data.apiData`, a name nothing in the frontend sets.
+ * Every comparison was therefore against `undefined`, every field of the form
+ * came back different, and every save wrote the whole form back as the user's
+ * overrides: 5998 of the 8538 override keys in production are a copy of the
+ * value they override. #317.
+ *
+ * The two paths that reach `readForm` carry the baseline under different
+ * names, and `writeForm` above already reads both:
+ *
+ * - The edit path (`list.js`) hands over a row whose `commonMetadata` has the
+ *   current overrides folded into it, and keeps the untouched copy beside it
+ *   as `originalData`.
+ * - The add path (`search_results.js`) hands over `{ commonMetadata: work }`
+ *   for the work it has just retrieved. Nothing overrides it yet, so that is
+ *   the untouched metadata.
+ *
+ * Asked with `in` rather than `??`, because `list.js` sets `originalData` on
+ * every row and an entry with no work sets it to `undefined` — while that same
+ * row's `commonMetadata` is built out of the entry's own overrides. Falling
+ * through to it would compare every override against itself and drop the lot,
+ * which for those entries is the only copy of the metadata there is.
+ */
+const baselineMetadata = (data) =>
+  data && 'originalData' in data ? data.originalData : data?.commonMetadata
+
+/**
+ * What the form says that the work does not.
+ *
+ * A field holding the work's own value is not an override and is left out
+ * altogether; a field the user emptied is `null`, which is how an override
+ * says "the work's value is wrong and there is no replacement" — see
+ * `withOverrides` in `api/utils/export_view.js`, one of the two places a
+ * stored override shadows the work.
+ */
+const getOverrides = (work, type) => onlyOverrides(work, {
+  englishTranslatedTitle: valueOf('title'),
+  originalTitle: valueOf('original-title'),
+  releaseYear: getIntOrNull('release-year'),
+  duration: getDuration(type),
+  imageUrl: valueOf('image-url'),
+  genres: getCommaSeparated('genres'),
+  ...(type === 'films'
+    ? {
+        directors: getCommaSeparated('directors'),
+        actors: getCommaSeparated('actors'),
+      }
+    : type === 'books'
+    ? {
+        authors: getCommaSeparated('authors'),
+      }
+    : type === 'games'
+    ? {
+        platforms: getCommaSeparated('platforms'),
+        studios: getCommaSeparated('studios'),
+        publishers: getCommaSeparated('publishers'),
+      }
+    : /* type === 'tv' */ {
+        directors: getCommaSeparated('directors'),
+        actors: getCommaSeparated('actors'),
+        episodes: getInt('episodes'),
+      }),
+})
+
+/**
+ * The duration in the unit the entry stores it in — minutes for everything,
+ * though a game's field is labelled and filled in hours.
+ *
+ * Rounded, because the form got those hours by dividing the stored minutes and
+ * multiplying them back does not always land where it started: 1975 minutes is
+ * shown as 32.916666666666664 hours and returns as 1974.9999999999998, which
+ * would read as an edit to a field nobody touched.
+ */
+const getDuration = (type) => {
+  const value = getFloat('duration')
+  if (value === undefined) return undefined
+  return type === 'games' ? Math.round(value * 60) : value
 }
 
-const getIfDifferent = (apiVal, userVal) => {
-  const areEqual = isArray(apiVal) ? areArraysIdentical : (a, b) => a === b
-  return areEqual(apiVal, userVal) ? null : userVal || null
-}
+/** @type {(work: any, fields: Record<string, any>) => Record<string, any>} */
+const onlyOverrides = (work, fields) =>
+  Object.fromEntries(
+    Object.entries(fields)
+      .map(([key, userVal]) => [key, asOverride(work?.[key], userVal)])
+      .filter(([_key, override]) => override !== undefined)
+  )
+
+/**
+ * One field: `undefined` for "not an override at all", `null` for "the user
+ * cleared a value the work has", and the value itself for a real one.
+ *
+ * Emptying a field the work has nothing in clears nothing, so it is left out
+ * rather than stored as a null — which is what put `[""]` on the `directors`
+ * of 538 TV shows.
+ */
+const asOverride = (workVal, userVal) =>
+  isBlank(userVal)
+    ? isBlank(workVal)
+      ? undefined
+      : null
+    : isSameValue(workVal, userVal)
+    ? undefined
+    : userVal
+
+/** Nothing the user could have meant: no value, an empty box, an empty list. */
+const isBlank = (value) =>
+  value == null ||
+  value === '' ||
+  (typeof value === 'number' && Number.isNaN(value)) ||
+  (isArray(value) && withoutBlanks(value).length === 0)
+
+const isSameValue = (workVal, userVal) =>
+  isArray(workVal) || isArray(userVal)
+    ? areArraysIdentical(asList(workVal), asList(userVal))
+    : workVal === userVal
+
+/** A value the form gave as a list, compared as one; anything else as empty. */
+const asList = (value) => (isArray(value) ? value : [])
+
+const withoutBlanks = (values) => values.filter((e) => e !== '')
 
 const areArraysIdentical = (arr1, arr2) => {
-  const arr1NoEmpty = arr1.filter((e) => e !== '')
-  const arr2NoEmpty = arr2.filter((e) => e !== '')
+  const arr1NoEmpty = withoutBlanks(arr1)
+  const arr2NoEmpty = withoutBlanks(arr2)
   return (
     arr1NoEmpty.length === arr2NoEmpty.length &&
     arr1NoEmpty.every((el, i) => arr2NoEmpty[i] === el)
