@@ -14,9 +14,15 @@
  * moment it writes. A saved answer would be a second source of truth about
  * which side of a collision is misfiled, and the wrong half of it would be a
  * write to a work no API ever accused.
+ *
+ * `verifyTitleYearGroups` is its opposite number for #319 — one question per
+ * id in a title-and-year group rather than one question about a shared id —
+ * and is here so that both sit next to the rate limit and the adapter loading
+ * they share rather than next to each other's copy of them.
  */
 const { sleep } = require("./work_collections");
 const { resolveIdentity, describeWork } = require("./shared_ref_check");
+const { resolveTitleYear } = require("./title_year_check");
 
 /**
  * Lazily required, so a films-only run never loads the other three. That used
@@ -124,8 +130,57 @@ const verifyIdentities = async (collection, groups) => {
 const describeError = (error) =>
   typeof error === "string" ? error : (error?.message ?? JSON.stringify(error));
 
+/**
+ * Asks the adapter what each of a title-and-year group's ids names, so that
+ * "two ids, one work" and "two ids, two works that share a name" stop being
+ * the same finding. #319.
+ *
+ * The other half of `verifyIdentities`, and deliberately shaped like it: that
+ * one asks one question about a group because the group has one id, this one
+ * asks a question per *distinct* id in the group because that is what the
+ * group is made of. `distinctIdentityRefs` has already collapsed a trio where
+ * two documents agree, so this spends one call per thing actually worth
+ * asking, and none at all on a document carrying no id — nothing can be
+ * retrieved for it, which is the finding rather than a gap in it.
+ *
+ * The same pause between calls, out of the same descriptor, and a failed
+ * retrieve recorded with its error rather than dropped — `resolveTitleYear`
+ * reads an unanswered id as "not compared" and not as agreement.
+ *
+ * @type {(collection: any, groups: any[]) => Promise<object[]>}
+ */
+const verifyTitleYearGroups = async (collection, groups) => {
+  if (groups.length === 0) return [];
+
+  const adapter = loadAdapter(collection);
+  if (!adapter) return [];
+
+  const delayMs = collection.defaultDelayMs;
+  const checks = [];
+  let asked = 0;
+
+  for (const group of groups) {
+    const answers = [];
+    for (const { apiRef, ref } of group.refs) {
+      if (asked > 0) await sleep(delayMs);
+      asked += 1;
+
+      const result = await adapter.retrieve(ref);
+      answers.push(
+        result.isErr()
+          ? { apiRef, ref, error: describeError(result.error) }
+          : { apiRef, ref, fresh: result.value }
+      );
+    }
+    checks.push(resolveTitleYear(group, answers));
+  }
+
+  return checks;
+};
+
 module.exports = {
   loadAdapter,
   verifyIdentities,
+  verifyTitleYearGroups,
   describeError,
 };
