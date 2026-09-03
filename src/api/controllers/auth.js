@@ -1,7 +1,19 @@
 // file mostly copypasted from:
 // https://github.com/jamesqquick/netlify-auth0-rbac-integration-demo/blob/master/functions/AuthUtils.js
 import { SignJWT, jwtVerify } from 'jose'
-import cookie from 'cookie'
+/* `cookie` 2 is ESM-only and has no default export, so `import cookie from
+   'cookie'` is a SyntaxError at load — the #162 failure again, 502ing every
+   route rather than this one. Named imports are the only way in.
+
+   It also renamed the whole surface. `serialize` is `stringifySetCookie` and
+   `parse` is `parseCookie`, and the two names it did *not* keep are the trap:
+   `stringifyCookie` builds a `Cookie` request header out of a whole object and
+   silently has nowhere to put `httpOnly`, `secure`, `sameSite` or `maxAge`. It
+   is a plausible-looking replacement for `serialize` that answers a string,
+   sets a cookie, and drops every attribute this file sets — so every cookie
+   below is a `Set-Cookie` and every one of them uses `stringifySetCookie`,
+   which takes the name and value as fields of the same object as the rest. */
+import { parseCookie, stringifySetCookie } from 'cookie'
 import * as errors from '../utils/errors.js'
 import * as openidClient from '../utils/openid_client.js'
 import * as responses from '../utils/responses.js'
@@ -170,7 +182,9 @@ const generateNetlifyJWT = (tokenData) =>
 
 const generateAuth0LoginCookie = (nonce, encodedStateStr) => {
   const cookieData = { nonce, state: encodedStateStr }
-  return cookie.serialize(AUTH0_LOGIN_COOKIE_NAME, JSON.stringify(cookieData), {
+  return stringifySetCookie({
+    name: AUTH0_LOGIN_COOKIE_NAME,
+    value: JSON.stringify(cookieData),
     secure: !isRunningLocally,
     path: "/",
     maxAge: LOGIN_COOKIE_MAX_AGE,
@@ -237,7 +251,7 @@ const toSafeRoute = (route) => {
    `toSafeRoute` before anything redirects to it. */
 const readLoginCookie = (cookieHeader) => {
   if (typeof cookieHeader !== "string") return undefined
-  const value = cookie.parse(cookieHeader)[AUTH0_LOGIN_COOKIE_NAME]
+  const value = parseCookie(cookieHeader)[AUTH0_LOGIN_COOKIE_NAME]
   if (typeof value !== "string") return undefined
   try {
     const { nonce, state } = JSON.parse(value)
@@ -255,10 +269,15 @@ const readLoginCookie = (cookieHeader) => {
    is handed to a number and the epoch is 0 — `maxAge` is a count of seconds,
    not a date, so any other Date would have been read as its epoch milliseconds
    and set an expiry tens of thousands of years out instead of clearing
-   anything. `cookie` 1.x rejects a Date outright, so the coercion was also the
-   thing standing between here and the next upgrade. */
+   anything. `cookie` 1.x rejected a Date outright and 2.x still does — it
+   wants an integer count of seconds and throws at anything else — so the
+   coercion was also the thing standing between here and both upgrades. A
+   `maxAge` of 0 is not the same as an absent one: it is written out, which is
+   what clears the cookie. */
 const generateAuth0LoginResetCookie = () => {
-  return cookie.serialize(AUTH0_LOGIN_COOKIE_NAME, "", {
+  return stringifySetCookie({
+    name: AUTH0_LOGIN_COOKIE_NAME,
+    value: "",
     secure: !isRunningLocally,
     httpOnly: true,
     path: "/",
@@ -267,7 +286,9 @@ const generateAuth0LoginResetCookie = () => {
 }
 
 const generateLogoutCookie = () => {
-  return cookie.serialize(NETLIFY_COOKIE_NAME, "", {
+  return stringifySetCookie({
+    name: NETLIFY_COOKIE_NAME,
+    value: "",
     secure: !isRunningLocally,
     path: "/",
     maxAge: 0,
@@ -276,7 +297,9 @@ const generateLogoutCookie = () => {
 }
 
 const generateNetlifyCookie = (netlifyToken) =>
-  cookie.serialize(NETLIFY_COOKIE_NAME, netlifyToken, {
+  stringifySetCookie({
+    name: NETLIFY_COOKIE_NAME,
+    value: netlifyToken,
     secure: !isRunningLocally,
     path: "/",
     maxAge: NETLIFY_JWT_EXPIRATION_SECONDS,
@@ -311,7 +334,7 @@ const getNetlifyJWTFromEvent = (event) => {
   }
   const cookieHeader = event.headers?.cookie
   return cookieHeader
-    ? cookie.parse(cookieHeader)[NETLIFY_COOKIE_NAME]
+    ? parseCookie(cookieHeader)[NETLIFY_COOKIE_NAME]
     : undefined
 }
 

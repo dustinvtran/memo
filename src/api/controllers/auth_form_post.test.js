@@ -44,7 +44,9 @@ const options = {
    `toSafeRoute` compares against. Netlify sets it in every context. */
 process.env.URL = 'https://nil.moe'
 
-const cookie = dependenciesInstalled ? await import('cookie') : undefined
+// The `Cookie` request header half of `cookie` 2 — a browser sending one back,
+// rather than a `Set-Cookie` going out. See the note in `auth.js`.
+const { stringifyCookie } = dependenciesInstalled ? await import('cookie') : {}
 const { asFormPostResponseUrl, generateEncodedStateString, readLoginCookie } =
   dependenciesInstalled ? await import('./auth.js') : {}
 
@@ -105,13 +107,12 @@ test('the state carries the route back, and defaults to the root', options, () =
 
 /** The cookie a browser sends back mid-login, for a login begun on `referer`. */
 const loginBegunOn = (referer) =>
-  cookie.serialize(
-    'auth0_login_cookie',
-    JSON.stringify({
+  stringifyCookie({
+    auth0_login_cookie: JSON.stringify({
       nonce: 'a-nonce',
       state: generateEncodedStateString(referer, 'entropy'),
-    })
-  )
+    }),
+  })
 
 /** Where the 302 at the end of that login would send the browser. */
 const landsOn = (referer) => readLoginCookie(loginBegunOn(referer)).route
