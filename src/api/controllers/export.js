@@ -19,17 +19,73 @@ import * as errors from '../utils/errors.js'
 import * as db from '../utils/db/index.js'
 import { getSegment, findIdOfName, toEntryCollection, toReviewCollection } from './utils.js'
 import { safeJSONStringify, warn } from '../utils/general.js'
-import { LIST_TYPES, toExportList, toExportDocument, toMarkdown } from '../utils/export_view.js'
+import { LIST_TYPES, toExportUrls, toExportList, toExportDocument, toExportIndex, toMarkdown, toIndexMarkdown } from '../utils/export_view.js'
 /**
  * A Netlify function may return 6 MB, and going over is a 502 with nothing in
  * it to explain itself. All four of one heavy user's lists already come to
  * north of 4 MB, so the ceiling is real; this leaves headroom for the headers
  * and for a list that grew since the last time anyone checked.
+ *
+ * #334 asked whether this should come down, so that a body too big to send in
+ * a reasonable time fails fast and instructively rather than crawling towards
+ * the 10-second function timeout. Measured against production, it should not:
+ * `nil`'s largest single list is 2.94 MB, and anything low enough to stop the
+ * 4.76 MB all-in-one response would `413` a per-type url — which is the url
+ * the `413` tells the caller to fetch instead. The advice would be a loop.
+ *
+ * What #334 changed instead is which response the advertised url gives: the
+ * one that recomputed all four lists is now an index, so the body this
+ * ceiling governs is only ever one a caller asked for by name.
  */
 const MAX_BODY_BYTES = 5 * 1024 * 1024
 
 /**
- * GET /api/export/:username           — every list
+ * How long a copy of a list is good for.
+ *
+ * Every request used to recompute the export from MongoDB — up to eight
+ * queries, joins and all — and Netlify sends a function's response
+ * `Cache-Control: no-cache` unless the function says otherwise, so the edge
+ * and the durable cache both forwarded every hit (`Cache-Status: "Netlify
+ * Durable"; fwd=bypass`). These are public, read-only lists that change a few
+ * times a day at most, and the document carries the `updatedDate` of every
+ * entry in it, so a reader can see for itself how old the numbers are.
+ *
+ * Invalidation is the clock and nothing else. Netlify has a cache-tag purge
+ * API, and wiring the save path to it would mean an access token in the
+ * function environment and a new failure mode on every write in exchange for
+ * five minutes of freshness on a public list. The five minutes is the answer.
+ *
+ * `stale-while-revalidate` is the half that actually fixes #334. Past the five
+ * minutes the edge serves the stored copy immediately and refetches in the
+ * background, so the slow recompute stops being something a caller waits on —
+ * a url fetched at least once a day never goes cold again, and going cold is
+ * what put a 9.5-second response against a 10-second timeout.
+ */
+const CACHE_SECONDS = 5 * 60
+const STALE_SECONDS = 24 * 60 * 60
+
+/**
+ * `Netlify-CDN-Cache-Control` is read by Netlify's edge alone and takes
+ * precedence there over `Cache-Control`, which is what leaves the latter
+ * meaning the browser and nothing else. `durable` opts the response into the
+ * cache shared between edge nodes rather than the one node that invoked the
+ * function, which is the difference between one region being warm and all of
+ * them being.
+ *
+ * Nothing needs to declare a `Netlify-Vary`: the default for a function is
+ * already `query`, so `?limit=`, `?format=` and the bare url are each cached
+ * as the different documents they are.
+ * https://docs.netlify.com/build/caching/caching-overview/
+ */
+const CACHE_HEADERS = {
+  'cache-control': `public, max-age=${CACHE_SECONDS}`,
+  'netlify-cdn-cache-control':
+    `public, durable, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=${STALE_SECONDS}`,
+}
+
+/**
+ * GET /api/export/:username           — an index of the lists
+ * GET /api/export/:username?limit=N   — every list, N entries of each
  * GET /api/export/:type/:username     — one list
  *
  * `?format=md` for Markdown; JSON otherwise. `?limit=N` keeps the N
@@ -37,7 +93,8 @@ const MAX_BODY_BYTES = 5 * 1024 * 1024
  * @type {(event: Event) => Promise<Response>}
  */
 const exportUserLists = async (event) => {
-  const [types, username] = getSegment(1, event)
+  const namesType = Boolean(getSegment(1, event))
+  const [types, username] = namesType
     ? [[getSegment(0, event)], getSegment(1, event)]
     : [LIST_TYPES, getSegment(0, event)]
 
@@ -64,24 +121,60 @@ const exportUserLists = async (event) => {
   }
 
   const limit = toLimit(event)
+  const siteUrl = toSiteUrl(event)
+  const context = { username, siteUrl }
+
+  // The url the README, the `<noscript>` block and `robots.txt` all advertise
+  // is this one, and what it used to answer was 4.76 MB assembled out of eight
+  // queries in up to 9.5 seconds — against a 10-second function timeout, which
+  // a caller sees as a dropped connection rather than as a status code. That is
+  // #334. An index is what that url is actually for: it says how big each list
+  // is and where it lives, in a few hundred bytes, so a reader chooses before
+  // it downloads rather than after a failure. Asking for entries here is still
+  // `?limit=N`, which the index names.
+  if (!namesType && limit === undefined) {
+    const counts = await findListCounts(collections.value, types, userId)
+    const index = toExportIndex({ username, counts, siteUrl })
+
+    return wantsMarkdown(event)
+      ? asText(MARKDOWN_CONTENT_TYPE, toIndexMarkdown(index), context)
+      : asJson(index, context)
+  }
+
   const lists = await Promise.all(
     collections.value.map(async (collection, index) =>
       toExportList(types[index], await findListEntries(collection, userId, limit))
     )
   )
 
-  const siteUrl = toSiteUrl(event)
   const document = toExportDocument({ username, lists, siteUrl })
 
   return wantsMarkdown(event)
-    ? withinBudget('text/markdown; charset=utf-8', toMarkdown(document, siteUrl), username)
-    : asJson(document, username)
+    ? withinBudget(MARKDOWN_CONTENT_TYPE, toMarkdown(document, siteUrl), context)
+    : asJson(document, context)
 }
 
 export {
   exportUserLists,
 }
 ///////////////////////////////////////////////////////////////////////////////
+
+const MARKDOWN_CONTENT_TYPE = 'text/markdown; charset=utf-8'
+
+/**
+ * How many entries each list holds, keyed by the type the index names them
+ * by. Counted by the database rather than assembled — this is the reason the
+ * index is cheap, and the reason it is worth being a different document
+ * rather than a truncation of the other one.
+ * @type {(collections: ValidCollection[], types: string[], userId: string) => Promise<Object.<string, number>>}
+ */
+const findListCounts = async (collections, types, userId) => {
+  const counts = await Promise.all(
+    collections.map((collection) => db.countUserEntries_(collection, userId).unwrapOr(0))
+  )
+
+  return Object.fromEntries(types.map((type, index) => [type, counts[index]]))
+}
 
 /**
  * The entries of one list with their works and their notes. Two queries per
@@ -158,11 +251,12 @@ const toLimit = (event) =>
  *
  * Not indented: it costs a quarter of the response and every reader of this,
  * browsers included, formats JSON itself.
- * @type {(body: object, username: string) => Response}
+ * @typedef {{ username: string, siteUrl?: string }} Context
+ * @type {(body: object, context: Context) => Response}
  */
-const asJson = (body, username) =>
+const asJson = (body, context) =>
   safeJSONStringify(body).match(
-    (text) => withinBudget(responses.JSON_CONTENT_TYPE, text, username),
+    (text) => withinBudget(responses.JSON_CONTENT_TYPE, text, context),
     (error) => responses.fromError(errors.internal(error))
   )
 
@@ -170,15 +264,20 @@ const asJson = (body, username) =>
  * A body over the ceiling never reaches the caller, so say what happened and
  * what to ask for instead. Both suggestions are smaller by construction: one
  * list is a quarter of four, and a limit is whatever the caller can take.
- * @type {(contentType: string, body: string, username: string) => Response}
+ *
+ * The same urls reach a caller that has not failed yet, in the `Link` header
+ * below and in the index document — #334, whose complaint was that the only
+ * place this endpoint ever mentioned its own knobs was a response you had to
+ * earn.
+ * @type {(contentType: string, body: string, context: Context) => Response}
  */
-const withinBudget = (contentType, body, username) =>
+const withinBudget = (contentType, body, { username, siteUrl }) =>
   Buffer.byteLength(body) <= MAX_BODY_BYTES
-    ? asText(contentType, body)
+    ? asText(contentType, body, { username, siteUrl })
     : responses.payloadTooLarge({
         error: 'These lists are too big to send in one response.',
         tryInstead: [
-          ...LIST_TYPES.map((type) => `/api/export/${type}/${username}`),
+          ...toExportUrls(username).lists.map(({ url }) => url),
           `/api/export/${username}?limit=200`,
         ],
       })
@@ -189,9 +288,9 @@ const withinBudget = (contentType, body, username) =>
  * constant rather than as its own list: this route is the reason `nosniff` is
  * in that list at all — two content types off one path, both of them users'
  * own note text, and the CORS header below on the same response.
- * @type {(contentType: string, body: string) => Response}
+ * @type {(contentType: string, body: string, context: Context) => Response}
  */
-const asText = (contentType, body) => ({
+const asText = (contentType, body, { username, siteUrl }) => ({
   statusCode: 200,
   headers: {
     'content-type': contentType,
@@ -199,6 +298,32 @@ const asText = (contentType, body) => ({
     // Public data, and reading it from a page or a notebook shouldn't need a
     // proxy.
     'access-control-allow-origin': '*',
+    ...CACHE_HEADERS,
+    link: toLinkHeader(username, siteUrl),
   },
   body,
 })
+
+/**
+ * Where else to look, on every response rather than only on the one that
+ * failed. A reader that has just downloaded a megabyte of games learns from
+ * the headers alone that there are three more lists and an index, without
+ * parsing a body or fetching anything — a `curl -I` is enough, and so is a
+ * `HEAD` from a tool whose response budget the body would have blown.
+ *
+ * Every response carries the same set, including the index and including a
+ * list linking to itself. A self link is ordinary, and one header built one
+ * way is worth more than a rule about which url gets which subset.
+ *
+ * `index` and `section` are both IANA-registered relations and mean here what
+ * they say: the index document, and the four lists it indexes.
+ * @type {(username: string, siteUrl?: string) => string}
+ */
+const toLinkHeader = (username, siteUrl) => {
+  const urls = toExportUrls(username, siteUrl)
+
+  return [
+    `<${urls.index}>; rel="index"`,
+    ...urls.lists.map(({ url, title }) => `<${url}>; rel="section"; title="${title}"`),
+  ].join(', ')
+}

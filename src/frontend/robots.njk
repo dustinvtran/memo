@@ -16,6 +16,13 @@ eleventyExcludeFromCollections: true
 # document and an empty <div id="site">, so there is nothing in the HTML to
 # index. The lists are served as data at /api/export, which is public by
 # design and is what a reader that is not a browser actually wants.
+#
+# Start at /api/export/<username>. It is an index — how many entries each list
+# holds, and the url of each — and it is a few hundred bytes. The lists
+# themselves are a megabyte and up each, so fetching one is a decision worth
+# making from the index rather than by trying it. Add ?format=md for Markdown
+# instead of JSON, or ?limit=200 to /api/export/<username> for a bounded slice
+# of every list at once.
 
 User-agent: *
 

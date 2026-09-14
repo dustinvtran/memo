@@ -114,6 +114,11 @@ const collection = (name) => ({
   }),
   findOne: async (filter) =>
     collectionOf(name).find((doc) => matches(doc, filter)) ?? null,
+  // What the index document is built out of — #334. The real one is
+  // `countDocuments({ userId })` against the entry indexes, which is why the
+  // index answers without assembling a list.
+  countDocuments: async (filter) =>
+    collectionOf(name).filter((doc) => matches(doc, filter)).length,
 })
 
 class MongoClient {
@@ -275,6 +280,28 @@ const SECURITY_HEADERS = {
   'strict-transport-security': 'max-age=31536000; includeSubDomains',
 }
 
+/**
+ * #334's caching, written out here rather than spread from the controller's
+ * constants for the reason `TYPES_SENTENCE` is. The numbers are the claim —
+ * five minutes fresh, a day of serving a stored copy while it refreshes — and
+ * a test that read them out of the file that sets them would agree with any
+ * number at all, including the `no-cache` this replaced.
+ */
+const CACHE_HEADERS = {
+  'cache-control': 'public, max-age=300',
+  'netlify-cdn-cache-control':
+    'public, durable, s-maxage=300, stale-while-revalidate=86400',
+}
+
+/** The same urls the index document carries, off a response that has a body. */
+const LINK_HEADER = [
+  '<https://nil.moe/api/export/reader>; rel="index"',
+  '<https://nil.moe/api/export/films/reader>; rel="section"; title="Films"',
+  '<https://nil.moe/api/export/tv/reader>; rel="section"; title="TV Shows"',
+  '<https://nil.moe/api/export/games/reader>; rel="section"; title="Video Games"',
+  '<https://nil.moe/api/export/books/reader>; rel="section"; title="Literature"',
+].join(', ')
+
 test('the JSON export carries the security headers, and still the CORS one', options, async () => {
   seed()
 
@@ -285,6 +312,8 @@ test('the JSON export carries the security headers, and still the CORS one', opt
     'content-type': 'application/json; charset=utf-8',
     ...SECURITY_HEADERS,
     'access-control-allow-origin': '*',
+    ...CACHE_HEADERS,
+    link: LINK_HEADER,
   })
 })
 
@@ -302,6 +331,8 @@ test('the Markdown export carries the same set', options, async () => {
     'content-type': 'text/markdown; charset=utf-8',
     ...SECURITY_HEADERS,
     'access-control-allow-origin': '*',
+    ...CACHE_HEADERS,
+    link: LINK_HEADER,
   })
 })
 
@@ -317,4 +348,102 @@ test('a 404 off this route carries them too', options, async () => {
     'content-type': 'application/json; charset=utf-8',
     ...SECURITY_HEADERS,
   })
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// #334. `/api/export/:username` used to answer with all four lists in full —
+// `nil`'s are 4.76 MB and took up to 9.5 seconds against a 10-second function
+// timeout, which a caller sees as a dropped connection rather than a status.
+// It answers with an index now, and `?limit=` is how you ask for entries.
+
+test('the all-lists url answers an index rather than four lists', options, async () => {
+  seed()
+
+  const { statusCode, body } = await getExport('/reader')
+
+  assert.equal(statusCode, 200)
+  assert.equal(body.document, 'index')
+  assert.deepEqual(
+    body.lists.map(({ type, count, url }) => [type, count, url]),
+    [
+      ['films', 1, 'https://nil.moe/api/export/films/reader'],
+      ['tv', 0, 'https://nil.moe/api/export/tv/reader'],
+      ['games', 0, 'https://nil.moe/api/export/games/reader'],
+      ['books', 0, 'https://nil.moe/api/export/books/reader'],
+    ]
+  )
+  assert.equal(body.lists.every((list) => !('entries' in list)), true)
+})
+
+test('the count in the index is the count of the list the url it names serves', options, async () => {
+  // The index is counted by the database and the list is assembled, so these
+  // are two different code paths reporting the same number. An index whose
+  // counts came from somewhere else would be worse than no index.
+  seed()
+  store.gameEntries = [
+    { _id: 'g1', userId: 'u1', workRef: 'gw1', status: 'Completed', updatedDate: 2 },
+    { _id: 'g2', userId: 'u1', workRef: 'gw2', status: 'Planned', updatedDate: 1 },
+    // Somebody else's, which a count filtered on the wrong thing would include.
+    { _id: 'g3', userId: 'u2', workRef: 'gw1', status: 'Completed', updatedDate: 3 },
+  ]
+  store.games = [{ _id: 'gw1', entryType: 'Game', englishTranslatedTitle: 'A Game' }]
+
+  const index = await getExport('/reader')
+  const list = await getExport('/games/reader')
+
+  const counted = index.body.lists.find(({ type }) => type === 'games').count
+  assert.equal(counted, 2)
+  assert.equal(list.body.lists[0].count, 2)
+})
+
+test('a limit is still how you ask for every list at once', options, async () => {
+  // The escape hatch, and the one the index's own note names. Without this the
+  // change would have removed the all-in-one export rather than moved it.
+  seed()
+
+  const { statusCode, body } = await getExport('/reader', { limit: '200' })
+
+  assert.equal(statusCode, 200)
+  assert.ok(!('document' in body))
+  assert.equal(body.lists.length, 4)
+  assert.equal(body.lists[0].entries[0].title, 'A Film')
+})
+
+test('the index says how to ask for the entries it is not carrying', options, async () => {
+  // #334's other half: `?limit=` and the per-type urls were named only in the
+  // 413 body, which a caller reads once it has already failed.
+  seed()
+
+  const { body, headers } = await getExport('/reader')
+
+  assert.match(body.note, /https:\/\/nil\.moe\/api\/export\/reader\?limit=N/)
+  assert.equal(headers.link, LINK_HEADER)
+})
+
+test('the index is cached like any other export, and as Markdown too', options, async () => {
+  seed()
+
+  const json = await getExport('/reader')
+  const markdown = await getExport('/reader', { format: 'md' })
+
+  assert.equal(json.headers['cache-control'], CACHE_HEADERS['cache-control'])
+  assert.equal(
+    json.headers['netlify-cdn-cache-control'],
+    CACHE_HEADERS['netlify-cdn-cache-control']
+  )
+  assert.equal(markdown.headers['content-type'], 'text/markdown; charset=utf-8')
+  assert.match(markdown.body, /^- Films \(1\) — https:\/\/nil\.moe\/api\/export\/films\/reader$/m)
+})
+
+test('a 404 is not cached, whatever the lists are', options, async () => {
+  // A name nobody has taken is not a document to keep for a day, and these
+  // come off `responses.js` rather than `asText` — which is the reason, and
+  // worth a test so that moving the headers into `responses.js` would fail
+  // here rather than silently caching every typo.
+  seed()
+
+  const { headers } = await getExport('/nobody-has-this-name')
+
+  assert.ok(!('cache-control' in headers))
+  assert.ok(!('netlify-cdn-cache-control' in headers))
 })

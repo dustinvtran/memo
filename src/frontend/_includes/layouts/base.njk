@@ -218,14 +218,24 @@
         fetch instead:
       </p>
       <ul>
-        <li><code>/api/export/&lt;type&gt;/&lt;username&gt;</code> — one list, where <code>&lt;type&gt;</code> is <code>films</code>, <code>tv</code>, <code>games</code> or <code>books</code></li>
-        <li><code>/api/export/&lt;username&gt;</code> — all four at once, if they fit in one response</li>
+        <li><code>/api/export/&lt;username&gt;</code> — start here: an index saying how many entries each list holds and where it is</li>
+        <li><code>/api/export/&lt;type&gt;/&lt;username&gt;</code> — one list in full, where <code>&lt;type&gt;</code> is <code>films</code>, <code>tv</code>, <code>games</code> or <code>books</code></li>
         <li>append <code>?format=md</code> for Markdown instead of JSON, or <code>?limit=200</code> for the most recently updated entries only</li>
       </ul>
       <p>
-        Both include every entry with its metadata, its score and its notes.
-        For example, <a href="/api/export/films/nil">/api/export/films/nil</a>
-        is what <a href="/films/nil">/films/nil</a> draws.
+        A list includes every entry with its metadata, its score and its
+        notes. For example,
+        <a href="/api/export/films/nil">/api/export/films/nil</a> is what
+        <a href="/films/nil">/films/nil</a> draws.
+      </p>
+      <p>
+        The lists are large — a megabyte and up each, and over four megabytes
+        for all four of them at once, which is more than many tools will
+        accept. That is what the index is for: fetch it first, then fetch the
+        one list you want, or
+        <code>/api/export/&lt;username&gt;?limit=200</code> for a bounded
+        slice of every list. Every response carries a <code>Link</code> header
+        naming the same urls.
       </p>
     </noscript>
     <div id="site"></div>
