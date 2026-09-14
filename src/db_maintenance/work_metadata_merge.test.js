@@ -10,6 +10,7 @@ const {
   corruptFieldsOf,
   isMissingPlaytimeLink,
   completeness,
+  fillOnlyFields,
 } = require("./work_metadata_merge");
 
 const games = COLLECTIONS.find((c) => c.type === "games");
@@ -441,4 +442,154 @@ test("a work whose only ref is a placeholder cannot be refreshed", () => {
   const work = { _id: "x", entryType: "Game", apiRefs: ["hltb__N/A"] };
 
   assert.equal(findApiRef(work.apiRefs, games.retrievePrefix), undefined);
+});
+
+test("a refresh corrects a placeholder release year, which is the whole of #333", () => {
+  // A game added while IGDB still said TBD keeps that year for ever under
+  // `--missing-only`, because a wrong year is not a missing one.
+  const tbd = { ...staleGame, releaseYear: 9999, durationSource: "igdb" };
+
+  assert.equal(mergeWork(games, tbd, freshGame, { missingOnly: true }).updates
+    .releaseYear, undefined);
+  assert.equal(mergeWork(games, tbd, freshGame).updates.releaseYear, 2017);
+});
+
+test("a re-estimated playtime is refreshed by the source that wrote it", () => {
+  // The other half of #333, and the rule that keeps it safe: IGDB may move a
+  // number IGDB put there, and may not move HowLongToBeat's.
+  const fromIgdb = { ...staleGame, duration: 900, durationSource: "igdb" };
+  const { updates } = mergeWork(games, fromIgdb, freshGame);
+
+  assert.equal(updates.duration, 750);
+  assert.equal(updates.durationSource, "igdb");
+
+  // `staleGame` carries no durationSource, so its playtime came from
+  // HowLongToBeat and stays where it is even in a full refresh.
+  const { updates: kept, notes } = mergeWork(games, staleGame, freshGame);
+  assert.equal("duration" in kept, false);
+  assert.match(notes[0], /kept the stored duration 1500/);
+});
+
+test("a refresh never writes over a stored title", () => {
+  // The guard #333 needed and `--missing-only` never did. `comparableTitle`
+  // forgives a leading article since #327, so this passes `titleConflict` —
+  // and if the ref is one of the 53 that belong to another work, the stored
+  // title is the only evidence left that it does. A refresh that rewrote it
+  // would leave the pair indistinguishable. #290.
+  const truman = {
+    _id: "t",
+    entryType: "Film",
+    englishTranslatedTitle: "Truman Show",
+    originalTitle: "Truman Show",
+    releaseYear: 1997,
+    apiRefs: ["tmdb__37165"],
+  };
+  const { updates, refused } = mergeWork(films, truman, {
+    entryType: "Film",
+    englishTranslatedTitle: "The Truman Show",
+    originalTitle: "The Truman Show",
+    releaseYear: 1998,
+  });
+
+  assert.equal(refused, undefined);
+  assert.equal(updates.releaseYear, 1998);
+  assert.equal("englishTranslatedTitle" in updates, false);
+  assert.equal("originalTitle" in updates, false);
+});
+
+test("a missing title is still filled in by a refresh", () => {
+  // Filling is not replacing. A work with no name is the ordinary case the
+  // backfill exists for, and `titlesAgree` answers "don't know" for it.
+  const { updates } = mergeWork(
+    games,
+    { ...staleGame, englishTranslatedTitle: "", originalTitle: undefined },
+    { ...freshGame, originalTitle: "Hollow Knight" }
+  );
+
+  assert.equal(updates.englishTranslatedTitle, "Hollow Knight");
+  assert.equal(updates.originalTitle, "Hollow Knight");
+});
+
+test("a book's edition year never replaces the work's, and page counts too", () => {
+  // Measured, not assumed. Of the seven release-year changes a 60-book dry
+  // run proposed on 2026-09-14, six replaced a stored year and all six moved a
+  // public-domain work forward to a modern reprint; not one was a correction.
+  // An ISBN names an edition, so Google Books is answering a different
+  // question from the one the column asks. #333.
+  const crusoe = {
+    _id: "rc",
+    entryType: "Book",
+    englishTranslatedTitle: "Robinson Crusoe",
+    releaseYear: 1719,
+    duration: 371,
+    apiRefs: ["ISBN__9782081422049"],
+  };
+  const flammarion = {
+    entryType: "Book",
+    englishTranslatedTitle: "Robinson Crusoe",
+    releaseYear: 2019,
+    duration: 412,
+    imageUrl: "https://books.google.com/reprint-cover",
+    publishers: ["Flammarion"],
+  };
+
+  const { updates } = mergeWork(books, crusoe, flammarion);
+
+  assert.equal("releaseYear" in updates, false);
+  assert.equal("duration" in updates, false);
+  // The rest of the edition is still worth having: a cover and a link that
+  // resolve today beat ones that resolved five years ago.
+  assert.equal(updates.imageUrl, "https://books.google.com/reprint-cover");
+  assert.deepEqual(updates.publishers, ["Flammarion"]);
+});
+
+test("a book still gains a year and a page count it does not have", () => {
+  // Fill-only is not read-only. Filling is what `--missing-only` has always
+  // done for these two and what the audit counts as a gap.
+  const { updates } = mergeWork(
+    books,
+    { _id: "bf", entryType: "Book", englishTranslatedTitle: "Autobiography" },
+    { entryType: "Book", englishTranslatedTitle: "Autobiography", releaseYear: 1791, duration: 168 }
+  );
+
+  assert.equal(updates.releaseYear, 1791);
+  assert.equal(updates.duration, 168);
+});
+
+test("a film's runtime and a game's year are refreshed, not fill-only", () => {
+  // The list is per type on purpose: a TMDB movie id is one cut of one film
+  // and an IGDB game id is one game, so neither has the edition problem and
+  // both are what #333 asks to be corrected.
+  assert.deepEqual(fillOnlyFields(films), [
+    "englishTranslatedTitle",
+    "originalTitle",
+  ]);
+  assert.deepEqual(fillOnlyFields(books), [
+    "englishTranslatedTitle",
+    "originalTitle",
+    "releaseYear",
+    "duration",
+  ]);
+});
+
+test("a book's series suffix survives a refresh", () => {
+  // 177 of the 696 books carry a suffix a bookseller added that the ISBN names
+  // the book without. `comparableTitle` drops a trailing parenthetical, so the
+  // merge is allowed — and the whole point of allowing it is to fill the
+  // book's gaps, not to rename it.
+  const hatchet = {
+    _id: "h",
+    entryType: "Book",
+    englishTranslatedTitle: "Hatchet (Brian's Saga, #1)",
+    apiRefs: ["ISBN__9781416936473"],
+  };
+  const { updates } = mergeWork(books, hatchet, {
+    entryType: "Book",
+    englishTranslatedTitle: "Hatchet",
+    releaseYear: 1987,
+    authors: ["Gary Paulsen"],
+  });
+
+  assert.equal(updates.releaseYear, 1987);
+  assert.equal("englishTranslatedTitle" in updates, false);
 });

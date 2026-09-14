@@ -277,6 +277,16 @@ Tests that do need the dependencies skip themselves when they aren't there.
   `episodes` count and none of them has a meaningful zero. A field where zero
   is a real answer would need this decided again, in `isEmptyValue`, not
   worked around at the call site.
+- **A book's ISBN names an edition, not the book.** Google Books answers
+  about the printing, so a *refresh* of `releaseYear` moves a public-domain
+  work forward to whatever reprint the ISBN belongs to — of seven year changes
+  a 60-book dry run proposed, six replaced a stored year and all six were
+  that, `Robinson Crusoe` 1719 to 2019 among them. Page counts go the same
+  way. Both are on books'
+  `fillOnlyFields` in `work_collections.js` for that reason: filled when
+  absent, never replaced. The cover, the link and the publisher are the
+  edition's too and are refreshed anyway, because a link that resolves today
+  beats one that resolved five years ago. #333.
 - **`durationSource` records where a playtime came from.** `"igdb"` means
   IGDB's `/game_time_to_beats`; absent means it predates the field and came
   from HowLongToBeat. Never write one without writing the duration it

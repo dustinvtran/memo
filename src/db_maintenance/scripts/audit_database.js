@@ -35,12 +35,18 @@
  * The three counts it fills are zero on a run without it, and the run says so
  * rather than letting a reader take the zero for an answer.
  *
+ * The `metadata checked against the API` line under each collection's notes is
+ * the one thing here that is about a *process* rather than about a document:
+ * it is how anyone sees that the scheduled refresh (#3, #333) is still
+ * running. ../metadata_refresh_plan.js, and `printFreshness` below.
+ *
  * Usage:
  *   node scripts/audit_database.js
  *   node scripts/audit_database.js --only=games,books
  *   node scripts/audit_database.js --verify-shared-refs
  *   node scripts/audit_database.js --verify-title-years
  *   node scripts/audit_database.js --only=films --verify-titles
+ *   node scripts/audit_database.js --max-age-days=90
  *   node scripts/audit_database.js --json=./audit.json
  */
 require("../env");
@@ -75,6 +81,11 @@ const {
   classifyTitleMatches,
 } = require("../title_match_check");
 const { implausibleDuration } = require("../duration_plausibility");
+const {
+  DEFAULT_MAX_AGE_DAYS,
+  DAY_MS,
+  summarizeFreshness,
+} = require("../metadata_refresh_plan");
 const { toSummary, countProblems } = require("../audit_report");
 const {
   verifyIdentities,
@@ -87,6 +98,14 @@ const args = parseArgs(process.argv);
 const verifySharedRefs = args["verify-shared-refs"] === true;
 const verifyTitleYears = args["verify-title-years"] === true;
 const verifyTitles = args["verify-titles"] === true;
+
+/**
+ * The window the freshness block below judges "overdue" against, matching
+ * `backfill_work_metadata.js --max-age-days`. Read from the same flag so that
+ * the audit can be asked about the window a schedule actually runs with rather
+ * than only about the default.
+ */
+const maxAgeDays = parseInt(args["max-age-days"]) || DEFAULT_MAX_AGE_DAYS;
 
 let client;
 
@@ -273,6 +292,9 @@ const auditCollection = async (db, collection) => {
     entriesWithoutWorkRef,
     entriesWithDanglingWorkRef,
     orphanReviews,
+    metadataFreshness: summarizeFreshness(works, {
+      maxAgeMs: maxAgeDays * DAY_MS,
+    }),
   };
 
   printSummary(collection, result);
@@ -313,6 +335,8 @@ const printSummary = (collection, result) => {
     console.log(`  ${String(line.count).padStart(5)}  ${line.label}`);
   }
 
+  printFreshness(result.metadataFreshness);
+
   for (const finding of result.implausibleDurations) {
     console.log(`  e.g. impossible duration: ${finding.title}: ${finding.reason}`);
   }
@@ -329,6 +353,35 @@ const printSummary = (collection, result) => {
     }
   }
 };
+
+/**
+ * How long ago the collection was last read from its API, which is how anyone
+ * notices that the scheduled refresh has stopped.
+ *
+ * It is printed under the notes and not among the problems on purpose. A work
+ * nobody has re-read is not damaged — it is simply as old as the day it was
+ * added, and 2,547 of the 3,925 works are in exactly that state — every run
+ * applied so far has been `--missing-only`, which stamps a date only on a work
+ * it actually fetched. So the count is not something to drive to zero by
+ * hand; it is a gauge, and what it is for is the *second* derivative. Once
+ * `.github/workflows/refresh_metadata.yml` is applying, `never checked` falls
+ * by the slice size every night and `oldest check` walks forward. Both
+ * standing still means the crawl stopped, and a crawl stops silently: a
+ * revoked key, a spent quota, or a scheduled workflow GitHub disabled after
+ * sixty days of repository quiet. #3, #303, #333.
+ */
+const printFreshness = (freshness) => {
+  if (!freshness) return;
+
+  const { neverChecked, dueNow, oldestCheckedAt, newestCheckedAt } = freshness;
+  console.log(
+    `  metadata checked against the API: ${neverChecked} never, ` +
+      `${dueNow} due (over ${maxAgeDays} days), ` +
+      `oldest ${asDate(oldestCheckedAt)}, newest ${asDate(newestCheckedAt)}`
+  );
+};
+
+const asDate = (at) => (at === null ? "—" : new Date(at).toISOString().slice(0, 10));
 
 /**
  * The collision groups in full, and what the API said about each — every one
