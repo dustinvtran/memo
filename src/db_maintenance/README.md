@@ -432,8 +432,13 @@ Notes on its behaviour:
 - A field the API returns nothing for is never cleared.
 - `apiRefs` and `externalUrls` are merged, so a ref we already know about
   survives even if the API stops reporting it.
-- Each refreshed work gets a `metadataUpdatedDate`, so an interrupted run
-  can be resumed cheaply and periodic refreshes skip recent work.
+- Each work the API answered about gets a `metadataUpdatedDate` — including
+  one nothing changed on, and, since #333, one whose ref was refused. The
+  field means **last checked**, not last changed, and it is what the queue
+  below is ordered by.
+- **Some fields are filled and never replaced.** Both titles, for every type,
+  and a book's `releaseYear` and `duration`. See "What a refresh will not
+  overwrite" below.
 - A stored `duration` is only refreshed by the source that wrote it, which
   `durationSource` records. IGDB may update a playtime it supplied, but it
   never writes over a HowLongToBeat one. See "Playtimes" below.
@@ -442,10 +447,12 @@ Notes on its behaviour:
   apiRef is the only thing tying the two documents together and it is not
   always telling the truth: filling a work in from whatever its ref names is
   how 53 documents came to carry another work's year, playtime, image and
-  links, and a run without `--missing-only` would overwrite their titles too,
-  at which point the pairs cannot be told apart again. A genuine retitling
-  lands here as well, and is meant to — correct the stored title by hand and
-  the next run goes through. #290.
+  links. A genuine retitling lands here as well, and is meant to — correct the
+  stored title by hand and the next run goes through. #290. A refused work is
+  now stamped with the date it was asked, so a nightly crawl does not spend
+  its budget re-asking the same permanently-refused works ahead of the ones it
+  has never read; `--missing-only` ignores the stamp, so it still picks them
+  up, and `--verify-titles` above is what diagnoses them. #333.
 - **The titles are compared after a normalisation, not letter for letter.**
   Case, punctuation, diacritics, a trailing parenthetical, a leading English
   article and a spelled-out number below twenty are all forgiven, so `Truman
@@ -456,6 +463,133 @@ Notes on its behaviour:
   refused. #327.
 - Duplicate works are reported, never merged — that's
   `scripts/dedupe_works.js`.
+
+### Refreshing, as opposed to filling gaps
+
+Every `--apply` run this database has had was `--missing-only`, and that mode
+cannot fix a value that is present and wrong. A game added while IGDB still
+said its release date was TBD keeps that placeholder for ever; a playtime
+HowLongToBeat has since re-estimated stays at the old number. Correcting
+either needs the other mode — no `--missing-only`, so the age window decides
+what is due — which **overwrites**, and is why the guards below are worth
+reading before running one. #333.
+
+The two modes select differently and neither is a weaker form of the other:
+
+| | what makes a work due | what it writes |
+| --- | --- | --- |
+| `--missing-only` | the document has a gap or a corrupt field | only into the gaps |
+| age-based (the default) | nobody has checked it in `--max-age-days` | every field the API is a better authority on |
+
+`../metadata_refresh_plan.js` is the selection, and it is unit tested. The
+queue is **longest-unchecked first**, with never-checked ahead of every date
+and `_id` breaking ties, so `--limit=N` is a slice off the head of a queue
+rather than an arbitrary handful: a run stamps what it read, the next run
+carries on behind it, and two runs over the same data pick the same slice.
+That is what makes a crawl something a schedule can do a piece at a time
+against a daily rate limit.
+
+The run prints how far behind each collection is and how many runs of that
+size would catch up:
+
+```
+=== games ===
+  1151 works, 714 due, processing 150 (longest unchecked first) — 5 runs of this size to catch up
+```
+
+and `scripts/audit_database.js` prints the same gauge read-only, under each
+collection's notes:
+
+```
+  metadata checked against the API: 714 never, 714 due (over 180 days), oldest 2026-08-11, newest 2026-09-03
+```
+
+A run exits non-zero when **every** API call it made failed, and only then. A
+handful of failures is ordinary weather and stays green; nothing answering at
+all is a spent daily quota, a revoked key or an API that has gone away, and it
+looks exactly like a healthy run in every other count while leaving the queue
+where it was.
+
+### What a refresh will not overwrite
+
+Three rules, all in `../work_metadata_merge.js` and all unit tested. The first
+predates this and the other two are #333's.
+
+**A stored playtime is only refreshed by the source that wrote it**, which
+`durationSource` records. IGDB's times are a median of three submissions and
+HowLongToBeat's of far more, so letting one replace the other would move
+numbers people have already read, for the worse. See "Playtimes" below and
+`../../../docs/API_choices.md`.
+
+**Both titles are filled and never replaced.** The refusal above compares
+titles after a normalisation that forgives quite a lot — deliberately, since
+#327 — and that looseness is only safe while it decides whether to fill a
+work, not whether to rename it. `The Stranger (Animorphs, #7)` filed under
+Camus' ISBN reduces to the same string as `The Stranger`. If a ref does belong
+to another work, the stored title is the only evidence left that it does, and
+a refresh that rewrote it would leave the two indistinguishable — #290's
+unrecoverable case. A genuine retitling stays a human's call.
+
+**A book's `releaseYear` and `duration` are filled and never replaced**,
+because an ISBN names an *edition*. A 60-book dry run on 2026-09-14 proposed
+seven release-year changes; six of them replaced a stored year, and all six
+moved a public-domain work forward to a modern reprint — `Robinson Crusoe`
+1719 to a 2019 Flammarion, `The Autobiography of Benjamin Franklin` 1791 to
+2019, `The Complete Poems of Emily Dickinson` 1890 to 2018, `The Wonderful
+Wizard of Oz` 1900 to 2000. Not one was a correction, and page counts move the
+same way for the same reason. Google Books is answering about the printing
+rather than about the book, so it is not the better authority for those two.
+It still is for the cover, the link and the publisher, which describe the
+edition too and are worth having current — so those are refreshed. The
+seventh change was a *fill*, onto a book with no year at all, and still
+happens: fill-only is not read-only, and an edition's year beats the dash the
+column draws now.
+
+Films, tv and games have no equivalent: a TMDB movie id is one cut of one film
+and an IGDB game id is one game, so nothing is fill-only for them beyond the
+titles. A fourth type, or a field where the stored value is the better one,
+goes on the collection's `fillOnlyFields` in `../work_collections.js`.
+
+### The schedule
+
+`.github/workflows/refresh_metadata.yml` runs a slice nightly (#3). A GitHub
+Action rather than a Netlify Scheduled Function because the job is minutes of
+deliberate pausing between API calls rather than a request — the site's
+functions have a ten-second ceiling — and because it has to write a snapshot
+somewhere before it writes to the database, which a Lambda serving the site
+does not have anywhere to put.
+
+It follows the same discipline as a hand-run `--apply`, in the same order:
+snapshot with `backup_database.js`, verify with `verify_backup.js --live`
+(which exits non-zero on a bad snapshot, so the run stops before it writes),
+then refresh, then audit. The snapshot is kept as a workflow artifact for 90
+days, which is also the first copy of this database that is not in the Google
+Drive folder that holds the code and the credentials — a piece of #303,
+though not that issue's answer.
+
+**A scheduled run is a dry run until the repository variable
+`METADATA_REFRESH_APPLY` is set to `true`.** Merging the workflow does not
+start a crawl of the whole library; turning it on is a setting, changed by
+someone who has read a dry run and taken a snapshot. Until then the nightly
+run is a ten-works-per-collection smoke test rather than a full slice — enough
+to prove the five credentials still work and to show where the queue stands,
+and not enough to spend a seventh of the daily Google Books budget on a run
+that writes nothing. Once it is applying, the slice is 150 per collection,
+which catches today's 2,547 due works up in about ten nights. A
+`workflow_dispatch` run takes `apply` and `limit` as inputs, for the watched
+case.
+
+It needs five repository secrets: `MONGODB_URL`, `TMDB_API_KEY`,
+`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `GOOGLE_API_KEY`.
+
+**How you would notice it had stopped**, which is the question #303 asks of
+every scheduled job here. A failed run mails the repository owner. A run where
+nothing answered fails rather than reporting a quiet success. And the audit's
+freshness line is the gauge that does not depend on the workflow being alive
+to report: `never checked` should fall by the slice size each night and
+`oldest` should walk forward. Both standing still means the crawl stopped —
+most likely because GitHub disables a scheduled workflow after sixty days
+without a commit.
 
 ## Playtimes
 
@@ -1076,7 +1210,8 @@ put back 12 deleted documents and touched nothing else.`
 ## Tests
 
 The parts that decide what to write (`work_metadata_merge.js`,
-`game_playtime_plan.js`), what to delete (`work_dedupe_plan.js`,
+`game_playtime_plan.js`), what to spend an API call on and in what order
+(`metadata_refresh_plan.js`), what to delete (`work_dedupe_plan.js`,
 `orphan_review_plan.js`, `dead_entry_fields_plan.js`), what to clear
 (`unusable_field_plan.js`), which snapshots a retention policy keeps
 (`backup_plan.js`), whether a snapshot is still what the backup wrote

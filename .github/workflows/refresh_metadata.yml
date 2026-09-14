@@ -1,0 +1,211 @@
+# Re-reads a slice of the cached work metadata from the APIs it came from, so
+# that a release date stored while it was still TBD and a playtime that has
+# since been re-estimated stop being permanent. #3 asked for this in 2019 and
+# #333 is what it looks like in the data.
+#
+# **Why a GitHub Action and not a Netlify Scheduled Function.** Both can hold
+# the five credentials, and that is where the similarity ends. A scheduled
+# function is a Lambda on the site's own runtime with the site's 10-second
+# ceiling, and this job makes hundreds of calls with a second of deliberate
+# pause between each — it is minutes of wall clock by design, because the
+# pause *is* the rate limiting. It also has to snapshot the database first
+# (CLAUDE.md, "Writing to the database"), which means writing tens of
+# megabytes somewhere that is not the request that started it. Nothing about
+# the shape of this job is request-shaped. An Action gets six hours, a
+# writable disk, artifact storage for the snapshot, and a failure that arrives
+# as mail rather than as a log line in a function nobody tails — and it does
+# not share a runtime with the API that serves the site, so a crawl that hangs
+# cannot take a page down with it.
+name: Refresh work metadata
+
+on:
+  # Daily, and the slice size below is what makes daily right: the queue is
+  # ordered longest-unchecked first, so a run takes the works that have waited
+  # most and stamps them, and the next night carries on behind them. Catching
+  # up from today's 2,547 due works takes about ten nights; after that a night
+  # finds only what has crossed the 180-day line, which is a few dozen.
+  #
+  # 03:40 UTC, off the hour: GitHub queues every cron in the minute after the
+  # hour and runs them late, and nothing here cares which minute it is.
+  schedule:
+    - cron: "40 3 * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Types to refresh (films,tv,games,books)"
+        default: "films,tv,games,books"
+      limit:
+        description: "Works per collection"
+        default: "150"
+      max-age-days:
+        description: "Skip works checked within this many days"
+        default: "180"
+      apply:
+        description: "Write to the database (otherwise a dry run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never two crawls at once. They would read the same head of the same queue —
+# the second one's slice is chosen before the first one's stamps land — and
+# spend two nights of a daily API budget getting one night of work done.
+# `cancel-in-progress: false` because a run that is halfway through a slice
+# has already spent those calls, and killing it wastes them.
+concurrency:
+  group: refresh-metadata
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # Comfortably above a 600-work run at these delays (roughly seven
+    # minutes), and far below the six hours a job may take, so a crawl that
+    # has hung is ended rather than left holding the concurrency group.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same Node as `netlify.toml` and `ci.yml`. `src/db_maintenance` is
+      # CommonJS and requires three modules out of `src/api`, which is ESM, so
+      # this needs a Node where `require(esm)` is unflagged — 22.12 and up.
+      # See CLAUDE.md.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci --omit=dev
+
+      # Whether this run writes. Two gates, and both of them exist so that
+      # merging this file cannot by itself start a crawl of the whole library.
+      #
+      # A scheduled run applies only if the repository variable
+      # `METADATA_REFRESH_APPLY` is set to `true` — a setting, not a commit, so
+      # turning the first crawl on is a deliberate act by someone who has read
+      # the dry run and taken a snapshot, which is what CLAUDE.md asks and what
+      # the scale of the first crawl deserves. Until then the schedule runs
+      # nightly as a dry run, which is not wasted: it exercises the credentials
+      # and the queue, and the report it uploads is the evidence for turning it
+      # on, on ten works a collection rather than a full slice.
+      #
+      # A manual run applies if it was asked to. That is the watched case.
+      #
+      # The slice size is decided here too, because a scheduled dry run and a
+      # scheduled apply want different ones and the shell says so far more
+      # legibly than a nested expression would.
+      - name: Decide whether this run writes, and how big a slice
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            apply="${{ inputs.apply }}"
+            limit="${{ inputs.limit }}"
+          elif [ "${{ vars.METADATA_REFRESH_APPLY == 'true' }}" = "true" ]; then
+            apply=true
+            # 150 per collection. Google Books is the binding rate limit at
+            # roughly a thousand calls a day and this leaves most of it;
+            # IGDB's limit is four a second rather than a daily total, and the
+            # adapter's own pause already respects it. At this size the 2,547
+            # works due today are caught up in about ten nights.
+            limit=150
+          else
+            apply=false
+            # A nightly *dry* run is a smoke test, not a crawl. It proves the
+            # five credentials still work and shows where the queue stands,
+            # and there is no reason for it to spend a seventh of the daily
+            # Google Books budget every night on a run that writes nothing.
+            limit=10
+          fi
+          echo "apply=$apply" >> "$GITHUB_OUTPUT"
+          echo "limit=$limit" >> "$GITHUB_OUTPUT"
+          echo "Mode: $([ "$apply" = "true" ] && echo APPLY || echo 'dry run')," \
+               "$limit works per collection"
+
+      # CLAUDE.md's first rule, and it is not weakened by being automated: a
+      # fresh snapshot immediately before every `--apply`, verified by
+      # `verify_backup.js` rather than by eye. `--live` compares the manifest,
+      # the files, their `sha256` and live `countDocuments()`, and exits
+      # non-zero when the first three disagree — so a bad snapshot stops the
+      # run before it writes anything, which is the only ordering that helps.
+      #
+      # `--no-prune` because the retention policy is about the Drive
+      # directory's history and this snapshot is not part of it; the runner's
+      # disk is thrown away either way. The copy that survives is the artifact
+      # below.
+      - name: Snapshot the database, and verify the snapshot
+        if: steps.mode.outputs.apply == 'true'
+        env:
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+        run: |
+          node src/db_maintenance/scripts/backup_database.js \
+            --out="$RUNNER_TEMP/backups" --no-prune
+          node src/db_maintenance/scripts/verify_backup.js \
+            --dir="$RUNNER_TEMP/backups" --live
+
+      # And the part #303 is missing: a copy of the database that is not in the
+      # Google Drive folder that also holds the code and the credentials. This
+      # does not close that issue — it is one copy per apply rather than the
+      # daily cadence the retention policy was written for, and no restore has
+      # been drilled from one — but it is the first snapshot that survives
+      # whatever takes out that directory.
+      - name: Keep the snapshot
+        if: steps.mode.outputs.apply == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-${{ github.run_id }}
+          path: ${{ runner.temp }}/backups
+          retention-days: 90
+
+      # The crawl. Which works and in what order is
+      # `src/db_maintenance/metadata_refresh_plan.js`; what may be written onto
+      # one is `work_metadata_merge.js`, whose guards matter far more to a
+      # refresh than they ever did to the gap fills that are all this has run
+      # so far.
+      #
+      # The per-collection limit comes from the step above, which is where the
+      # rate limits are reasoned about.
+      #
+      # The script exits non-zero if every call it made failed, which is what a
+      # spent quota and a revoked key both look like and what a crawl that has
+      # silently stopped looks like from outside.
+      - name: Refresh a slice
+        env:
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          node src/db_maintenance/scripts/backfill_work_metadata.js \
+            --only="${{ inputs.only || 'films,tv,games,books' }}" \
+            --limit="${{ steps.mode.outputs.limit }}" \
+            --max-age-days="${{ inputs['max-age-days'] || '180' }}" \
+            --json="$RUNNER_TEMP/refresh.json" \
+            ${{ steps.mode.outputs.apply == 'true' && '--apply' || '' }}
+
+      # Every refusal, every failure and every field written, kept where it can
+      # be read against the next run's. `if: always()` because the run that
+      # failed is the one whose report is worth having.
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refresh-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/refresh.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      # CLAUDE.md's fourth rule: verify afterwards. Read-only, no API keys, and
+      # it prints the `metadata checked against the API` line that says how far
+      # the queue has moved — `never checked` should have fallen by the slice
+      # size and `oldest` should have walked forward. Those two numbers
+      # standing still across several runs is how a stopped crawl shows up, and
+      # a stopped crawl is the failure mode this whole file has to be watched
+      # for: GitHub disables a scheduled workflow after sixty days without a
+      # commit, and says so only in mail that is easy to miss.
+      - name: Audit afterwards
+        if: steps.mode.outputs.apply == 'true'
+        env:
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+        run: node src/db_maintenance/scripts/audit_database.js

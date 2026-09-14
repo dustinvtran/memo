@@ -68,6 +68,11 @@ const SCRIPT_FIELDS = {
     retrievePrefix: "ISBN",
     stringArrayFields: ["genres", "authors", "publishers"],
     numberFields: ["releaseYear", "duration"],
+    // An ISBN names an **edition**, and these two are properties of the
+    // edition rather than of the book. A refresh may fill them and may not
+    // replace them — see `fillOnlyFields` in ./work_metadata_merge.js, which
+    // is where the measurement behind this line is written down.
+    fillOnlyFields: ["releaseYear", "duration"],
     // The unauthenticated Google Books API rate limits aggressively.
     defaultDelayMs: 1000,
   },

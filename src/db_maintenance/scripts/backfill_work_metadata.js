@@ -19,6 +19,20 @@
  * TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET (games), GOOGLE_API_KEY (books,
  * optional but strongly recommended for rate limits).
  *
+ * The two modes answer different questions. `--missing-only` fills gaps and
+ * never overwrites, and every run applied so far has been one of those — so by
+ * construction it cannot fix a work that is complete and wrong. A release date
+ * stored while it was still TBD, or a playtime that has since been
+ * re-estimated, is only ever corrected by an age-based run, which is what
+ * `--max-age-days` selects and what #333 is about. That run *overwrites*,
+ * which is why the guards in ../work_metadata_merge.js matter far more to it
+ * than they ever did to a gap fill.
+ *
+ * Which works a run picks, and in what order, is ../metadata_refresh_plan.js:
+ * longest-unchecked first, so that `--limit` makes a crawl a queue that can be
+ * spread over many runs against a daily rate limit rather than an arbitrary
+ * slice. `.github/workflows/refresh_metadata.yml` is that schedule (#3).
+ *
  * Usage:
  *   node scripts/backfill_work_metadata.js --only=games --missing-only
  *   node scripts/backfill_work_metadata.js --only=games --missing-only --apply
@@ -28,7 +42,7 @@
  *   --apply             actually write (default: dry run)
  *   --only=a,b          restrict to these types (films, tv, games, books)
  *   --missing-only      only touch works with missing/corrupt metadata
- *   --max-age-days=N    in full-refresh mode, skip works refreshed within N
+ *   --max-age-days=N    in full-refresh mode, skip works checked within N
  *                       days (default 180)
  *   --force             ignore --max-age-days
  *   --limit=N           stop after N works per collection
@@ -42,6 +56,16 @@
  * playtime and links in the first place. See ../work_metadata_merge.js and
  * `scripts/audit_database.js --verify-shared-refs`, which says which of the
  * pair is the misfiled one. #290.
+ *
+ * Some fields are **filled and never replaced**, whatever the mode: both
+ * titles for every type, because the title is the only evidence a ref is wrong
+ * and a refresh that rewrote it would erase the disagreement the refusal
+ * reads; and a book's `releaseYear` and `duration`, because an ISBN names an
+ * edition and Google Books answers about the printing rather than the work.
+ * `fillOnlyFields` in ../work_metadata_merge.js has the measurements.
+ *
+ * The run exits non-zero if every API call it made failed, so a schedule can
+ * tell a crawl that is progressing from one that has quietly stopped.
  */
 require("../env");
 const fs = require("fs");
@@ -55,7 +79,13 @@ const {
   parseArgs,
   selectCollections,
 } = require("../work_collections");
-const { hasGaps, mergeWork } = require("../work_metadata_merge");
+const { mergeWork } = require("../work_metadata_merge");
+const {
+  DEFAULT_MAX_AGE_DAYS,
+  DAY_MS,
+  selectForRefresh,
+  runsRemaining,
+} = require("../metadata_refresh_plan");
 const { loadAdapter, describeError } = require("../load_adapter");
 
 const args = parseArgs(process.argv);
@@ -64,7 +94,7 @@ const options = {
   apply: args.apply === true,
   missingOnly: args["missing-only"] === true,
   force: args.force === true,
-  maxAgeMs: (parseInt(args["max-age-days"]) || 180) * 24 * 60 * 60 * 1000,
+  maxAgeMs: (parseInt(args["max-age-days"]) || DEFAULT_MAX_AGE_DAYS) * DAY_MS,
   limit: parseInt(args.limit) || Infinity,
   delayMs:
     args["delay-ms"] === undefined ? undefined : parseInt(args["delay-ms"]),
@@ -109,6 +139,50 @@ const main = async () => {
   }
 
   await client.close();
+
+  reportProgress(report);
+};
+
+/**
+ * Exits non-zero when a run asked the APIs for something and got nothing back.
+ *
+ * The one thing a scheduled crawl has to be able to say about itself. A run
+ * that fetches a few hundred works and fails on eleven of them is a normal
+ * run and stays green — a job that goes red for ordinary weather is a job
+ * whose red nobody reads, which is the failure #303 describes from the other
+ * end. A run where every call failed is the one that matters: a revoked key,
+ * a daily quota already spent, an API that has gone away. It looks identical
+ * to a successful run in every count except this one, and it leaves
+ * `metadataUpdatedDate` exactly where it was, so the next run re-reads the
+ * same slice and fails the same way, silently, for ever.
+ *
+ * "Progress" is deliberately not "something changed": a work the API confirms
+ * is already current, and a work whose ref is refused, both advance the queue
+ * and both are a working API. Only an unanswered call is not progress.
+ */
+const reportProgress = (report) => {
+  const totals = Object.values(report).reduce(
+    (sum, result) => ({
+      processed: sum.processed + (result.processed ?? 0),
+      answered:
+        sum.answered +
+        (result.changes?.length ?? 0) +
+        (result.refusals?.length ?? 0) +
+        (result.unchanged ?? 0),
+      failed: sum.failed + (result.failures?.length ?? 0),
+    }),
+    { processed: 0, answered: 0, failed: 0 }
+  );
+
+  if (totals.processed === 0 || totals.answered > 0) return;
+
+  console.error(
+    `\nEvery one of the ${totals.failed} API calls this run made failed, so ` +
+      `no work advanced and the next run will re-read the same slice. This ` +
+      `is what a spent daily quota, a revoked key or a dead API looks like — ` +
+      `read the errors above rather than re-running.`
+  );
+  process.exitCode = 1;
 };
 
 const backfillCollection = async (db, collection) => {
@@ -118,15 +192,20 @@ const backfillCollection = async (db, collection) => {
   if (!adapter) return { skipped: "adapter could not be loaded" };
 
   const works = await db.collection(collection.works).find().toArray();
-  const candidates = works.filter((work) => needsRefresh(collection, work));
-  const selected = candidates.slice(0, options.limit);
+  const { due, selected } = selectForRefresh(collection, works, options);
 
+  const runs = runsRemaining(due.length, options.limit);
   console.log(
-    `  ${works.length} works, ${candidates.length} need attention, ` +
-      `processing ${selected.length}`
+    `  ${works.length} works, ${due.length} due, ` +
+      `processing ${selected.length} (longest unchecked first)` +
+      (runs !== null && runs > 1
+        ? ` — ${runs} runs of this size to catch up`
+        : "")
   );
 
-  if (selected.length === 0) return { works: works.length, processed: 0 };
+  if (selected.length === 0) {
+    return { works: works.length, due: due.length, processed: 0 };
+  }
 
   if (options.apply) backup(collection.works, works);
 
@@ -162,12 +241,29 @@ const backfillCollection = async (db, collection) => {
     );
 
     // The apiRef named a different work, so this call said nothing about this
-    // document. Reported rather than counted as "already current", and
-    // deliberately not `touch`ed: marking it checked would hide it from the
-    // next age-based run, and it is exactly what wants looking at. #290.
+    // document. Reported rather than counted as "already current" — but it is
+    // `touch`ed, which is the opposite of what this did before #333.
+    //
+    // Not touching was right for a run somebody sat and watched: the work is
+    // exactly what wants looking at, and leaving it undated kept it at the
+    // front of the next run. Under a schedule that reading inverts. A refusal
+    // is a stable property of the pair — 53 works carry another work's id and
+    // will refuse every time until a human repairs one of them — and
+    // longest-unchecked-first sorts every undated work to the head of the
+    // queue. So an untouched refusal is re-fetched every single night, ahead
+    // of the works that have never been read at all, on a budget of about a
+    // thousand Google Books calls a day. A hundred permanent refusals would
+    // spend a hundred calls a night for ever and hold up the crawl behind them.
+    //
+    // Nothing is hidden by the change. The refusal is printed and goes into
+    // `--json` on the run that finds it, `scripts/audit_database.js
+    // --verify-shared-refs` and `--verify-titles` are what actually diagnose
+    // which half is misfiled, and `--missing-only` ignores the date entirely,
+    // so a refused work is still picked up by every gap-filling run. #290.
     if (refused) {
       console.log(`  ! ${title(work)}: ${refused}`);
       refusals.push({ ...describe(work), refused });
+      if (options.apply) await touch(db, collection, work);
       continue;
     }
 
@@ -201,6 +297,7 @@ const backfillCollection = async (db, collection) => {
 
   return {
     works: works.length,
+    due: due.length,
     processed: selected.length,
     changes,
     failures,
@@ -210,17 +307,12 @@ const backfillCollection = async (db, collection) => {
   };
 };
 
-const needsRefresh = (collection, work) => {
-  if (options.missingOnly) return hasGaps(collection, work);
-  if (options.force) return true;
-  const refreshedAt = work.metadataUpdatedDate;
-  return (
-    typeof refreshedAt !== "number" ||
-    Date.now() - refreshedAt > options.maxAgeMs
-  );
-};
-
-/** Marks a work as checked so an interrupted run can be resumed cheaply. */
+/**
+ * Marks a work as checked, so an interrupted run resumes cheaply and a sliced
+ * one advances. The stamp is what `../metadata_refresh_plan.js` orders the
+ * queue by, and it means "last asked about" rather than "last changed" — see
+ * `lastCheckedAt` there.
+ */
 const touch = (db, collection, work) =>
   db
     .collection(collection.works)

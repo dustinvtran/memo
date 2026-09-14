@@ -18,6 +18,64 @@ const {
   isCorruptExternalUrls,
 } = require("./work_collections");
 
+/**
+ * The two fields that carry a work's name. Both, because either one of them
+ * matching either of the API's is what `titlesAgree` accepts, so either one
+ * left writable would be enough to erase the disagreement the guard reads.
+ */
+const TITLE_FIELDS = ["englishTranslatedTitle", "originalTitle"];
+
+/**
+ * Fields a refresh fills when the work has none and never replaces. #333.
+ *
+ * This is the guard that only an overwriting run needs, and `--missing-only`
+ * — every run applied so far — never did, because it writes nothing it would
+ * have protected. Two separate reasons put fields here.
+ *
+ * **Both titles, for every type, because the title is the evidence.** The
+ * refusal below compares `comparableTitle`, which since #327 forgives a
+ * leading article, a trailing parenthetical, diacritics and a spelled-out
+ * number — 357 works were otherwise unrefreshable. ../work_collections.js
+ * documents that looseness as safe on the grounds that it compares one stored
+ * work against the answer its own id gave, and it was, while the title was the
+ * one field a `missingOnly` run could not write. `The Stranger (Animorphs,
+ * #7)` filed under Camus' ISBN reduces to the same string as `The Stranger`;
+ * a refresh allowed to write the title would leave the two indistinguishable,
+ * which is #290's "unrecoverable except from a snapshot" exactly. Nothing is
+ * lost: #333 is about release dates and playtimes, and a genuine retitling is
+ * a human's call by the same reasoning as the refusal.
+ *
+ * **A book's `releaseYear` and `duration`, because an ISBN names an edition.**
+ * Measured, not assumed. A 60-book dry run on 2026-09-14 proposed seven year
+ * changes, six of which replaced a stored year, and all six moved a
+ * public-domain work forward to a modern reprint: `Robinson Crusoe` 1719 to a
+ * 2019 Flammarion, `The Autobiography of Benjamin Franklin` 1791 to 2019, `The
+ * Complete Poems of Emily Dickinson` 1890 to 2018, `The Wonderful Wizard of
+ * Oz` 1900 to 2000. Not one was a correction. Page counts go the same way for
+ * the same reason — 272 to 205, 371 to 412, one edition's pagination replacing
+ * another's. The stored values are the work's and Google Books is answering
+ * about the printing, so the API is simply not the better authority here,
+ * which is the test for this list.
+ *
+ * Fill-only and not read-only, so the seventh change still happens: a book
+ * with no year at all gets the edition's, which is what `--missing-only` has
+ * always done and is better than the dash it draws today. The exposure that
+ * leaves is a reprint year on a book that had none, which is visible in the
+ * audit as a year rather than invisible as an overwrite.
+ *
+ * `imageUrl`, `externalUrls` and `publishers` are deliberately *not* on the
+ * list even for books. They describe the edition too, and a cover and a link
+ * that resolve today are worth more than ones that resolved five years ago.
+ *
+ * A film's runtime, a show's episode count and a game's year carry no such
+ * problem — a TMDB movie id is one cut of one film and an IGDB game id is one
+ * game — so nothing is fill-only for those three beyond the titles.
+ */
+const fillOnlyFields = (collection) => [
+  ...TITLE_FIELDS,
+  ...(collection?.fillOnlyFields ?? []),
+];
+
 /** The metadata fields we expect an adapter to fill for a given type. */
 const expectedFields = (collection) => [
   ...COMMON_FIELDS,
@@ -101,6 +159,7 @@ const hasGaps = (collection, work) =>
 /**
  * Builds the `$set` payload for one work. Rules:
  *   - a work whose title the API disagrees with is refused outright
+ *   - a `fillOnlyFields` field is written when absent and never replaced
  *   - a field the API has nothing to say about is never cleared
  *   - apiRefs and externalUrls are unioned, so a ref we already know about
  *     survives even when the API stops returning it
@@ -120,6 +179,7 @@ const mergeWork = (collection, work, fresh, { missingOnly = false } = {}) => {
 
   const updates = {};
   const notes = [];
+  const fillOnly = fillOnlyFields(collection);
 
   for (const [field, freshValue] of Object.entries(fresh)) {
     if (field === "entryType") continue;
@@ -129,6 +189,12 @@ const mergeWork = (collection, work, fresh, { missingOnly = false } = {}) => {
     if (isEmptyValue(freshValue)) continue;
 
     const currentValue = work[field];
+
+    // Filled when absent, never replaced. The list and its reasons are at
+    // `fillOnlyFields` above; this is the one line that enforces it, and it
+    // sits ahead of everything else because a fill-only field is not a
+    // question about what the API said.
+    if (fillOnly.includes(field) && !isEmptyValue(currentValue)) continue;
 
     if (field === "apiRefs") {
       const merged = mergeApiRefs(currentValue, freshValue, { missingOnly });
@@ -230,6 +296,8 @@ const completeness = (collection, work) =>
   ).length;
 
 module.exports = {
+  TITLE_FIELDS,
+  fillOnlyFields,
   expectedFields,
   isCorruptField,
   corruptFieldsOf,
