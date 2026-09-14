@@ -22,7 +22,7 @@
 /** @typedef {import('../parsers').ValidCollection} ValidCollection */
 /** @typedef {import('../errors').Error} Error */
 import { ResultAsync, okAsync, errAsync } from 'neverthrow'
-import { _findOne, _findMany, _countScoresByValue, _findOneByField, _findOneByRef, _findAllByFieldIn, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _deleteAllByRefIn, _findAllUserEntriesWithMetadata } from './unsafe_functions.js'
+import { _findOne, _findMany, _countScoresByValue, _countUserEntries, _findOneByField, _findOneByRef, _findAllByFieldIn, _updateOneByRef, _create, _deleteOneByRef, _deleteAllByField, _deleteAllByRefIn, _findAllUserEntriesWithMetadata } from './unsafe_functions.js'
 import { compose } from 'ramda'
 import { withTransaction } from './db.js'
 import { toResponse, toResult } from './into_safe_values.js'
@@ -74,6 +74,13 @@ const findMany_ = compose(toResult, _findMany)
  */
 const countScoresByValue_ = compose(toResult, _countScoresByValue)
 
+/**
+ * How many entries one user has in one collection. `/api/export/:username`
+ * builds its index out of four of these instead of four whole lists.
+ * @type {(collection: ValidCollection, userId: string) => ResultAsync<number, Error>}
+ */
+const countUserEntries_ = compose(toResult, _countUserEntries)
+
 /** @type {(collection: ValidCollection, field: string, values: any[], options?: QueryOptions) => ResultAsync<any[], Error>} */
 const findAllByFieldIn_ = compose(toResult, _findAllByFieldIn)
 
@@ -113,6 +120,7 @@ export {
   findOne_,
   findMany_,
   countScoresByValue_,
+  countUserEntries_,
   findAllByFieldIn_,
   findOneByField_,
   findOneByFieldOrFail_,

@@ -123,6 +123,70 @@ const toExportDocument = ({ username, lists, siteUrl, generatedAt }) => ({
 })
 
 /**
+ * Every url this endpoint answers at, for one user.
+ *
+ * One function because four things name them — the index document below, the
+ * `Link` header on every export response, the `413`, and the note in the
+ * index that tells a reader about `?limit=` — and four lists that have to
+ * agree is the shape worth avoiding. A caller that follows any of them ends
+ * up somewhere real for the same reason.
+ *
+ * `siteUrl` is absent when the request url could not be parsed, and the
+ * relative urls that fall out of that are valid in all four places.
+ * @type {(username: string, siteUrl?: string) => { index: string, lists: { type: string, title: string, url: string }[] }}
+ */
+const toExportUrls = (username, siteUrl = '') => ({
+  index: `${siteUrl}/api/export/${username}`,
+  lists: LIST_TYPES.map((type) => ({
+    type,
+    title: TYPE_TITLES[type] ?? type,
+    url: `${siteUrl}/api/export/${type}/${username}`,
+  })),
+})
+
+/**
+ * What `/api/export/:username` answers with when it is asked for no particular
+ * number of entries: the four lists named and counted, and the url of each.
+ *
+ * The lists themselves are 4.76 MB together and the largest single one is
+ * 2.94 MB, so the url the README, the `<noscript>` block and `robots.txt` all
+ * advertise was the one nobody should fetch first. A reader that finds this
+ * knows how many entries there are before committing to downloading them, and
+ * knows which url holds which — where before it learned the same thing from a
+ * `413`, after the request that would have told it had already failed.
+ *
+ * `count` here is `countDocuments` on the entry collection, not the length of
+ * anything assembled: the index costs four counted indexes rather than four
+ * aggregations joined to their works and their notes, which is most of why it
+ * answers in a fraction of the time.
+ * @type {(args: { username: string, counts?: Object.<string, number>, siteUrl?: string, generatedAt?: number }) => object}
+ */
+const toExportIndex = ({ username, counts = {}, siteUrl, generatedAt }) => {
+  const urls = toExportUrls(username, siteUrl)
+
+  return {
+    user: username,
+    ...(siteUrl ? { url: `${siteUrl}/profile/${username}` } : {}),
+    generatedAt: new Date(generatedAt ?? Date.now()).toISOString(),
+    // Named, because the field a reader reaches for is `lists[].entries` and
+    // here there is none. A document that says what it is beats one that
+    // looks like a truncation of the other.
+    document: 'index',
+    note:
+      'An index of the lists, without their entries. Each url below is one '
+      + `list in full; ${urls.index}?limit=N is all four in one response, N `
+      + 'entries of each, most recently updated first. Append ?format=md to '
+      + 'any of these for Markdown instead of JSON.',
+    lists: urls.lists.map(({ type, title, url }) => ({
+      type,
+      title,
+      count: counts[type] ?? 0,
+      url,
+    })),
+  }
+}
+
+/**
  * The same document as Markdown, for a reader that would rather have prose
  * than JSON. Notes are markdown already, so they go in as they were written.
  * @type {(doc: object, siteUrl?: string) => string}
@@ -136,6 +200,24 @@ const toMarkdown = (doc, siteUrl) =>
     '',
   ].join('\n')
 
+/**
+ * The index as Markdown. Its own function rather than a branch inside
+ * `toMarkdown`, which walks `list.entries` — a field the index deliberately
+ * does not have.
+ * @type {(doc: object) => string}
+ */
+const toIndexMarkdown = (doc) =>
+  [
+    `# ${doc.user}'s lists`,
+    '',
+    `Exported ${doc.generatedAt}.`,
+    '',
+    doc.note,
+    '',
+    ...doc.lists.map((list) => `- ${list.title} (${list.count}) — ${list.url}`),
+    '',
+  ].join('\n')
+
 export {
   LIST_TYPES,
   TYPE_TITLES,
@@ -143,8 +225,11 @@ export {
   statusLabel,
   toExportEntry,
   toExportList,
+  toExportUrls,
   toExportDocument,
+  toExportIndex,
   toMarkdown,
+  toIndexMarkdown,
 }
 ///////////////////////////////////////////////////////////////////////////////
 

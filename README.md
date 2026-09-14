@@ -106,8 +106,8 @@ anything that isn't a browser, a language model above all. The export
 endpoint is the same lists as data:
 
 ```
+GET /api/export/:username            # an index: what each list holds, and its url
 GET /api/export/:type/:username      # one list: films, tv, games or books
-GET /api/export/:username            # all four at once
 ?format=md                           # Markdown instead of JSON
 ?limit=200                           # the N most recently updated, per list
 ```
@@ -119,11 +119,38 @@ durations are in minutes and dates are `YYYY-MM-DD`, so nothing has to be
 decoded. It is public, exposing exactly what the rendered page already does —
 drafts and edit history stay owner-only.
 
-**A Netlify function may return 6 MB.** All four of `nil`'s lists are already
-over 4 MB and the notes are what grow, so the all-in-one url is the one that
-will hit the ceiling first. Over 5 MB it answers `413` naming the per-type
-urls and `?limit=`, rather than letting Netlify return a 502 with nothing in
-it. One list at a time is the shape that keeps working.
+**Start with the index, because the lists are big.** `nil`'s four come to
+4.76 MB together and the largest single one is 2.94 MB, which is more than
+most agent fetch tools will accept and was slow enough to sit against
+Netlify's 10-second function timeout — a timeout a caller sees as a dropped
+connection rather than as a status code (#334). So `/api/export/:username`
+answers with an index instead: the four lists named, counted and linked, in a
+few hundred bytes, so a reader knows what it is asking for before it asks.
+Every response also carries a `Link` header naming the index and the four
+lists, which a `curl -I` will show you without downloading anything.
+
+```
+GET /api/export/nil                  # ~600 b — counts and urls
+GET /api/export/films/nil            # 1.07 MB — one list in full
+GET /api/export/nil?limit=200        # 0.98 MB — 200 of each, most recent first
+```
+
+**The responses are cached for five minutes**, and served stale for up to a
+day while they refresh in the background (`Cache-Control` and
+`Netlify-CDN-Cache-Control`, the latter with Netlify's `durable` directive).
+Invalidation is the clock and nothing else — these are public read-only lists
+that change a few times a day, and every document carries the `updatedDate`
+of every entry in it, so a reader can see how old the numbers are. The
+alternative, purging by cache tag on every save, wants an access token in the
+function environment and a new way for a save to fail.
+
+**A Netlify function may return 6 MB.** The notes are what grow, so the
+all-in-one url — now `?limit=`, since the bare one is an index — is what hits
+the ceiling first. Over 5 MB it answers `413` naming the per-type urls and
+`?limit=`, rather than letting Netlify return a 502 with nothing in it. That
+budget is not lower than 5 MB on purpose: anything low enough to stop the
+4.76 MB response would also `413` the 2.94 MB games list, which is the url
+the `413` tells you to fetch instead.
 
 The `<noscript>` block in `layouts/base.njk` is the only part of a page that
 is in its source, and it points at these urls, so a reader that fetches
@@ -149,8 +176,9 @@ beside `/img/*`, `/js/*` and `/css/*` — writing the files is only half of
 it, because the catch-all overrides a file that has no rule (#302, and the
 same trap as #103, #141 and #142). `robots.txt` points at the sitemap and
 allows `/api/export`, which is the one url under `/api/` that is a document
-rather than a request. The sitemap lists the homepage alone: every other
-url here names a user, and the build knows no usernames.
+rather than a request; it names the index url first, since that is the one to
+start from. The sitemap lists the homepage alone: every other url here names
+a user, and the build knows no usernames.
 
 **Searching a list.** The box above each sublist takes a comma-separated list
 of terms, all of which have to match. A bare term is a case-insensitive

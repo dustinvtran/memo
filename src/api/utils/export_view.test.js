@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { statusLabel, toExportEntry, toExportList, toExportDocument, toMarkdown } from './export_view.js'
+import { statusLabel, toExportEntry, toExportList, toExportUrls, toExportDocument, toExportIndex, toMarkdown, toIndexMarkdown } from './export_view.js'
 const film = {
   entry: {
     _id: 'e1',
@@ -224,4 +224,87 @@ test('an entry with nothing recorded but a title still renders', () => {
 
   assert.match(markdown, /^### To read \(1\)$/m)
   assert.match(markdown, /^#### Solaris$/m)
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// The index — #334. `/api/export/:username` answered with all four lists in
+// full, 4.76 MB of them, and that is the url the README, the `<noscript>`
+// block and `robots.txt` advertise. It answers with this instead.
+
+test('the index names every list, counts it, and says where it is', () => {
+  const index = toExportIndex({
+    username: 'nil',
+    counts: { films: 712, tv: 510, games: 349, books: 806 },
+    siteUrl: 'https://nil.moe',
+    generatedAt: 1786336961244,
+  })
+
+  assert.equal(index.user, 'nil')
+  assert.equal(index.url, 'https://nil.moe/profile/nil')
+  assert.equal(index.generatedAt, '2026-08-10T04:42:41.244Z')
+  assert.equal(index.document, 'index')
+  assert.deepEqual(index.lists, [
+    { type: 'films', title: 'Films', count: 712, url: 'https://nil.moe/api/export/films/nil' },
+    { type: 'tv', title: 'TV Shows', count: 510, url: 'https://nil.moe/api/export/tv/nil' },
+    { type: 'games', title: 'Video Games', count: 349, url: 'https://nil.moe/api/export/games/nil' },
+    { type: 'books', title: 'Literature', count: 806, url: 'https://nil.moe/api/export/books/nil' },
+  ])
+})
+
+test('the index carries no entries, which is the whole point of it', () => {
+  // A reader reaches for `lists[].entries`, and here there is none. The
+  // `document: 'index'` above is what says that is deliberate; this asserts
+  // the bytes are actually absent rather than merely undocumented.
+  const index = toExportIndex({ username: 'nil', counts: { films: 712 } })
+
+  assert.equal(index.lists.every((list) => !('entries' in list)), true)
+  assert.equal(JSON.stringify(index).length < 1200, true)
+})
+
+test('the index tells a reader how to ask for the entries it is not carrying', () => {
+  // #334's second complaint: `?limit=` and the per-type urls appeared only in
+  // the 413 body, which a caller reads after it has already failed.
+  const index = toExportIndex({ username: 'nil', siteUrl: 'https://nil.moe' })
+
+  assert.match(index.note, /https:\/\/nil\.moe\/api\/export\/nil\?limit=N/)
+  assert.match(index.note, /\?format=md/)
+})
+
+test('a list nobody has an entry in is counted rather than left out', () => {
+  // Zero and absent are the same sentence to a reader deciding what to fetch,
+  // and `count: 0` is the one that does not read as a bug in the index.
+  const index = toExportIndex({ username: 'newcomer', counts: {} })
+
+  assert.deepEqual(index.lists.map((list) => list.count), [0, 0, 0, 0])
+})
+
+test('the urls are relative when the request url could not be read', () => {
+  // `toSiteUrl` answers `undefined` for an unparseable `rawUrl`, and a
+  // relative url is valid in the index, in the `Link` header and in the 413
+  // alike — so this degrades rather than emitting `undefined/api/export/nil`.
+  const { index, lists } = toExportUrls('nil')
+
+  assert.equal(index, '/api/export/nil')
+  assert.deepEqual(lists.map(({ url }) => url), [
+    '/api/export/films/nil',
+    '/api/export/tv/nil',
+    '/api/export/games/nil',
+    '/api/export/books/nil',
+  ])
+})
+
+test('the index as markdown is the same four urls a reader can follow', () => {
+  const markdown = toIndexMarkdown(
+    toExportIndex({
+      username: 'nil',
+      counts: { films: 712, tv: 510, games: 349, books: 806 },
+      siteUrl: 'https://nil.moe',
+      generatedAt: 1786336961244,
+    })
+  )
+
+  assert.match(markdown, /^# nil's lists$/m)
+  assert.match(markdown, /^Exported 2026-08-10T04:42:41\.244Z\.$/m)
+  assert.match(markdown, /^- Films \(712\) — https:\/\/nil\.moe\/api\/export\/films\/nil$/m)
+  assert.match(markdown, /^- Literature \(806\) — https:\/\/nil\.moe\/api\/export\/books\/nil$/m)
 })
