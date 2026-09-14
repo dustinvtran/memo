@@ -19,3 +19,7 @@
 
 # Local Netlify folder
 .netlify
+
+# Written into the project root by `netlify dev`, which bootstraps the
+# edge-functions runtime whether or not there are any. There are none.
+/deno.lock
