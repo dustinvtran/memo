@@ -552,44 +552,94 @@ goes on the collection's `fillOnlyFields` in `../work_collections.js`.
 
 ### The schedule
 
-`.github/workflows/refresh_metadata.yml` runs a slice nightly (#3). A GitHub
-Action rather than a Netlify Scheduled Function because the job is minutes of
-deliberate pausing between API calls rather than a request — the site's
-functions have a ten-second ceiling — and because it has to write a snapshot
-somewhere before it writes to the database, which a Lambda serving the site
-does not have anywhere to put.
+`.github/workflows/refresh_metadata.yml` is the nightly slice #3 asked for, at
+03:40 UTC. **It has never run, and as configured it cannot: the repository has
+none of the five secrets it reads.** A firing today would check out, `npm ci`,
+and then die inside `backup_database.js` on an empty connection string, which
+reads like a database fault rather than the unset setting it is. The
+workflow's first step now checks all five and fails with the names of the ones
+that are missing, before it installs or connects to anything (#338).
+
+**What has to be true before this thing is live**, none of which is in the
+repository and all of which is a repository setting (#301):
+
+- **Five repository secrets** — `MONGODB_URL`, `TMDB_API_KEY`,
+  `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `GOOGLE_API_KEY`. The values are
+  the ones in `src/db_maintenance/.env`, and setting them is the first time
+  those credentials exist anywhere but that one file on Google Drive — a
+  deliberate widening, and the thing #336 accepted when it chose Actions over
+  a Netlify scheduled function.
+- **One repository variable**, `METADATA_REFRESH_APPLY`, set to `true`. Unset,
+  the schedule runs and writes nothing, indefinitely.
+
+Neither is set today. Both are the owner's to do, and a reader who wants to
+know whether the crawl is running should check them rather than this file:
+`gh secret list` and `gh api repos/dustinvtran/memo/actions/variables`.
+
+A GitHub Action rather than a Netlify Scheduled Function because the job is
+minutes of deliberate pausing between API calls rather than a request — the
+site's functions have a ten-second ceiling — and because it has to write a
+snapshot somewhere before it writes to the database, which a Lambda serving
+the site does not have anywhere to put.
 
 It follows the same discipline as a hand-run `--apply`, in the same order:
 snapshot with `backup_database.js`, verify with `verify_backup.js --live`
 (which exits non-zero on a bad snapshot, so the run stops before it writes),
 then refresh, then audit. The snapshot is kept as a workflow artifact for 90
-days, which is also the first copy of this database that is not in the Google
-Drive folder that holds the code and the credentials — a piece of #303,
-though not that issue's answer.
+days, which would also be the first copy of this database that is not in the
+Google Drive folder that holds the code and the credentials — a piece of #303,
+though not that issue's answer, and not yet a copy of anything.
 
-**A scheduled run is a dry run until the repository variable
-`METADATA_REFRESH_APPLY` is set to `true`.** Merging the workflow does not
-start a crawl of the whole library; turning it on is a setting, changed by
-someone who has read a dry run and taken a snapshot. Until then the nightly
-run is a ten-works-per-collection smoke test rather than a full slice — enough
-to prove the five credentials still work and to show where the queue stands,
-and not enough to spend a seventh of the daily Google Books budget on a run
-that writes nothing. Once it is applying, the slice is 150 per collection,
-which catches today's 2,547 due works up in about ten nights. A
-`workflow_dispatch` run takes `apply` and `limit` as inputs, for the watched
-case.
+**A scheduled run is a dry run until `METADATA_REFRESH_APPLY` is `true`.**
+Merging the workflow does not start a crawl of the whole library; turning it
+on is a setting, changed by someone who has read a dry run and taken a
+snapshot. Until then the nightly run is a ten-works-per-collection smoke test
+rather than a full slice — enough to prove the five credentials still work and
+to show where the queue stands, and not enough to spend a seventh of the daily
+Google Books budget on a run that writes nothing. Once it is applying, the
+slice is 150 per collection, which catches today's 2,547 due works up in about
+ten nights. A `workflow_dispatch` run takes `apply` and `limit` as inputs, for
+the watched case.
 
-It needs five repository secrets: `MONGODB_URL`, `TMDB_API_KEY`,
-`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `GOOGLE_API_KEY`.
+### How you would notice the schedule had stopped
 
-**How you would notice it had stopped**, which is the question #303 asks of
-every scheduled job here. A failed run mails the repository owner. A run where
-nothing answered fails rather than reporting a quiet success. And the audit's
-freshness line is the gauge that does not depend on the workflow being alive
-to report: `never checked` should fall by the slice size each night and
-`oldest` should walk forward. Both standing still means the crawl stopped —
-most likely because GitHub disables a scheduled workflow after sixty days
-without a commit.
+This is the question #303 asks of every scheduled job here, and for this one
+it was checked against GitHub's documentation rather than assumed. The short
+answer is that **the default mail is not quite enough**, for three reasons
+worth knowing before relying on it.
+
+**A failed run does notify, but not "the owner" as a role.** GitHub sends
+notifications for a scheduled workflow to a person fixed by authorship — the
+docs say both "the user who last modified the cron syntax in the workflow
+file" and "the user who initially created the workflow". Here those are the
+same account and it works. But it follows whoever next edits the `cron` line,
+which is not a property anyone would think to re-check after a routine edit.
+
+**Failures-only is opt-in.** The Actions notification setting delivers every
+completed run you are subscribed to; "Only notify for failed workflows" is a
+dropdown you have to select. On a nightly job the default is a mail every
+morning, which is in a filter inside a week — and a filtered folder is exactly
+where a failure goes to not be read. If the mail is meant to be the alarm,
+that setting has to be turned on.
+
+**A stopped schedule does not fail; it goes quiet.** This is a public
+repository, so scheduled workflows here "are automatically disabled when no
+repository activity has occurred in 60 days". A disabled workflow produces no
+run, so there is no failure to mail about. GitHub documents the disabling but
+does not promise a notification for it, and re-enabling is manual — the UI,
+the REST API, or `gh workflow enable`. That is not hypothetical here: this
+repository has had three gaps of sixty days or more between commits, the
+longest of them 872 days, from February 2024 to June 2026. A schedule merged
+before any of those would have been off for most of it, quietly.
+
+So the gauge that does not depend on the workflow being alive to report is the
+audit's own freshness line, read by hand: `never checked` should fall by the
+slice size each night and `oldest` should walk forward. Both standing still
+means the crawl stopped, whatever the mail did or did not say. One thing does
+work in the crawl's favour: the refresh script exits non-zero when every call
+it made failed, so a spent quota or a revoked key is a failure rather than a
+quiet success. That covers the crawl breaking. It does not cover the crawl
+never being started, which is the state the repository is in today.
 
 ## Playtimes
 
