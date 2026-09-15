@@ -64,7 +64,7 @@
  *
  * ## What a repoint writes
  *
- * `apiRefs` is **narrowed**, the way `repair_shared_refs.js` narrows it: every
+ * `apiRefs` is **narrowed**, the way #290's repair narrowed it: every
  * ref naming the old ISBN comes off under either prefix that names a book, the
  * new one goes on, and any other ref the document carries stays. Then the
  * values that belong to the edition rather than to the work come off —
@@ -73,8 +73,8 @@
  *
  * Every approved ISBN is **verified against Google Books again, immediately
  * before the write**, and against the collection as it stands. A proposal file
- * is a saved answer and may be days old; `repair_shared_refs.js` re-runs its
- * checks at the moment it writes for exactly this reason. An approval that no
+ * is a saved answer and may be days old; #290's repair re-ran its
+ * checks at the moment it wrote for exactly this reason. An approval that no
  * longer verifies, or that would file two books under one ISBN, is skipped and
  * reported.
  *
@@ -828,7 +828,7 @@ const report = (plan) => {
  * these are one operation for.
  *
  * No `metadataUpdatedDate` is written and the plan unsets the one that is
- * there — the same reasoning `repair_shared_refs.js` gives. An adapter has not
+ * there — the same reasoning #290's repair gave. An adapter has not
  * said anything about this book yet; it is about to be asked for the first
  * time under an id that names it.
  */
