@@ -65,6 +65,32 @@ jobs:
     # has hung is ended rather than left holding the concurrency group.
     timeout-minutes: 60
     steps:
+      # Every credential the job needs, checked before it installs anything or
+      # opens anything. Without this the first firing of a repository that has
+      # none gets as far as `backup_database.js` and dies on an empty
+      # connection string, which reads like a database fault rather than the
+      # unset setting it is (#338). Names only — a value is never printed, and
+      # a masked secret echoed into a log is still a secret in a log.
+      - name: Check the five credentials are set
+        env:
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          missing=
+          for name in MONGODB_URL TMDB_API_KEY TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET GOOGLE_API_KEY; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Unset repository secrets:$missing"
+            echo "Set each one under Settings > Secrets and variables > Actions." \
+                 "They are repository secrets, not anything this repo can carry:" \
+                 "the values live in src/db_maintenance/.env. See #338."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       # The same Node as `netlify.toml` and `ci.yml`. `src/db_maintenance` is
