@@ -19,11 +19,17 @@
 name: Refresh work metadata
 
 on:
-  # Daily, and the slice size below is what makes daily right: the queue is
-  # ordered longest-unchecked first, so a run takes the works that have waited
-  # most and stamps them, and the next night carries on behind them. Catching
-  # up from today's 2,547 due works takes about ten nights; after that a night
-  # finds only what has crossed the 180-day line, which is a few dozen.
+  # Daily, and the slice size is what makes daily right: the queue is ordered
+  # longest-unchecked first, so a run takes the works that have waited most and
+  # stamps them, and the next night carries on behind them. After the first
+  # crawl a night finds only what has crossed the 180-day line, which across
+  # the whole library is a few dozen.
+  #
+  # The slice size is four numbers now rather than one, and they live in
+  # `src/db_maintenance/work_collections.js` beside each collection's pause,
+  # because the four APIs and the four queues are not alike — #352, where one
+  # limit of 150 was more than films, tv and games each had due and less than
+  # books did.
   #
   # 03:40 UTC, off the hour: GitHub queues every cron in the minute after the
   # hour and runs them late, and nothing here cares which minute it is.
@@ -35,8 +41,8 @@ on:
         description: "Types to refresh (films,tv,games,books)"
         default: "films,tv,games,books"
       limit:
-        description: "Works per collection"
-        default: "150"
+        description: "Works per collection (blank: each collection's own)"
+        default: ""
       max-age-days:
         description: "Skip works checked within this many days"
         default: "180"
@@ -60,9 +66,10 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    # Comfortably above a 600-work run at these delays (roughly seven
-    # minutes), and far below the six hours a job may take, so a crawl that
-    # has hung is ended rather than left holding the concurrency group.
+    # Comfortably above a full slice of all four collections at their own
+    # limits and pauses (1,100 works, well under half an hour), and far below
+    # the six hours a job may take, so a crawl that has hung is ended rather
+    # than left holding the concurrency group.
     timeout-minutes: 60
     steps:
       # Every credential the job needs, checked before it installs anything or
@@ -120,7 +127,9 @@ jobs:
       #
       # The slice size is decided here too, because a scheduled dry run and a
       # scheduled apply want different ones and the shell says so far more
-      # legibly than a nested expression would.
+      # legibly than a nested expression would. Empty means "pass no `--limit`,
+      # so each collection takes its own", which is what a scheduled apply
+      # wants and what an empty `limit` input asks for.
       - name: Decide whether this run writes, and how big a slice
         id: mode
         run: |
@@ -129,12 +138,11 @@ jobs:
             limit="${{ inputs.limit }}"
           elif [ "${{ vars.METADATA_REFRESH_APPLY == 'true' }}" = "true" ]; then
             apply=true
-            # 150 per collection. Google Books is the binding rate limit at
-            # roughly a thousand calls a day and this leaves most of it;
-            # IGDB's limit is four a second rather than a daily total, and the
-            # adapter's own pause already respects it. At this size the 2,547
-            # works due today are caught up in about ten nights.
-            limit=150
+            # Empty, so each collection uses its own `defaultLimit` — the
+            # rate limits are reasoned about one API at a time in
+            # `src/db_maintenance/work_collections.js`, which is also where
+            # the pause between calls already lived. #352.
+            limit=
           else
             apply=false
             # A nightly *dry* run is a smoke test, not a crawl. It proves the
@@ -145,8 +153,12 @@ jobs:
           fi
           echo "apply=$apply" >> "$GITHUB_OUTPUT"
           echo "limit=$limit" >> "$GITHUB_OUTPUT"
-          echo "Mode: $([ "$apply" = "true" ] && echo APPLY || echo 'dry run')," \
-               "$limit works per collection"
+          if [ -n "$limit" ]; then
+            slice="$limit works per collection"
+          else
+            slice="each collection's own limit"
+          fi
+          echo "Mode: $([ "$apply" = "true" ] && echo APPLY || echo 'dry run'), $slice"
 
       # CLAUDE.md's first rule, and it is not weakened by being automated: a
       # fresh snapshot immediately before every `--apply`, verified by
@@ -189,8 +201,9 @@ jobs:
       # refresh than they ever did to the gap fills that are all this has run
       # so far.
       #
-      # The per-collection limit comes from the step above, which is where the
-      # rate limits are reasoned about.
+      # `--limit` is passed only when the step above chose one: a manual run
+      # that asked for a slice size, or the nightly dry run's smoke test.
+      # Without it each collection takes its own.
       #
       # The script exits non-zero if every call it made failed, which is what a
       # spent quota and a revoked key both look like and what a crawl that has
@@ -202,10 +215,11 @@ jobs:
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          LIMIT: ${{ steps.mode.outputs.limit }}
         run: |
           node src/db_maintenance/scripts/backfill_work_metadata.js \
             --only="${{ inputs.only || 'films,tv,games,books' }}" \
-            --limit="${{ steps.mode.outputs.limit }}" \
+            ${LIMIT:+--limit="$LIMIT"} \
             --max-age-days="${{ inputs['max-age-days'] || '180' }}" \
             --json="$RUNNER_TEMP/refresh.json" \
             ${{ steps.mode.outputs.apply == 'true' && '--apply' || '' }}

@@ -1,6 +1,7 @@
 /**
- * @file Which works a refresh run spends its API calls on, in what order, and
- * how far behind the library as a whole has fallen.
+ * @file Which works a refresh run spends its API calls on, in what order,
+ * which of its outcomes let a work leave the queue, and how far behind the
+ * library as a whole has fallen.
  *
  * Pure and dependency-free like its neighbours, because under a schedule this
  * is the half that decides whether a crawl finishes at all. The I/O is in
@@ -15,6 +16,7 @@
  * gives Google Books about a thousand calls a day.
  */
 const { hasGaps } = require("./work_metadata_merge");
+const { notFound } = require("../api/utils/errors");
 
 /** Six months, which is the default `--max-age-days`. */
 const DEFAULT_MAX_AGE_DAYS = 180;
@@ -152,6 +154,86 @@ const summarizeFreshness = (
 const runsRemaining = (dueCount, limit) =>
   Number.isFinite(limit) && limit > 0 ? Math.ceil(dueCount / limit) : null;
 
+/**
+ * The class `../api/utils/errors.js` gives a 404, asked of the module the
+ * adapters build their errors with rather than copied here as a string. A
+ * literal would be a second spelling of `NotFound` that nothing would fail if
+ * somebody renamed the first.
+ */
+const NOT_FOUND = notFound().error;
+
+/**
+ * Whether a failed retrieve was an answer about this work rather than weather.
+ *
+ * The third of the three outcomes that have to advance the queue, and the only
+ * one of them that needs a judgement to tell it from an outcome that must not.
+ * The other two are beside their `touch()` calls in
+ * scripts/backfill_work_metadata.js: a refusal (#333) and a work carrying no
+ * id at all (#343). This one is here because it reads an error class rather
+ * than a document, and because reading it wrong is silent either way.
+ *
+ * `tmdb_adapter.js`, `games/igdb.js` and `books/google.js` each map a 404 to
+ * `errors.notFound()` and everything else — a 429, a 503, a timeout, a dropped
+ * connection, a 401 — to `errors.internal()` or `errors.unauthorized()`,
+ * deliberately and with a comment saying why. IGDB and Google Books go further
+ * and *manufacture* a 404, because an id neither of them holds comes back as
+ * an empty array rather than as a status. So the distinction already exists in
+ * the error class and this only has to read it.
+ *
+ * Which way round the doubt falls is the whole of it. A 404 read as weather is
+ * #352: fourteen works whose ids their API no longer holds, re-fetched every
+ * night for ever, each spending a real call to be told the same thing, at the
+ * head of a queue sorted longest-unchecked first. A 429 read as a fact about
+ * the work would be far worse — it would stamp the whole slice on the night a
+ * quota ran out and record a spent budget as six months of freshness — which
+ * is why this names the one class that may stamp instead of listing the ones
+ * that may not. A class nobody thought of is weather, and weather is retried.
+ *
+ * @type {(error: unknown) => boolean}
+ */
+const isPermanentFailure = (error) => error?.error === NOT_FOUND;
+
+/**
+ * A run's report reduced to the two numbers that say whether the APIs were
+ * working at all, and the verdict `reportProgress` in
+ * scripts/backfill_work_metadata.js draws from them. That function's comment
+ * is where the reasoning lives and is worth reading before moving a bucket
+ * from one total to the other; this is only the arithmetic, here so that the
+ * suite can reach it.
+ *
+ * Four buckets are answers: a work the API described, a work it described as
+ * something else (a refusal), a work it confirmed was already current, and a
+ * work it says it no longer holds. All four mean a working API and all four
+ * advance the queue.
+ *
+ * `unrefreshable` is in neither total, on purpose, and that is the half #352
+ * changed. A work with no id costs no call, so counting it as answered would
+ * let a slice made of nothing else report a healthy API, and counting it as
+ * failed would turn an ordinary run red. It used to be `processed` that
+ * guarded this, which is every work in the slice including those — so a slice
+ * of 150 works with no ids and no calls at all reported that "every one of the
+ * 0 API calls this run made failed". A run that made no calls is not stalled;
+ * it has run out of things worth asking.
+ *
+ * @type {(report: object) => { answered: number, failed: number, stalled: boolean }}
+ */
+const summarizeProgress = (report) => {
+  const totals = Object.values(report ?? {}).reduce(
+    (sum, result) => ({
+      answered:
+        sum.answered +
+        (result?.changes?.length ?? 0) +
+        (result?.refusals?.length ?? 0) +
+        (result?.deadRefs?.length ?? 0) +
+        (result?.unchanged ?? 0),
+      failed: sum.failed + (result?.failures?.length ?? 0),
+    }),
+    { answered: 0, failed: 0 }
+  );
+
+  return { ...totals, stalled: totals.failed > 0 && totals.answered === 0 };
+};
+
 module.exports = {
   DEFAULT_MAX_AGE_DAYS,
   DAY_MS,
@@ -161,4 +243,6 @@ module.exports = {
   selectForRefresh,
   summarizeFreshness,
   runsRemaining,
+  isPermanentFailure,
+  summarizeProgress,
 };

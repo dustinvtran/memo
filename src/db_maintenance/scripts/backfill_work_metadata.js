@@ -45,7 +45,9 @@
  *   --max-age-days=N    in full-refresh mode, skip works checked within N
  *                       days (default 180)
  *   --force             ignore --max-age-days
- *   --limit=N           stop after N works per collection
+ *   --limit=N           stop after N works per collection (default: the
+ *                       collection's own `defaultLimit`, since the four APIs
+ *                       and the four queues are not alike — #352)
  *   --delay-ms=N        override the per-type pause between API calls
  *   --json=path         write a machine-readable report
  *   --backup-dir=path   where to put backups (default ../backups)
@@ -63,6 +65,16 @@
  * reads; and a book's `releaseYear` and `duration`, because an ISBN names an
  * edition and Google Books answers about the printing rather than the work.
  * `fillOnlyFields` in ../work_metadata_merge.js has the measurements.
+ *
+ * **Every outcome but an unanswered call advances the queue.** A work that was
+ * updated, one the API confirmed was current, one whose ref is refused, one
+ * whose ref the API no longer holds and one carrying no ref at all are all
+ * stamped with `metadataUpdatedDate`, so the next run takes the works behind
+ * them rather than the same ones again. Only a failure that might succeed
+ * tomorrow — a 429, a 503, a timeout — is left unstamped, and the comments at
+ * each of those branches say why that one falls where it does. #333 made the
+ * refusal stamp and #352 the other two, after a nightly slice of 150 books
+ * went entirely to works that could not be updated.
  *
  * The run exits non-zero if every API call it made failed, so a schedule can
  * tell a crawl that is progressing from one that has quietly stopped.
@@ -85,6 +97,8 @@ const {
   DAY_MS,
   selectForRefresh,
   runsRemaining,
+  isPermanentFailure,
+  summarizeProgress,
 } = require("../metadata_refresh_plan");
 const { loadAdapter, describeError } = require("../load_adapter");
 
@@ -95,7 +109,10 @@ const options = {
   missingOnly: args["missing-only"] === true,
   force: args.force === true,
   maxAgeMs: (parseInt(args["max-age-days"]) || DEFAULT_MAX_AGE_DAYS) * DAY_MS,
-  limit: parseInt(args.limit) || Infinity,
+  // Unset rather than unlimited: each collection has its own, and this only
+  // overrides it. See `defaultLimit` in ../work_collections.js.
+  limit:
+    args.limit === undefined ? undefined : parseInt(args.limit) || Infinity,
   delayMs:
     args["delay-ms"] === undefined ? undefined : parseInt(args["delay-ms"]),
   backupDir: String(args["backup-dir"] ?? path.join(__dirname, "..", "backups")),
@@ -157,27 +174,24 @@ const main = async () => {
  * same slice and fails the same way, silently, for ever.
  *
  * "Progress" is deliberately not "something changed": a work the API confirms
- * is already current, and a work whose ref is refused, both advance the queue
- * and both are a working API. Only an unanswered call is not progress.
+ * is already current, a work whose ref is refused, and a work whose ref the
+ * API says it no longer holds all advance the queue and all are a working
+ * API. Only an unanswered call is not progress.
+ *
+ * What #352 changed here is what counts as a call. A work with no ref is not
+ * one — the loop below skips it before the request — so it can neither answer
+ * nor fail, and a slice made of nothing else used to trip this: `processed`
+ * counted those works, `answered` could not, and the run announced that every
+ * one of its 0 API calls had failed. `summarizeProgress` in
+ * ../metadata_refresh_plan.js counts calls rather than works, and is where
+ * that arithmetic is tested.
  */
 const reportProgress = (report) => {
-  const totals = Object.values(report).reduce(
-    (sum, result) => ({
-      processed: sum.processed + (result.processed ?? 0),
-      answered:
-        sum.answered +
-        (result.changes?.length ?? 0) +
-        (result.refusals?.length ?? 0) +
-        (result.unchanged ?? 0),
-      failed: sum.failed + (result.failures?.length ?? 0),
-    }),
-    { processed: 0, answered: 0, failed: 0 }
-  );
-
-  if (totals.processed === 0 || totals.answered > 0) return;
+  const { failed, stalled } = summarizeProgress(report);
+  if (!stalled) return;
 
   console.error(
-    `\nEvery one of the ${totals.failed} API calls this run made failed, so ` +
+    `\nEvery one of the ${failed} API calls this run made failed, so ` +
       `no work advanced and the next run will re-read the same slice. This ` +
       `is what a spent daily quota, a revoked key or a dead API looks like — ` +
       `read the errors above rather than re-running.`
@@ -192,9 +206,17 @@ const backfillCollection = async (db, collection) => {
   if (!adapter) return { skipped: "adapter could not be loaded" };
 
   const works = await db.collection(collection.works).find().toArray();
-  const { due, selected } = selectForRefresh(collection, works, options);
+  // The same shape as `delayMs` below and for the same reason: the flag when a
+  // run was given one, the collection's own number otherwise. Resolved here
+  // rather than inside `selectForRefresh`, which is also asked for an unlimited
+  // queue by scripts/propose_book_refs.js and must go on answering with one.
+  const limit = options.limit ?? collection.defaultLimit ?? Infinity;
+  const { due, selected } = selectForRefresh(collection, works, {
+    ...options,
+    limit,
+  });
 
-  const runs = runsRemaining(due.length, options.limit);
+  const runs = runsRemaining(due.length, limit);
   console.log(
     `  ${works.length} works, ${due.length} due, ` +
       `processing ${selected.length} (longest unchecked first)` +
@@ -212,23 +234,70 @@ const backfillCollection = async (db, collection) => {
   const delayMs = options.delayMs ?? collection.defaultDelayMs;
   const changes = [];
   const failures = [];
+  const deadRefs = [];
   const refusals = [];
   const unrefreshable = [];
   let unchanged = 0;
+  let asked = 0;
 
-  for (const [index, work] of selected.entries()) {
+  for (const work of selected) {
     const apiRef = findApiRef(work.apiRefs, collection.retrievePrefix);
+
+    // Nothing to ask. 191 works carry no id the adapter would take (#343),
+    // and the `continue` comes before the request, so they cost no call. What
+    // they cost is a slot, and until #352 they cost one every night for ever:
+    // no call meant nothing to stamp the work with, `metadataUpdatedDate`
+    // stayed absent, and longest-unchecked-first sorts an undated work to the
+    // head of the queue. On the first autonomous run that was 57 of the 150
+    // books in the slice, 38% of the nightly budget, permanently.
+    //
+    // So it is stamped, on the reasoning of the refusal below rather than a
+    // new one. The work has been asked about and the answer is that there is
+    // nothing to ask; that answer changes only when a human supplies an id,
+    // which is not something that happens overnight. Coming round again in
+    // `--max-age-days` is the right cadence for re-checking whether anybody
+    // has.
+    //
+    // Nothing is hidden by the stamp. The work is counted on the line below
+    // and named in `--json` on the run that finds it,
+    // `scripts/audit_database.js` lists every work with no retrievable ref and
+    // does not look at the date to do it, and `--missing-only` ignores the
+    // date entirely — so the mode that would notice an id appearing still sees
+    // the work every run.
     if (!apiRef) {
       unrefreshable.push(describe(work));
+      if (options.apply) await touch(db, collection, work);
       continue;
     }
 
-    if (index > 0) await sleep(delayMs);
+    // Calls rather than works, since the pause is rate limiting between
+    // requests and the works above made none.
+    if (asked > 0) await sleep(delayMs);
+    asked += 1;
 
     const result = await adapter.retrieve(apiRef);
     if (result.isErr()) {
       const error = describeError(result.error);
       console.log(`  ! ${title(work)} (${apiRef}): ${error}`);
+
+      // "Try again tomorrow" and "this id is gone" come down the same branch
+      // and are not the same outcome. `isPermanentFailure` in
+      // ../metadata_refresh_plan.js reads the adapter's error class and has
+      // the argument; the short of it is that a 404 is an answer about this
+      // work and stamps exactly as a refusal does, while a 429, a 503 or a
+      // timeout is weather and must not, because a run that stamped a slice
+      // it never read would record a spent quota as six months of freshness.
+      //
+      // Fourteen works are in the first bucket — `Raiders of the Lost Ark`
+      // under `tmdb__62128`, `Ulysses` under `ISBN__9788180320996` — and each
+      // was spending a real call every night to be told the same thing, ahead
+      // of works that had never been read at all. #352.
+      if (isPermanentFailure(result.error)) {
+        deadRefs.push({ ...describe(work), error });
+        if (options.apply) await touch(db, collection, work);
+        continue;
+      }
+
       failures.push({ ...describe(work), error });
       continue;
     }
@@ -260,6 +329,13 @@ const backfillCollection = async (db, collection) => {
     // --verify-shared-refs` and `--verify-titles` are what actually diagnose
     // which half is misfiled, and `--missing-only` ignores the date entirely,
     // so a refused work is still picked up by every gap-filling run. #290.
+    //
+    // Two more outcomes joined it in #352 on this same argument and not a new
+    // one — a work with no id at all, at the top of the loop, and a ref the
+    // API says it no longer holds, just above. The three together are every
+    // outcome that is a fact about the work rather than about the weather,
+    // and every one of them had been holding its place at the head of a queue
+    // it could never leave.
     if (refused) {
       console.log(`  ! ${title(work)}: ${refused}`);
       refusals.push({ ...describe(work), refused });
@@ -291,7 +367,8 @@ const backfillCollection = async (db, collection) => {
   console.log(
     `  ${changes.length} ${options.apply ? "updated" : "would be updated"}, ` +
       `${unchanged} already current, ${refusals.length} refused (the apiRef ` +
-      `names another work), ${failures.length} failed, ` +
+      `names another work), ${deadRefs.length} whose ref the API no longer ` +
+      `holds, ${failures.length} failed, ` +
       `${unrefreshable.length} without a ${collection.retrievePrefix}__ ref`
   );
 
@@ -299,8 +376,10 @@ const backfillCollection = async (db, collection) => {
     works: works.length,
     due: due.length,
     processed: selected.length,
+    asked,
     changes,
     failures,
+    deadRefs,
     refusals,
     unrefreshable,
     unchanged,
