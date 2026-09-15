@@ -154,8 +154,45 @@ const exportUserLists = async (event) => {
     : asJson(document, context)
 }
 
+/**
+ * The answer to a CORS preflight, which this route never used to give.
+ *
+ * `asText` has sent `access-control-allow-origin: *` since the route was
+ * written, with a comment saying that reading this from a page or a notebook
+ * should not need a proxy. That header is only half of CORS: a request
+ * carrying anything outside the small set the spec calls simple — any custom
+ * header, which is most of the ways a script asks for JSON — is preceded by
+ * an `OPTIONS` to the same url, and the browser sends the real request only
+ * if that one approves it. `router.js` matches on verb, `OPTIONS` matched
+ * nothing, and `.otherwise` answered `404`. So the permission was advertised
+ * on a response nobody could reach that way.
+ *
+ * `204` rather than `200`: there is no body, and a preflight is not a
+ * document. A day of `max-age` is the browser not asking again for every
+ * request in a session; Chromium caps it at two hours regardless.
+ *
+ * No `access-control-allow-credentials`, deliberately. These lists are public
+ * and the route reads no cookie and no token — and the wildcard origin above
+ * would be invalid alongside it anyway.
+ * @type {() => Response}
+ */
+const preflight = () => ({
+  statusCode: 204,
+  headers: {
+    ...responses.SECURITY_HEADERS,
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, OPTIONS',
+    // Whatever was asked for. The alternative is a list that has to be kept in
+    // step with every client, and there is nothing to protect here: the route
+    // is public, unauthenticated and read-only.
+    'access-control-allow-headers': '*',
+    'access-control-max-age': '86400',
+  },
+})
+
 export {
   exportUserLists,
+  preflight,
 }
 ///////////////////////////////////////////////////////////////////////////////
 
