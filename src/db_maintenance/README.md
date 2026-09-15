@@ -431,8 +431,9 @@ node scripts/backfill_work_metadata.js --only=games --missing-only --apply
 
 Useful flags: `--only=films,tv,games,books`, `--missing-only` (only touch
 works with gaps, instead of refreshing everything older than
-`--max-age-days`, default 180), `--force`, `--limit=N`, `--delay-ms=N`,
-`--json=path`, `--backup-dir=path`.
+`--max-age-days`, default 180), `--force`, `--limit=N` (overrides the
+per-collection default described below), `--delay-ms=N`, `--json=path`,
+`--backup-dir=path`.
 
 Notes on its behaviour:
 
@@ -442,10 +443,16 @@ Notes on its behaviour:
 - A field the API returns nothing for is never cleared.
 - `apiRefs` and `externalUrls` are merged, so a ref we already know about
   survives even if the API stops reporting it.
-- Each work the API answered about gets a `metadataUpdatedDate` — including
-  one nothing changed on, and, since #333, one whose ref was refused. The
-  field means **last checked**, not last changed, and it is what the queue
-  below is ordered by.
+- **Every outcome but an unanswered call gets a `metadataUpdatedDate`** — a
+  work that was updated, one nothing changed on, one whose ref was refused
+  (#333), one whose ref the API says it no longer holds, and one carrying no
+  usable ref at all (those two, #352). The field means **last checked**, not
+  last changed, and it is what the queue below is ordered by. Only a failure
+  that might succeed tomorrow — a 429, a 503, a timeout — is left unstamped so
+  that it is retried. The adapters already separate the two by error class,
+  mapping a 404 to `errors.notFound()` and everything else to
+  `errors.internal()`, and `isPermanentFailure` in
+  `../metadata_refresh_plan.js` is what reads it.
 - **Some fields are filled and never replaced.** Both titles, for every type,
   and a book's `releaseYear` and `duration`. See "What a refresh will not
   overwrite" below.
@@ -499,6 +506,23 @@ carries on behind it, and two runs over the same data pick the same slice.
 That is what makes a crawl something a schedule can do a piece at a time
 against a daily rate limit.
 
+**A work that can never succeed still has to leave the queue**, and that is
+what #352 was. An unstamped work has no date at all, so longest-unchecked-first
+sorts it ahead of everything else, for ever. The first autonomous run of the
+nightly schedule spent its entire books slice on works in that state — `89
+refused + 4 failed + 57 with no ISBN = 150` — and updated nothing, while
+printing four green lines with ordinary-looking counts in them. #333 had
+already fixed the refusals; the other two branches had not been part of it.
+
+**The slice size is per collection**, out of `defaultLimit` in
+`../work_collections.js` beside each collection's pause, and `--limit=N`
+overrides all four for a watched run. One number across four collections was
+the other half of that run: films, tv and games each cleared their whole due
+list inside a slice of 150, while books ran out at 150 with 74 still waiting —
+a shortfall that repeats nightly rather than one that catches up. Books is also
+the only one of the four whose API caps a day rather than a rate, so it is the
+one that most deserves a number of its own.
+
 The run prints how far behind each collection is and how many runs of that
 size would catch up:
 
@@ -518,7 +542,9 @@ A run exits non-zero when **every** API call it made failed, and only then. A
 handful of failures is ordinary weather and stays green; nothing answering at
 all is a spent daily quota, a revoked key or an API that has gone away, and it
 looks exactly like a healthy run in every other count while leaving the queue
-where it was.
+where it was. A run that made no calls at all — a slice of works that carry no
+refs, which cost nothing to skip — is not that, and stays green; it used to go
+red, because the guard counted works processed rather than calls made. #352.
 
 ### What a refresh will not overwrite
 

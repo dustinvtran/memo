@@ -19,6 +19,22 @@ const { WORK_TYPES } = require("../api/utils/work_types");
  * `stringArrayFields` / `numberFields` are the metadata fields we expect the
  * adapter to fill, and that the audit checks for corruption.
  *
+ * `defaultDelayMs` and `defaultLimit` are the two halves of what a scheduled
+ * crawl may spend on a collection: how fast it may ask, and how much of the
+ * queue one night takes. Both are per collection because the four APIs are not
+ * alike — IGDB caps a rate, Google Books caps a day, TMDB effectively caps
+ * neither — and because the queues are not alike either. One `--limit` across
+ * all four was half of #352: on the first autonomous run films, tv and games
+ * each cleared their whole due list inside a slice of 150 while books ran out
+ * at 150 with 74 still waiting, which is a shortfall that repeats every night
+ * rather than one that catches up. The numbers are below, each beside its own
+ * reason.
+ *
+ * Defaults, not settings: `--delay-ms` and `--limit` override them for a
+ * watched run, and a script that wants the whole queue rather than a night of
+ * it — scripts/propose_book_refs.js asks `selectForRefresh` for exactly that —
+ * never reads them at all.
+ *
  * `adapterModule` is resolved here, with `require.resolve`, rather than stored
  * as a relative specifier: the descriptors are read from `scripts/` as well as
  * from this directory, and a relative specifier resolves against whichever
@@ -41,6 +57,12 @@ const SCRIPT_FIELDS = {
     stringArrayFields: ["genres", "directors", "actors"],
     numberFields: ["releaseYear", "duration"],
     defaultDelayMs: 300,
+    // TMDB publishes no daily total worth budgeting against, so this number
+    // is wall clock rather than quota: 300 films at the pause above is a few
+    // minutes of a job that is allowed an hour. Now that the first crawl is
+    // behind us a night finds 18 films due, so 300 is headroom rather than a
+    // ceiling anything is expected to reach.
+    defaultLimit: 300,
   },
   tv: {
     adapterModule: require.resolve(
@@ -50,6 +72,9 @@ const SCRIPT_FIELDS = {
     stringArrayFields: ["genres", "directors", "actors"],
     numberFields: ["releaseYear", "duration", "episodes"],
     defaultDelayMs: 300,
+    // The same API and the same reasoning as films, on a collection a third
+    // the size: 26 due on the run in #352.
+    defaultLimit: 300,
   },
   games: {
     adapterModule: require.resolve(
@@ -60,6 +85,11 @@ const SCRIPT_FIELDS = {
     numberFields: ["releaseYear", "duration"],
     // IGDB caps at 4 requests a second, and a retrieve costs three of them.
     defaultDelayMs: 1000,
+    // IGDB's limit is a rate rather than a daily total, so the pause above is
+    // the real constraint and this is only what keeps one collection from
+    // spending the whole hour: a retrieve here is two round trips on top of
+    // the pause, which is the slowest work in the run.
+    defaultLimit: 200,
   },
   books: {
     adapterModule: require.resolve(
@@ -75,6 +105,13 @@ const SCRIPT_FIELDS = {
     fillOnlyFields: ["releaseYear", "duration"],
     // The unauthenticated Google Books API rate limits aggressively.
     defaultDelayMs: 1000,
+    // The only daily cap of the four — roughly a thousand calls — and the only
+    // queue that has ever outrun a slice: 224 due against a limit of 150 on
+    // the run in #352, and that was with 57 of the 150 slots going to works
+    // with no ISBN at all. 300 clears a backlog that size in one night and
+    // still leaves most of the day for the searches
+    // scripts/propose_book_refs.js spends against the same budget.
+    defaultLimit: 300,
   },
 };
 

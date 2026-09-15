@@ -1,6 +1,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 
+const errors = require("../api/utils/errors");
 const { COLLECTIONS } = require("./work_collections");
 const {
   DAY_MS,
@@ -10,6 +11,8 @@ const {
   selectForRefresh,
   summarizeFreshness,
   runsRemaining,
+  isPermanentFailure,
+  summarizeProgress,
 } = require("./metadata_refresh_plan");
 
 const games = COLLECTIONS.find((c) => c.type === "games");
@@ -195,4 +198,145 @@ test("--missing-only still picks up a work with a gap, however recently read", (
 
   assert.equal(isDue(games, gappy, { missingOnly: true, now: NOW }), true);
   assert.equal(isDue(games, gappy, { now: NOW }), false);
+});
+
+
+/**
+ * #352. The queue is ordered longest-unchecked first and an unstamped work
+ * has no date at all, so anything the backfill leaves unstamped sits at the
+ * head of it for ever. On the first autonomous run that was the whole books
+ * slice — `89 refused + 4 failed + 57 with no ISBN = 150` — and the run
+ * updated nothing while printing four green lines.
+ *
+ * The three tests below are the three outcomes the script has to get right,
+ * and they are here rather than beside the script because the script is the
+ * half with a database and four API keys in it.
+ */
+test("a work with no ref advances the queue once it has been stamped", () => {
+  // The stamp itself is `touch()` in scripts/backfill_work_metadata.js; what
+  // this pins is that a stamped work stops being due at all, so the slot goes
+  // to whatever was behind it, and that an unstamped one takes that slot back
+  // on every run for ever. 191 works carry no id (#343), so before #352 those
+  // 191 were the permanent head of the queue.
+  const noRef = complete({ _id: "n", apiRefs: [], metadataUpdatedDate: NOW });
+  const waiting = complete({ _id: "w", metadataUpdatedDate: daysAgo(400) });
+
+  const { selected } = selectForRefresh(games, [noRef, waiting], {
+    now: NOW,
+    limit: 1,
+  });
+
+  assert.deepEqual(
+    selected.map((w) => w._id),
+    ["w"]
+  );
+
+  // And unstamped, which is what it did before, it takes the slot instead —
+  // every night, since nothing about it will change until a human gives it an
+  // id.
+  const before = selectForRefresh(
+    games,
+    [complete({ _id: "n", apiRefs: [] }), waiting],
+    { now: NOW, limit: 1 }
+  );
+  assert.deepEqual(
+    before.selected.map((w) => w._id),
+    ["n"]
+  );
+});
+
+test("a 404 is an answer about the work and a 429 is weather", () => {
+  // The adapters already draw this line: tmdb_adapter.js, games/igdb.js and
+  // books/google.js each map a 404 to `errors.notFound()` and everything else
+  // to `errors.internal()`. This reads the class rather than a status, so the
+  // two sides of it stay one decision made in one place.
+  const notFound = errors.notFound(undefined, "no such book");
+  assert.equal(isPermanentFailure(notFound), true);
+  assert.equal(isPermanentFailure(errors.internal("429 Too Many")), false);
+  assert.equal(isPermanentFailure(errors.internal("tmdb timed out")), false);
+  assert.equal(isPermanentFailure(errors.unauthorized("401")), false);
+  assert.equal(isPermanentFailure(errors.db("connection reset")), false);
+
+  // A class nobody thought of is weather, and weather is retried. The cost of
+  // being wrong is not symmetric: a 404 retried for ever wastes one call a
+  // night, and a 429 taken for a fact about the work records a spent quota as
+  // six months of freshness.
+  assert.equal(isPermanentFailure({ error: "SomethingNew" }), false);
+  assert.equal(isPermanentFailure("no such book"), false);
+  assert.equal(isPermanentFailure(undefined), false);
+});
+
+test("an all-failed run reports no progress, and a 404 is not a failure", () => {
+  // `reportProgress` in scripts/backfill_work_metadata.js is the only thing a
+  // scheduled crawl can say about itself, and this is the case it exists for:
+  // a revoked key or a spent quota looks identical to a healthy run in every
+  // count but this one. #352 must not have weakened it.
+  assert.deepEqual(
+    summarizeProgress({
+      films: {
+        failures: [{}, {}, {}],
+        changes: [],
+        refusals: [],
+        unchanged: 0,
+      },
+      books: { failures: [{}], changes: [], refusals: [], unchanged: 0 },
+    }),
+    { answered: 0, failed: 4, stalled: true }
+  );
+
+  // One answer anywhere is a working API, whichever of the four kinds it is.
+  for (const answer of [
+    { changes: [{}] },
+    { refusals: [{}] },
+    { deadRefs: [{}] },
+    { unchanged: 1 },
+  ]) {
+    const totals = summarizeProgress({
+      films: { failures: [{}, {}] },
+      books: answer,
+    });
+    assert.equal(totals.stalled, false, `${Object.keys(answer)[0]} is an answer`);
+  }
+});
+
+test("a run that made no calls at all is not a stalled run", () => {
+  // The half of the guard #352 changed. A work with no ref costs no call, so
+  // a slice made of nothing else neither answers nor fails — and the old test,
+  // over works processed rather than calls made, announced that every one of
+  // its 0 API calls had failed.
+  assert.deepEqual(
+    summarizeProgress({
+      books: { works: 650, due: 224, processed: 150, asked: 0, failures: [] },
+    }),
+    { answered: 0, failed: 0, stalled: false }
+  );
+
+  assert.equal(summarizeProgress({}).stalled, false);
+  assert.equal(summarizeProgress(undefined).stalled, false);
+});
+
+test("each collection carries its own nightly slice size", () => {
+  // The other half of #352: films, tv and games each cleared their whole due
+  // list inside a slice of 150 while books ran out at 150 with 74 waiting, and
+  // books is the only one of the four whose API caps a day rather than a rate.
+  // The numbers live beside the pauses in ./work_collections.js, and what is
+  // pinned here is that all four have one.
+  for (const collection of COLLECTIONS) {
+    assert.ok(
+      Number.isInteger(collection.defaultLimit) && collection.defaultLimit > 0,
+      `${collection.type} has no defaultLimit`
+    );
+  }
+
+  // And that `selectForRefresh` does not read them. It answers with the whole
+  // queue when it is given no limit, which is what
+  // scripts/propose_book_refs.js asks it for, so the fallback to the
+  // collection's own number is resolved in the backfill script instead —
+  // the one place where a slice is what is wanted.
+  const works = ["a", "b", "c"].map((id) => complete({ _id: id }));
+  assert.equal(selectForRefresh(games, works, { now: NOW }).selected.length, 3);
+  assert.equal(
+    selectForRefresh(games, works, { now: NOW, limit: 2 }).selected.length,
+    2
+  );
 });
