@@ -110,6 +110,7 @@ GET /api/export/:username            # an index: what each list holds, and its u
 GET /api/export/:type/:username      # one list: films, tv, games or books
 ?format=md                           # Markdown instead of JSON
 ?limit=200                           # the N most recently updated, per list
+?notes=false                         # metadata and scores only — most of the bytes are notes
 ```
 
 Every entry comes with the work's metadata (with the user's overrides
@@ -130,10 +131,23 @@ Every response also carries a `Link` header naming the index and the four
 lists, which a `curl -I` will show you without downloading anything.
 
 ```
-GET /api/export/nil                  # ~600 b — counts and urls
+GET /api/export/nil                  # ~950 b — counts and urls
 GET /api/export/films/nil            # 1.07 MB — one list in full
 GET /api/export/nil?limit=200        # 0.98 MB — 200 of each, most recent first
+GET /api/export/nil?notes=false      # 1.48 MB — every entry, no long notes
 ```
+
+**The long notes are most of the bytes, and nothing to count.** Measured
+against production, they are 86% of the games list, 49% of books, 40% of
+films and 69% of all four together. `?notes=false` leaves them out and keeps
+everything else — scores, genres, directors, studios, dates, years — which
+takes the largest single list from 2.94 MB to 0.42 MB and the whole profile
+from 4.77 MB to 1.48 MB. That is the shape to ask for when the question is
+about the ratings rather than about what was written; the default is still to
+send them, because they are what makes this an export rather than a table of
+titles. `false`, `0` and `no` all mean off, and anything else means on — a
+typo that silently dropped 86% of the response would be the wrong way round
+for a parameter whose job is to make the response smaller.
 
 **The responses are cached for five minutes**, and served stale for up to a
 day while they refresh in the background (`Cache-Control` and

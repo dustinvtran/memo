@@ -90,6 +90,7 @@ const CACHE_HEADERS = {
  *
  * `?format=md` for Markdown; JSON otherwise. `?limit=N` keeps the N
  * most recently updated entries of each list, as `/api/entries` does.
+ * `?notes=false` drops the long notes, which are most of the bytes.
  * @type {(event: Event) => Promise<Response>}
  */
 const exportUserLists = async (event) => {
@@ -141,9 +142,10 @@ const exportUserLists = async (event) => {
       : asJson(index, context)
   }
 
+  const notes = wantsNotes(event)
   const lists = await Promise.all(
     collections.value.map(async (collection, index) =>
-      toExportList(types[index], await findListEntries(collection, userId, limit))
+      toExportList(types[index], await findListEntries(collection, userId, limit, notes))
     )
   )
 
@@ -177,20 +179,33 @@ const findListCounts = async (collections, types, userId) => {
 }
 
 /**
- * The entries of one list with their works and their notes. Two queries per
- * list: the entries joined to their works, then every note of those entries
- * at once.
- * @type {(collection: ValidCollection, userId: string, limit?: number) => Promise<object[]>}
+ * The entries of one list with their works and, unless the caller said
+ * otherwise, their notes. Two queries per list: the entries joined to their
+ * works, then every note of those entries at once — one of them when
+ * `?notes=false` drops the second.
+ *
+ * The notes are most of the bytes. Measured against production: they are 86%
+ * of the games list, 69% of all four together, and dropping them takes the
+ * largest single list from 2.94 MB to 0.42 MB and the whole profile from
+ * 4.77 MB to 1.48 MB. They are also the field with nothing to count — a
+ * reader tallying scores by genre, director or year wants every other field
+ * and none of this one, which is what #334's caller was trying to do.
+ *
+ * `toExportEntry` leaves `notes` out of an entry that has none, so not
+ * fetching them is the whole implementation; there is no second shape here.
+ * @type {(collection: ValidCollection, userId: string, limit?: number, notes?: boolean) => Promise<object[]>}
  */
-const findListEntries = async (collection, userId, limit) => {
+const findListEntries = async (collection, userId, limit, notes = true) => {
   const rows = await db
     .findAllUserEntriesWithMetadata_(collection, userId, limit)
     .unwrapOr([])
 
-  const reviews = await findReviews(
-    toReviewCollection(collection),
-    rows.map(({ entry }) => entry?._id).filter(Boolean)
-  )
+  const reviews = notes
+    ? await findReviews(
+        toReviewCollection(collection),
+        rows.map(({ entry }) => entry?._id).filter(Boolean)
+      )
+    : new Map()
 
   return rows.map(({ entry, work }) => ({
     entry: entry ?? {},
@@ -242,6 +257,22 @@ const wantsMarkdown = (event) =>
 /** @type {(event: Event) => number | undefined} */
 const toLimit = (event) =>
   parseInt(event.queryStringParameters?.limit ?? '') || undefined
+
+/**
+ * Whether to send the long notes, which default to on: they are what makes
+ * this an export of the lists rather than a table of their titles, and a
+ * reader that asked for nothing in particular should get everything.
+ *
+ * Off is spelled the three ways a caller is likely to try, and anything else
+ * — including a `notes=` with nothing after it, and a typo — is on. An
+ * unrecognised value silently dropping 86% of the response is the wrong way
+ * round for a parameter whose whole job is to make the response smaller.
+ * @type {(event: Event) => boolean}
+ */
+const wantsNotes = (event) =>
+  !['false', '0', 'no'].includes(
+    (event.queryStringParameters?.notes ?? '').toLowerCase()
+  )
 
 /**
  * Stringified here rather than by `responses.ok` because the byte budget

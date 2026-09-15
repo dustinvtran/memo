@@ -176,7 +176,10 @@ const toExportIndex = ({ username, counts = {}, siteUrl, generatedAt }) => {
       'An index of the lists, without their entries. Each url below is one '
       + `list in full; ${urls.index}?limit=N is all four in one response, N `
       + 'entries of each, most recently updated first. Append ?format=md to '
-      + 'any of these for Markdown instead of JSON.',
+      + 'any of these for Markdown instead of JSON, or ?notes=false to leave '
+      + 'out the long notes, which are 69% of the bytes and carry nothing to '
+      + `count — ${urls.index}?notes=false is every entry of every list, `
+      + 'scores and metadata and dates, in about 1.5 MB.',
     lists: urls.lists.map(({ type, title, url }) => ({
       type,
       title,

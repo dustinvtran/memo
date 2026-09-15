@@ -105,12 +105,25 @@ const applyStage = (rows, stage) => {
   throw new Error(`the fake Mongo has no ${Object.keys(stage).join(', ')}`)
 }
 
+/**
+ * Every collection a request read from, in order, reset by `seed`. `?notes=`
+ * is a change in which queries run rather than in what is done with what they
+ * return, so this is the only thing that can tell the two apart.
+ */
+const queried = []
+
 const collection = (name) => ({
   aggregate: (pipeline) => ({
-    toArray: async () => pipeline.reduce(applyStage, collectionOf(name)),
+    toArray: async () => {
+      queried.push(name)
+      return pipeline.reduce(applyStage, collectionOf(name))
+    },
   }),
   find: (filter) => ({
-    toArray: async () => collectionOf(name).filter((doc) => matches(doc, filter)),
+    toArray: async () => {
+      queried.push(name)
+      return collectionOf(name).filter((doc) => matches(doc, filter))
+    },
   }),
   findOne: async (filter) =>
     collectionOf(name).find((doc) => matches(doc, filter)) ?? null,
@@ -181,6 +194,7 @@ const getExport = async (path, query = undefined) => {
 }
 
 const seed = () => {
+  queried.length = 0
   store.users = [{ _id: 'a1', userId: 'u1', username: 'reader' }]
   store.filmEntries = [
     {
@@ -446,4 +460,99 @@ test('a 404 is not cached, whatever the lists are', options, async () => {
 
   assert.ok(!('cache-control' in headers))
   assert.ok(!('netlify-cdn-cache-control' in headers))
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// `?notes=false` — the other half of #334. The index gets a reader to the
+// right url, but the url it sends them to is 2.94 MB, and 86% of that is the
+// long notes. A reader tallying scores by genre or director wants every field
+// but that one.
+
+const seedNote = () => {
+  seed()
+  store.filmReviews = [{ _id: 'r1', entryRef: 'e1', text: 'A bit too zany.' }]
+}
+
+test('the notes are sent unless the caller says otherwise', options, async () => {
+  seedNote()
+
+  const { body } = await getExport('/films/reader')
+
+  assert.equal(body.lists[0].entries[0].notes, 'A bit too zany.')
+})
+
+test('?notes=false drops them, and keeps everything there is to count', options, async () => {
+  seedNote()
+
+  const { statusCode, body } = await getExport('/films/reader', { notes: 'false' })
+  const [entry] = body.lists[0].entries
+
+  assert.equal(statusCode, 200)
+  assert.ok(!('notes' in entry))
+  // The fields the analysis this is for actually reads. A parameter that
+  // dropped the scores along with the notes would be worse than no parameter.
+  assert.equal(entry.title, 'A Film')
+  assert.equal(entry.score, 8)
+  assert.equal(entry.releaseYear, 2001)
+  assert.equal(body.lists[0].count, 1)
+})
+
+test('off is spelled the three ways a caller is likely to try', options, async () => {
+  seedNote()
+
+  for (const notes of ['false', 'FALSE', '0', 'no']) {
+    const { body } = await getExport('/films/reader', { notes })
+    assert.ok(!('notes' in body.lists[0].entries[0]), `notes=${notes} should drop them`)
+  }
+})
+
+test('a value nobody meant leaves the notes in rather than out', options, async () => {
+  // The safe direction for a typo. `?notes=flase` silently dropping 86% of
+  // the response is the wrong way round for a parameter that exists to make
+  // the response smaller, and a caller that gets too much can tell.
+  seedNote()
+
+  for (const notes of ['true', 'yes', '', 'flase']) {
+    const { body } = await getExport('/films/reader', { notes })
+    assert.equal(body.lists[0].entries[0].notes, 'A bit too zany.', `notes=${notes} should keep them`)
+  }
+})
+
+test('?notes=false skips the query rather than filtering what it returned', options, async () => {
+  // Where the latency goes: one round trip per list instead of two. A version
+  // that fetched every note and then dropped it would pass every assertion
+  // above and save nothing, so what is asserted here is the query.
+  seedNote()
+
+  const withNotes = await getExport('/films/reader')
+  assert.ok(withNotes.body.lists[0].entries[0].notes)
+  assert.ok(queried.includes('filmReviews'), 'the control: normally it is read')
+
+  seedNote()
+  const without = await getExport('/films/reader', { notes: 'false' })
+
+  assert.ok(!('notes' in without.body.lists[0].entries[0]))
+  assert.equal(queried.includes('filmReviews'), false)
+  assert.ok(queried.includes('filmEntries'), 'the entries themselves still are')
+})
+
+test('all four lists skip all four review collections', options, async () => {
+  // The url this is for. `?limit=` is what asks for every list at once, and
+  // the saving is four round trips rather than one.
+  seedNote()
+
+  await getExport('/reader', { limit: '200', notes: 'false' })
+
+  assert.deepEqual(
+    queried.filter((name) => name.endsWith('Reviews')),
+    []
+  )
+})
+
+test('the index names ?notes=false, since that is where a reader finds it', options, async () => {
+  seedNote()
+
+  const { body } = await getExport('/reader')
+
+  assert.match(body.note, /\?notes=false/)
 })

@@ -23,6 +23,11 @@ eleventyExcludeFromCollections: true
 # making from the index rather than by trying it. Add ?format=md for Markdown
 # instead of JSON, or ?limit=200 to /api/export/<username> for a bounded slice
 # of every list at once.
+#
+# The long notes are around 70% of those bytes. If what you want is the
+# ratings — scores, genres, directors, studios, dates — then
+# /api/export/<username>?notes=false is every entry of every list without
+# them, which is about 1.5 MB rather than 4.8 MB.
 
 User-agent: *
 

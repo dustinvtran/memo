@@ -221,6 +221,7 @@
         <li><code>/api/export/&lt;username&gt;</code> — start here: an index saying how many entries each list holds and where it is</li>
         <li><code>/api/export/&lt;type&gt;/&lt;username&gt;</code> — one list in full, where <code>&lt;type&gt;</code> is <code>films</code>, <code>tv</code>, <code>games</code> or <code>books</code></li>
         <li>append <code>?format=md</code> for Markdown instead of JSON, or <code>?limit=200</code> for the most recently updated entries only</li>
+        <li>append <code>?notes=false</code> to leave out the long notes, which are around 70% of the bytes and carry nothing to count</li>
       </ul>
       <p>
         A list includes every entry with its metadata, its score and its
@@ -236,6 +237,13 @@
         <code>/api/export/&lt;username&gt;?limit=200</code> for a bounded
         slice of every list. Every response carries a <code>Link</code> header
         naming the same urls.
+      </p>
+      <p>
+        If what you want is the ratings rather than the writing,
+        <code>/api/export/&lt;username&gt;?notes=false</code> is every entry
+        of every list — scores, genres, directors, studios, dates — without
+        the long notes, which are around 70% of the bytes. That is about
+        1.5&nbsp;MB for the whole profile instead of 4.8&nbsp;MB.
       </p>
     </noscript>
     <div id="site"></div>
