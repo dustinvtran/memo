@@ -25,6 +25,7 @@ The scripts, and the section below that explains each:
 | `repair_shared_refs.js` | Takes another work's id off the works wearing it, and the links, the cover and every value another work in the same group also holds. Asks each API which work the id names before it writes. | `--apply` |
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
 | `strip_dead_entry_fields.js` | Unsets `review` and `commonMetadata` from entry documents — a duplicated note and a stale copy of the work, neither of which any reader uses. | `--apply` |
+| `clear_noop_overrides.js` | `$unset`s the `overrides.<field>` keys holding a byte-identical copy of the work's own value, so a corrected work can reach the page again. Leaves every different value, every `null`, and every entry with no work. | `--apply` |
 | `retype_entry_revisions.js` | Rewrites `entryRevisions.entryType` from the url spelling to the one every other collection uses: `films` to `Film`. | `--apply` |
 
 Everything marked `--apply` is a **dry run without it**, and takes a backup of
@@ -34,12 +35,17 @@ the overrides a user set by hand, which live on the entry documents, are out
 of reach by construction; `dedupe_works.js` is the one that also writes to the
 entry collections, repointing `workRef` at the document it merged into.
 
-Three scripts write outside the work collections, and each says so in its own
+Four scripts write outside the work collections, and each says so in its own
 section below: `prune_orphan_reviews.js` deletes review documents nothing can
 reach, `strip_dead_entry_fields.js` unsets two named dead fields from entry
-documents, and `retype_entry_revisions.js` corrects one field on the history
-and draft documents. None can reach an override, and none creates or deletes
-an entry.
+documents, `retype_entry_revisions.js` corrects one field on the history and
+draft documents, and `clear_noop_overrides.js` removes the overrides that are
+copies of the work they override. None creates or deletes an entry.
+
+The last of those is the only one that reaches an override at all, and it is
+the only one whose exception is about the overrides rather than in spite of
+them, so it argues the case in its own file header and in its section below
+rather than inheriting one.
 
 The commands below are written from this folder, as
 `node scripts/audit_database.js`, but nothing depends on that. The `.env` and
@@ -884,6 +890,154 @@ store the request body wholesale. #171 (PR #183) validates a PATCH body
 against what an entry may hold instead, which is what stops these coming back.
 Until that lands, a run of this clears the backlog rather than settling the
 question, and an entry edited through the form afterwards carries them again.
+
+## Overrides that override nothing
+
+An override on an entry shadows the work's own metadata in the two places the
+merge happens — the row builder in `components/list/list.js` and
+`withOverrides` in `api/utils/export_view.js` — so a value stored there beats
+the works collection for ever. Until #321, `readForm` compared the form
+against `data.apiData`, a name nothing in the frontend sets. Every comparison
+was therefore against `undefined`, every field came back different, and every
+save wrote the whole form back as the user's overrides.
+
+Measured against production on 2026-09-14:
+
+```
+entries carrying an overrides object: 1087
+  override keys in total:            8511
+  null/undefined (a cleared field):  1519
+  identical to the work's own value: 5982   (~261 KB)
+  genuinely different (a real one):  1010
+entries whose every non-null override is a no-op: 509
+```
+
+The bytes are the smaller half. The real cost is that those 5982 fields are
+pinned to whatever they happened to be on the day the entry was last saved: a
+backfill applied 398 corrections on 2026-09-14, 341 of them TV shows that
+gained a director, and not one of them is visible on an entry carrying a stale
+copy of the value it corrected. #336 has since put that refresh on a daily
+schedule, pointed at data half of whose corrections cannot reach the page.
+See #317, and #171 and #176 for the same shape one field over.
+
+`scripts/clear_noop_overrides.js` `$unset`s them. It is a **dry run unless you
+pass `--apply`**, and it dumps each entry collection before writing to it.
+
+```
+node scripts/clear_noop_overrides.js
+node scripts/clear_noop_overrides.js --only=games --show-kept=all
+node scripts/clear_noop_overrides.js --apply
+```
+
+Flags: `--only=films,tv,games,books`, `--show-kept=n|all`, `--json=path`,
+`--backup-dir=path`.
+
+### Why this one is allowed to write to `*Entries`
+
+The rule in `../../CLAUDE.md` is that maintenance scripts write to the **work**
+collections, because user overrides live on entry documents and a script that
+never touches `*Entries` cannot clobber one. This script's entire job is to
+touch them, so the exception is argued rather than assumed.
+
+The argument is that **a value byte-identical to the work it overrides is not
+a user decision**. Nobody typed it; it is the artefact of a comparison against
+`undefined`. And removing it changes nothing a reader sees, because both
+merges produce the same value whether the copy is there or not — which is the
+test, and it is the same test `strip_dead_entry_fields.js` had to pass for a
+field nothing reads.
+
+What bounds it:
+
+- It only ever `$unset`s `overrides.<field>` keys it has compared, one key at
+  a time, and removes the `overrides` object itself only when the comparison
+  accounted for every key in it. `status`, `score`, the dates, `workRef` and
+  the note are unreachable from it, and an `$unset` can neither create, delete
+  nor repoint a document.
+- **A `null` is never touched.** It is the form's way of saying "the work's
+  value is wrong and there is no replacement" — see `asOverride` in
+  `utils/entry_form_io.js` — so removing one would un-clear a field somebody
+  deliberately cleared, which is a visible change to their list. This is the
+  easiest thing here to get wrong and the only one that loses data silently.
+- **A different value is never touched**, and every one is printed with the
+  work's value beside it rather than left as a count. A survivor count is the
+  one number nobody can check afterwards.
+- **An entry with no readable work is skipped entirely.** For the 23
+  hand-typed entries that point at no work, `overrides` is not a layer over
+  the metadata, it *is* the metadata. A dangling `workRef` is skipped the same
+  way: a work we cannot read is not one to decide against.
+- It never touches `updatedDate`, which would reorder every list on the site.
+- It re-reads the collection afterwards and reports the entry count, so a run
+  that did something other than what it planned says so.
+
+**The comparison is against the work document, and this is the trap.** Both
+the row builder and `getUserEntries` hand out a `commonMetadata` with the
+overrides already folded into it, and the stale `commonMetadata` still stored
+on some entries is #176's pre-migration snapshot of the same shape. Comparing
+against either would find every override identical to itself and propose
+deleting all 8511, the real ones included. `planNoopOverrideRemoval` is handed
+the works and joins them itself, so there is no call site left that could pass
+the wrong baseline, and `noop_override_plan.test.js` asserts it against an
+entry whose `commonMetadata` says one thing and whose work says another.
+
+Sameness is **stricter** than the form's own `isSameValue`, which drops blanks
+out of a list before comparing. That is the right answer to "did the user type
+something new" and the wrong one to "would removing this change the render":
+`directors: [""]` over a work with no directors draws an empty list where the
+work draws nothing, and a field of that shape is
+`clear_unusable_work_fields.js`'s business, decided on the work rather than on
+somebody's entry. Arrays compare element by element in order, because order is
+what a list column prints.
+
+### The dry run, 2026-09-14
+
+```
+                   keys  removed   real  cleared  entries  objects dropped
+filmEntries        2215     1817     54      311      240              147
+tvShowEntries      1648     1068    372      181      174                3
+gameEntries        3655     2646    214      742      382               19
+bookEntries         993      451    267      234      110                0
+                   8511     5982    907     1468      906              169
+```
+
+5982 keys off 906 entries, 261.1 KB. It reproduces the issue's count exactly,
+having arrived at it by a different route. The remaining 154 keys are the ones
+on the 23 entries with no work, which is what reconciles `907 + 1468` here
+with the `1010 + 1519` above: 103 of those keys are real and 51 are nulls, and
+the script does not classify either because it refuses to look.
+
+**169 overrides objects dropped, not 509**, and that reads oddly but is
+right: an entry whose every *non-null* override is a no-op still has its
+nulls to keep, so the object survives with only the cleared fields in it. 169
+is the subset carrying no nulls either.
+
+All 23 skipped entries are "points at no work". Zero dangling `workRef`s,
+which agrees with the audit.
+
+### What printing the survivors turned up
+
+**497 of the 907 survivors are `[""]`** — 167 on tv `directors`, 141 on book
+`genres`, 46 on film `actors`, and the rest spread over the other list
+fields. That is the shape `asOverride`'s own comment names: emptying a list
+field used to store `[""]` rather than a null, and this is that bug's backlog
+one field over from #317's.
+
+They are out of scope here and deliberately so. `[""]` is not a copy of
+anything, so no argument this script makes reaches it, and the strictness
+above is what keeps it from being swept up on the way past. But it is now the
+more expensive population of the two: `[""]` is non-null, so the merge applies
+it, and a field it covers renders empty no matter what the work says. The 167
+on tv `directors` sit exactly on top of #328, whose backfill has just given
+341 shows the director they were missing — corrected works, blanked at the
+row by a value nobody chose.
+
+Worth its own issue, its own argument and its own script. What it is not is a
+reason to loosen this one: the whole point of listing survivors rather than
+counting them is that a second population shows up as a line you can read
+instead of a number you have to trust.
+
+This is only safe *after* #321, which is in production and confirmed: entries
+saved since it shipped contribute no no-op overrides at all. Run before it,
+this would have cleared a backlog the next save refilled.
 
 ## One `entryType`, spelled the way the works collections spell it
 
