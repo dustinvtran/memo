@@ -23,6 +23,7 @@ The scripts, and the section below that explains each:
 | `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
 | `clear_unusable_work_fields.js` | `$unset`s work fields whose stored value is present and unusable — `publishers: {}`, `externalUrls: [[]]`, `directors: [""]` — so the next backfill can fill them. | `--apply` |
 | `repair_shared_refs.js` | Takes another work's id off the works wearing it, and the links, the cover and every value another work in the same group also holds. Asks each API which work the id names before it writes. | `--apply` |
+| `propose_book_refs.js` | Proposes English editions for the books whose ISBN names another title, filtered hard and ranked, to a file a person approves; then repoints the refs that were approved. Never picks a candidate itself. | `--apply` |
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
 | `prune_unreachable_documents.js` | Deletes cached works no entry in any collection points at, and review documents holding the empty string. Two halves, run separately with `--only=works` / `--only=reviews`. | `--apply` |
 | `strip_dead_entry_fields.js` | Unsets `review` and `commonMetadata` from entry documents — a duplicated note and a stale copy of the work, neither of which any reader uses. | `--apply` |
@@ -649,6 +650,169 @@ work in the crawl's favour: the refresh script exits non-zero when every call
 it made failed, so a spent quota or a revoked key is a failure rather than a
 quiet success. That covers the crawl breaking. It does not cover the crawl
 never being started, which is the state the repository is in today.
+
+## Books filed under another book's ISBN
+
+`--verify-titles` above ends by saying that which of two titles names the work
+is a human's call and that nothing writes. For books there is a third answer,
+and it is the commonest one: **both titles are right and they are the same book
+in two languages.** `The Little Prince` is filed under `Le Petit Prince`,
+`Brave New World` under `Le meilleur des mondes`, `Animal Farm` under `La ferme
+des animaux`. The owner does not have the French editions, so the stored
+`englishTranslatedTitle` is correct and the ISBN is not, and the fix is to
+repoint the ref rather than to relax the guard or rewrite the title. #344.
+
+Until that happens these books can never gain a publisher, a cover, a genre or
+a page count, because the guard refuses every one of them every time.
+
+`scripts/propose_book_refs.js` is two phases and only the second writes.
+
+```
+node scripts/propose_book_refs.js                        # propose, writes nothing
+node scripts/propose_book_refs.js --limit=20
+node scripts/propose_book_refs.js --from-report=refresh.json
+node scripts/propose_book_refs.js --retry=proposals.json
+node scripts/propose_book_refs.js --from=proposals.json   # what --apply would do
+node scripts/propose_book_refs.js --apply --from=proposals.json
+```
+
+Flags: `--out=path`, `--markdown=path`, `--limit=N`, `--candidates=N`,
+`--search-pages=N`, `--from-report=path`, `--retry=path`, `--delay-ms=N`,
+`--from=path`, `--apply`, `--backup-dir=path`.
+
+### Which books, and why it asks rather than lists
+
+The population is **every book the backfill refuses**, derived by running the
+backfill's own guard: the run makes the selection `selectForRefresh` makes with
+`--missing-only`, retrieves through the same adapter, and calls the same
+`mergeWork`. A pasted list would be stale the first time a title was corrected,
+and a second copy of the title comparison would be a second thing to keep in
+step with #327.
+
+On 2026-09-14 that is **147 books of the 328 a `--missing-only` run would
+fetch**, and six more whose ISBN Google Books no longer holds at all — `The Art
+of War`, `Ulysses`, `Julius Caesar`, `1Q84`, `Carrie`, `A Wrinkle in Time`.
+Those six are #343's population, not this one: there is nothing to refuse
+because there is nothing to ask.
+
+The 147 are not all translations, and nothing here has to tell them apart. Some
+are plain misfilings — `A Christmas Carol` is filed under `281241572X`, which
+is *Les Aventures d'Olivier Twist* — and some are a stored title carrying more
+words than the ISBN's, which is #327's shape. All three are a book whose ref
+names something else, and the same filters make the same repair safe.
+
+The refusals cluster at the head of the queue, which is worth knowing before
+reading a progress line: 144 of the first 150 books asked were refused and the
+next 178 produced three. `selectForRefresh` sorts longest-unchecked first, and
+a book that has never been successfully merged is a book that never got a
+`metadataUpdatedDate`, so the two populations are very nearly the same set.
+
+### Why it proposes instead of picking
+
+Google Books answers a title search with English editions carrying ISBN-13s for
+every title sampled, and its first hit is wrong often enough that taking it
+would be #290 arriving by a new route. `The Little Prince` leads with a
+116-page print-on-demand volume; `Brave New World`'s second hit is the omnibus
+`Brave New World and Brave New World Revisited`, which is a different book;
+`Animal Farm`'s top three are a publisher-less 56-page edition, a
+Chinese-published one, and one of a single page.
+
+So `../book_ref_proposal.js` filters hard — an English `language`, an ISBN-13,
+a publisher, a page count of at least 10, a title that clears `titlesAgree`,
+an author that does not contradict the stored one, and an ISBN no other book is
+filed under — ranks what survives, and offers two or three per book. A book
+with no survivor is listed as having none, with the volumes that got furthest
+and the filter each fell at, rather than being given the best of a bad set.
+**Nothing in the script chooses.** These books are in this state because
+somebody once took a search result without reading it.
+
+The page floor is measured rather than guessed: the shortest page count stored
+on any of the 650 books is 11, so ten cannot refuse a book of the kind this
+library holds while still refusing the 0s and 1s.
+
+The author check is the one that is not decoration. `titlesAgree` is
+deliberately loose, and `../work_collections.js` documents that looseness as
+safe *because it compares one stored work against the answer its own id gave* —
+which is exactly not what a search does. `The Stranger (Animorphs, #7)` reduces
+to the same string as Camus' `The Stranger`, and a search for the one returns
+the other. 326 of the 328 books with a gap carry an author, so the check has
+teeth on nearly all of them.
+
+### A search that could not run is not a search that found nothing
+
+Google Books answers a sustained crawl with 429s, and a refused search page
+comes back empty — indistinguishable from one that found nothing unless
+somebody keeps count. The 2026-09-14 run collected 95 of them across 294 search
+pages, which would have filed 46 books as having no English edition on the
+strength of a question nobody got to ask.
+
+So the count is kept per book and the file says **"Not searched"** rather than
+"no candidate", the run exits non-zero, and `--retry=<the file>` searches those
+books again and merges the answers back in — two calls each rather than another
+sweep, since the refusals are already in the file. A retry that is throttled
+too keeps whatever the earlier attempt found: `betterAttempt` in
+`../book_ref_proposal.js`, and it is the same rule as everywhere else here —
+an unanswered question replaces nothing.
+
+### What a repoint writes
+
+`apiRefs` is **narrowed**, the way `repair_shared_refs.js` narrows it: every
+ref naming the old ISBN comes off under either prefix that names a book, the
+new one goes on, and any other ref stays. Then the values that belong to the
+*edition* rather than to the work come off, so the next `--missing-only`
+backfill refills them from the ref that is now right:
+
+| cleared | kept |
+| --- | --- |
+| `duration`, `imageUrl`, `metadataUpdatedDate`, the Google Books link | `releaseYear`, `publishers`, `genres`, `authors`, both titles |
+
+`duration` is the one that has to go. A page count belongs to a printing and to
+nothing else, and it is on books' `fillOnlyFields` since #333 — so a refresh
+would *never* replace it, and a French edition's count left under an English
+ISBN would stay wrong for good. `A Christmas Carol` is stored at 665 pages,
+which is Oliver Twist's.
+
+`releaseYear` stays for #333's reason rather than in spite of it: six of the
+seven year changes a 60-book dry run proposed moved a public-domain work
+forward to a modern reprint, `Robinson Crusoe` 1719 to 2019 among them. A year
+stored on these books is far more often the work's first publication than the
+French printing's, and clearing it would invite the next run to replace the
+first with the second.
+
+The line is *certainly the edition's* rather than *possibly the work's*, which
+is narrower than `repair_shared_refs.js` draws it — that script has evidence
+per value, because a value copied onto two documents in a collision group is
+one retrieve's output, and there is no partner document here to compare
+against. `publishers` is the field it looks least right on and it is kept
+anyway: Gallimard really did publish `Le Petit Prince` first.
+
+### What stops it filing two books under one ISBN
+
+Three checks, because a shared identity ref is the state #290 found and #308
+spent two rounds cleaning up:
+
+1. A candidate whose ISBN another book already holds is never offered.
+2. An approval is re-checked against the collection as it stands, and against
+   the other approvals in the same file — neither of a pair is in the database
+   yet, so only counting the file catches that one.
+3. After the write, the whole collection is re-read and every ISBN counted.
+
+The approved ISBN is also **verified against Google Books again, immediately
+before the write**, the way `repair_shared_refs.js` re-runs its identity checks
+rather than trusting a saved answer. An approval whose ISBN no longer names the
+stored title is skipped — which also means an approval that would not unblock
+the backfill is refused, since it is the same `titlesAgree` either way. #343
+asks for that shape for the 191 works with no ref at all, one population over.
+
+### The rate limit
+
+Google Books gives about a thousand calls a day. A propose run costs one call
+per book a `--missing-only` backfill would fetch — 328 of the 650 today — plus
+two per refused book, so a full run is roughly 620 and two of them in one day
+are not. `--from-report=<a backfill --json report>` reuses the refusals a
+backfill run has already found and skips the sweep; `--limit` stops the sweep
+as well as the proposing, so a run sized to a budget spends its calls on the
+books it will actually propose for.
 
 ## Playtimes
 
@@ -1514,8 +1678,9 @@ The parts that decide what to write (`work_metadata_merge.js`,
 `game_playtime_plan.js`), what to spend an API call on and in what order
 (`metadata_refresh_plan.js`), what to delete (`work_dedupe_plan.js`,
 `orphan_review_plan.js`, `dead_entry_fields_plan.js`), what to clear
-(`unusable_field_plan.js`), which snapshots a retention policy keeps
-(`backup_plan.js`), whether a snapshot is still what the backup wrote
+(`unusable_field_plan.js`), which English edition a misfiled book could be
+repointed at (`book_ref_proposal.js`), which snapshots a retention policy
+keeps (`backup_plan.js`), whether a snapshot is still what the backup wrote
 (`backup_verification.js`) and which indexes are missing (`index_plan.js`)
 are pure and dependency-free, and are covered by `node --test`:
 
