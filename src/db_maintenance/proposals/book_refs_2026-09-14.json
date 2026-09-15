@@ -135,10 +135,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": "9781407144603",
     "refusal": "refused: stored title \"A Christmas Carol\" but the apiRef names \"Les Aventures d'Olivier Twist\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Scholastic UK, 95pp — right length for the novella"
   },
   {
     "id": "322745315446753867",
@@ -270,10 +271,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": "9780451530417",
     "refusal": "refused: stored title \"Dubliners\" but the apiRef names \"Dubliners by James Joyce (MAXnotes)\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Signet/Penguin 276pp over Canongate; canonical"
   },
   {
     "id": "322745315448848971",
@@ -615,10 +617,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"Heart of Darkness\" but the apiRef names \"Heart of Darkness By Joseph Conrad\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: every candidate is print-on-demand (Independently Published x2, BoD)"
   },
   {
     "id": "322745315453045323",
@@ -935,10 +938,11 @@
         "reason": "titled \"GRE Vocabulary: 501 Essential Words: With Usage/Roots/Synonyms/Antonyms and More...\", which is not \"Essential Words for the GRE\""
       }
     ],
-    "approved": null,
+    "approved": "9781438007496",
     "refusal": "refused: stored title \"Essential Words for the GRE\" but the apiRef names \"GRE Essential Words\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Barron's is the actual publisher"
   },
   {
     "id": "322745315456189003",
@@ -1222,10 +1226,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": "9780192840691",
     "refusal": "refused: stored title \"Tess of the d'Urbervilles\" but the apiRef names \"Tess d'Urberville\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Oxford World's Classics, 495pp vs stored 504"
   },
   {
     "id": "322745315460383307",
@@ -1351,10 +1356,11 @@
         "reason": "titled \"Gabriel García Márquez's One Hundred Years of Solitude: A Casebook\", which is not \"One Hundred Years of Solitude\""
       }
     ],
-    "approved": null,
+    "approved": "9780224618533",
     "refusal": "refused: stored title \"One Hundred Years of Solitude\" but the apiRef names \"Cent ans de solitude\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Jonathan Cape 1970, the first English edition, 422pp vs stored 437"
   },
   {
     "id": "322745315462481483",
@@ -1479,10 +1485,11 @@
         "reason": "titled \"Quicklet on Stephen Chbosky's The Perks of Being a Wallflower\", which is not \"The Perks of Being a Wallflower\""
       }
     ],
-    "approved": null,
+    "approved": "9781451696196",
     "refusal": "refused: stored title \"The Perks of Being a Wallflower\" but the apiRef names \"The Perks of Being a Wallflower YA edition\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Simon & Schuster, 240pp exactly matches stored"
   },
   {
     "id": "322745315465627211",
@@ -1715,10 +1722,11 @@
         "reason": "by Iohn Locke, and this book is by John Locke — the titles agreeing is not enough on its own"
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"Two Treatises of Government\" but the apiRef names \"Locke: Two Treatises of Government Student Edition\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: Forgotten Books / CreateSpace / IndyPublish — all POD reprints"
   },
   {
     "id": "322745315470869067",
@@ -1825,10 +1833,11 @@
         "reason": "titled \"The Aeneid by Virgil\", which is not \"The Aeneid\""
       }
     ],
-    "approved": null,
+    "approved": "9781585109630",
     "refusal": "refused: stored title \"The Aeneid\" but the apiRef names \"The Aeneid of Virgil\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Focus Classical Library, 424pp vs stored 416"
   },
   {
     "id": "322745315471917643",
@@ -1970,10 +1979,11 @@
         "reason": "titled \"Wittgenstein at Work: Method in the Philosophical Investigations\", which is not \"Philosophical Investigations\""
       }
     ],
-    "approved": null,
+    "approved": "9780631231592",
     "refusal": "refused: stored title \"Philosophical Investigations\" but the apiRef names \"Wittgenstein's Philosophical Investigations\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Blackwell 3rd ed, the standard German/English text"
   },
   {
     "id": "322745315471918667",
@@ -2109,10 +2119,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": "9781473547933",
     "refusal": "refused: stored title \"Walden\" but the apiRef names \"Walden Ou La Vie Dans Les Bois\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Random House, 320pp vs stored 318"
   },
   {
     "id": "322745315477161547",
@@ -2346,10 +2357,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": "9780140449150",
     "refusal": "refused: stored title \"The Prince\" but the apiRef names \"Le prince\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Penguin Classics"
   },
   {
     "id": "322745315480306251",
@@ -2587,10 +2599,11 @@
         "reason": "titled \"Meditations of Marcus Aurelius\", which is not \"Meditations\""
       }
     ],
-    "approved": null,
+    "approved": "9780141910819",
     "refusal": "refused: stored title \"Meditations\" but the apiRef names \"Méditations pascaliennes\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Penguin Classics; stored pages are Bourdieu's, not Aurelius'"
   },
   {
     "id": "322745315485550155",
@@ -2701,10 +2714,11 @@
         "reason": "titled \"The Symptom of Beauty\", which is not \"The Painter of Modern Life and Other Essays\""
       }
     ],
-    "approved": null,
+    "approved": "9780824032579",
     "refusal": "refused: stored title \"The Painter of Modern Life and Other Essays\" but the apiRef names \"The Painter of Modern Life\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Garland, the only real publisher offered"
   },
   {
     "id": "322745315487647307",
@@ -2839,10 +2853,11 @@
         "reason": "titled \"Through the Looking Glass (And What Alice Found There) ILLUSTRATED\", which is not \"Through the Looking-Glass (Alice's Adventures in Wonderland, #2)\""
       }
     ],
-    "approved": null,
+    "approved": "9781665925822",
     "refusal": "refused: stored title \"Through the Looking-Glass (Alice's Adventures in Wonderland, #2)\" but the apiRef names \"Test Prep for CCSS Performance Tasks, Grade 8\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Simon & Schuster over a library binding and a POD"
   },
   {
     "id": "322745315490793035",
@@ -2963,10 +2978,11 @@
         "reason": "by Lucy Maud Montgomery, and this book is by L.M. Montgomery — the titles agreeing is not enough on its own"
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"Anne of Green Gables (Anne of Green Gables, #1)\" but the apiRef names \"Anne... La maison aux pignons verts\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: both candidates are POD (Independently Published, CreateSpace)"
   },
   {
     "id": "322745315491840587",
@@ -3078,10 +3094,11 @@
         "reason": "titled \"Classical Japanese Prose: An Anthology\", which is not \"The Tale of the Bamboo Cutter\""
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"The Tale of the Bamboo Cutter\" but the apiRef names \"The Tale of the Bamboo Cutter and Other Fantastic Stories\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: only a 71pp Lebooks ebook against a stored 197pp"
   },
   {
     "id": "322745315494987339",
@@ -3204,10 +3221,11 @@
         "reason": "by Nathaniel Tarn, and this book is by Mark Z. Danielewski — the titles agreeing is not enough on its own"
       }
     ],
-    "approved": null,
+    "approved": "9780375420528",
     "refusal": "refused: stored title \"House of Leaves\" but the apiRef names \"La maison des feuilles\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Pantheon is the actual publisher — the one you called correct"
   },
   {
     "id": "322745315496034891",
@@ -3315,10 +3333,11 @@
         "reason": "titled \"Brave New World and Brave New World Revisited\", which is not \"Brave New World\""
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"Brave New World\" but the apiRef names \"Le meilleur des mondes\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: only a CreateSpace 'Ah Edition'; the real Harper Perennial never surfaced"
   },
   {
     "id": "322745315497083467",
@@ -3675,10 +3694,11 @@
         "reason": "by Anotine De Saint-exupery, and this book is by -Exupéry, Antoine de Saint — the titles agreeing is not enough on its own"
       }
     ],
-    "approved": null,
+    "approved": "9780156012195",
     "refusal": "refused: stored title \"The Little Prince\" but the apiRef names \"Le Petit Prince\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Houghton Mifflin Harcourt 100pp; the Penguin is a combined volume"
   },
   {
     "id": "322745315501278795",
@@ -3818,10 +3838,11 @@
         "reason": "by Edwin Abbott, and this book is by Edwin A. Abbott — the titles agreeing is not enough on its own"
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"Flatland: A Romance of Many Dimensions\" but the apiRef names \"Flatland\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: Gildan / Lulu / CreateSpace — all POD"
   },
   {
     "id": "322745315503375947",
@@ -3959,10 +3980,11 @@
         "reason": "by David Kelley, Alexander R. Cohen, and this book is by Ayn Rand — the titles agreeing is not enough on its own"
       }
     ],
-    "approved": null,
+    "approved": "9781101137192",
     "refusal": "refused: stored title \"Atlas Shrugged\" but the apiRef names \"La grève\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Penguin; the third candidate is a SparkNotes study guide"
   },
   {
     "id": "322745315503376971",
@@ -4199,10 +4221,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": "9780520045484",
     "refusal": "refused: stored title \"Moby-Dick; or, The Whale\" but the apiRef names \"Moby Dick\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "UC Press scholarly edition over two POD scans"
   },
   {
     "id": "322745315509667403",
@@ -4313,10 +4336,11 @@
         "reason": "titled \"Don Quixote of the Mancha: Retold by Judge Parry. 1919 Edition, Illustrated\", which is not \"El Ingenioso Hidalgo Don Quijote de la Mancha (The Ingenious Nobleman Mister Quixote of La Mancha)\""
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"El Ingenioso Hidalgo Don Quijote de la Mancha (The Ingenious Nobleman Mister Quixote of La Mancha)\" but the apiRef names \"The Ingenious Nobleman Mister Quixote of la Mancha\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: Nabu Press scan reprint, and it is the Spanish text"
   },
   {
     "id": "322745315510714955",
@@ -4453,10 +4477,11 @@
         "reason": "by Эмили Бронте, and this book is by Emily Brontë — the titles agreeing is not enough on its own"
       }
     ],
-    "approved": null,
+    "approved": "9780307455185",
     "refusal": "refused: stored title \"Wuthering Heights\" but the apiRef names \"Les Hauts de Hurle-Vent\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Vintage Classics, 401pp vs stored 373; avoided the 2026 movie tie-in"
   },
   {
     "id": "322745315512812107",
@@ -4688,10 +4713,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": "9781780943053",
     "refusal": "refused: stored title \"The Prince and the Pauper\" but the apiRef names \"Le prince et le pauvre\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Hesperus, 232pp vs stored 211"
   },
   {
     "id": "322745315514909259",
@@ -4826,10 +4852,11 @@
         "reason": "titled \"The Prometheus Bound of Aeschylus\", which is not \"Prometheus Bound\""
       }
     ],
-    "approved": null,
+    "approved": "9780199840465",
     "refusal": "refused: stored title \"Prometheus Bound\" but the apiRef names \"Prometheus Bound and Other Plays\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Oxford, Scully/Herington translation"
   },
   {
     "id": "322745315514910283",
@@ -4965,10 +4992,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"The Strange Case of Dr. Jekyll and Mr. Hyde\" but the apiRef names \"Les combattants du petit bonheur\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: a 263pp collection, a comic adaptation, and an abridged Classic Starts"
   },
   {
     "id": "322745315517007435",
@@ -5077,10 +5105,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"The Sign of the Four (Sherlock Holmes, #2)\" but the apiRef names \"The Sign of the Four Sherlock Holmes #2 by Arthur Conan Doyle\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: single candidate from an adaptation publisher"
   },
   {
     "id": "322745315523297867",
@@ -5386,10 +5415,11 @@
         "reason": "titled \"Nausea and Vomiting: Mechanisms and Treatment\", which is not \"Nausea\""
       }
     ],
-    "approved": null,
+    "approved": "9780141185491",
     "refusal": "refused: stored title \"Nausea\" but the apiRef names \"La nausea\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Penguin Modern Classics, 252pp vs stored 242"
   },
   {
     "id": "322745315530637899",
@@ -5705,10 +5735,11 @@
         "reason": "titled \"Summary Marie Kondo's the Life Changing Magic of Tidying Up: The Japanese Art of Decluttering and Organizing\", which is not \"The Life-Changing Magic of Tidying Up: The Japanese Art of Decluttering and Organizing \""
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"The Life-Changing Magic of Tidying Up: The Japanese Art of Decluttering and Organizing \" but the apiRef names \"The Life-Changing Magic of Tidying Up\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: the only candidate IS the current ref — refused over the stored title, not the ref"
   },
   {
     "id": "322745315532736075",
@@ -6310,10 +6341,11 @@
         "reason": "titled \"The Sympathizer: a Guide for Book Clubs\", which is not \"The Sympathizer\""
       }
     ],
-    "approved": null,
+    "approved": "9780802191694",
     "refusal": "refused: stored title \"The Sympathizer\" but the apiRef names \"Le sympathisant\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Grove/Atlantic is the actual publisher"
   },
   {
     "id": "322745315536930379",
@@ -6428,10 +6460,11 @@
         "reason": "titled \"Radical Curiosity: Questioning Commonly Held Beliefs to Imagine Flourishing Futures\", which is not \"The Idea Factory: Bell Labs and the Great Age of American Innovation\""
       }
     ],
-    "approved": null,
+    "approved": "9780143122791",
     "refusal": "refused: stored title \"The Idea Factory: Bell Labs and the Great Age of American Innovation\" but the apiRef names \"The Idea Factory\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Penguin, 434pp vs stored 432"
   },
   {
     "id": "322745315539026507",
@@ -6747,10 +6780,11 @@
         "reason": "titled \"Applied Computer Sciences in Engineering: 7th Workshop on Engineering Applications, WEA 2020, Bogota, Colombia, October 7–9, 2020, Proceedings\", which is not \"Harry Potter and the Order of the Phoenix (Harry Potter, #5)\""
       }
     ],
-    "approved": null,
+    "approved": "9780756941635",
     "refusal": "refused: stored title \"Harry Potter and the Order of the Phoenix (Harry Potter, #5)\" but the apiRef names \"Harry Potter et l’Ordre du Phénix\" — one of them is filed under the other's id",
     "searchFailures": 0,
-    "searchPages": 2
+    "searchPages": 2,
+    "approvedBecause": "870pp is the true US pagination for book 5"
   },
   {
     "id": "322745315544270411",
@@ -6964,10 +6998,11 @@
         "reason": "titled \"Instructor's Review Copy for Music for Sight Singing\", which is not \"Music for Sight Singing\""
       }
     ],
-    "approved": null,
+    "approved": "9780205955244",
     "refusal": "refused: stored title \"Music for Sight Singing\" but the apiRef names \"Music for Sight Singing, Books a la Carte\" — one of them is filed under the other's id",
     "searchFailures": 0,
-    "searchPages": 2
+    "searchPages": 2,
+    "approvedBecause": "Pearson is the actual publisher"
   },
   {
     "id": "322745315551609419",
@@ -7184,8 +7219,8 @@
     "rejected": [],
     "approved": null,
     "refusal": "refused: stored title \"Riemannian Manifolds: An Introduction to Curvature\" but the apiRef names \"Riemannian Manifolds\" — one of them is filed under the other's id",
-    "searchPages": 2,
-    "searchFailures": 2
+    "searchFailures": 2,
+    "searchPages": 2
   },
   {
     "id": "322745315554757195",
@@ -7579,10 +7614,11 @@
         "reason": "titled \"The Creepy Creations of Professor Shock (Give Yourself Goosebumps #14)\", which is not \"The Werewolf of Fever Swamp (Goosebumps, #14)\""
       }
     ],
-    "approved": null,
+    "approved": "9780545294614",
     "refusal": "refused: stored title \"The Werewolf of Fever Swamp (Goosebumps, #14)\" but the apiRef names \"Le loup-garou des marécages\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Scholastic; Classic Goosebumps reissue of the same book"
   },
   {
     "id": "322745315562096203",
@@ -7699,10 +7735,11 @@
         "reason": "titled \"Explorations in World Literature Instructor's Manual: Readings to Enhance Academic Skills\", which is not \"Inanna, Queen of Heaven and Earth: Her Stories and Hymns from Sumer\""
       }
     ],
-    "approved": null,
+    "approved": "9780091581817",
     "refusal": "refused: stored title \"Inanna, Queen of Heaven and Earth: Her Stories and Hymns from Sumer\" but the apiRef names \"Inanna\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Vintage, 227pp vs stored 256"
   },
   {
     "id": "322745315564192331",
@@ -7731,10 +7768,11 @@
       }
     ],
     "rejected": [],
-    "approved": null,
+    "approved": "9780375765445",
     "refusal": "refused: stored title \"11 Practice Tests for the SAT and PSAT, 2008\" but the apiRef names \"10 Practice Tests for the New Sat\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Princeton Review's own, 948pp vs stored 954"
   },
   {
     "id": "322745315565241931",
@@ -7874,10 +7912,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": "9780140177398",
     "refusal": "refused: stored title \"Of Mice and Men\" but the apiRef names \"Des Souris et des hommes\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Penguin; the other is the stage script, a different work"
   },
   {
     "id": "322745315568387659",
@@ -8004,10 +8043,11 @@
         "reason": "titled \"The Complete Works of Edgar Allan Poe: Poems\", which is not \"The Complete Works of Edgar Allen Poe\""
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"The Complete Works of Edgar Allen Poe\" but the apiRef names \"The Complete Works of Edgar Allan Poe\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "declined: Andesite / Franklin Classics scan reprints, and both are partial volumes"
   },
   {
     "id": "322745315572580939",
@@ -8554,10 +8594,11 @@
         "reason": "titled \"The Cat in the Hat Comes Back!\", which is not \"The Cat in the Hat\""
       }
     ],
-    "approved": null,
+    "approved": "9780007425259",
     "refusal": "refused: stored title \"The Cat in the Hat\" but the apiRef names \"Le chat chapeauté\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "HarperCollins Children's, 63pp vs stored 61"
   },
   {
     "id": "322745315597746763",
@@ -8620,10 +8661,11 @@
         "reason": "titled \"Studyguide for Elementary Analysis: The Theory of Calculus by Ross, Kenneth A., ISBN 9781461462705\", which is not \"Elementary Analysis: The Theory of Calculus\""
       }
     ],
-    "approved": null,
+    "approved": "9780387904597",
     "refusal": "refused: stored title \"Elementary Analysis: The Theory of Calculus\" but the apiRef names \"Elementary Analysis\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Springer is the actual publisher"
   },
   {
     "id": "322745315597747787",
@@ -8753,10 +8795,11 @@
         "reason": "by Rolland Trapp, and this book is by James Stewart — the titles agreeing is not enough on its own"
       }
     ],
-    "approved": null,
+    "approved": "9780495011637",
     "refusal": "refused: stored title \"Multivariable Calculus\" but the apiRef names \"A Course in Multivariable Calculus and Analysis\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Cengage is Stewart's publisher"
   },
   {
     "id": "322745315598795339",
@@ -8988,10 +9031,11 @@
         "reason": "titled \"Stay Out of the Basement (Classic Goosebumps #22)\", which is not \"Phantom of the Auditorium (Goosebumps, #24)\""
       }
     ],
-    "approved": null,
+    "approved": "9780545388849",
     "refusal": "refused: stored title \"Phantom of the Auditorium (Goosebumps, #24)\" but the apiRef names \"Phantom of the Auditorium #24\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Scholastic over the Turtleback rebinding"
   },
   {
     "id": "322745315612427851",
@@ -9113,10 +9157,11 @@
         "reason": "titled \"Claws! (Goosebumps Hall of Horrors #1)\", which is not \"Welcome to Dead House (Goosebumps, #1)\""
       }
     ],
-    "approved": null,
+    "approved": "9780545158886",
     "refusal": "refused: stored title \"Welcome to Dead House (Goosebumps, #1)\" but the apiRef names \"Chair de poule , Tome 06\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Scholastic Paperbacks, plain title"
   },
   {
     "id": "322745315622912587",
@@ -9237,10 +9282,11 @@
         "reason": "titled \"A Seven Year Cycle Reading Plan\", which is not \"The Lion, the Witch, and the Wardrobe (Chronicles of Narnia, #1)\""
       }
     ],
-    "approved": null,
+    "approved": "9780060234812",
     "refusal": "refused: stored title \"The Lion, the Witch, and the Wardrobe (Chronicles of Narnia, #1)\" but the apiRef names \"Le lion, la sorcière blanche et l'armoire magique\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "HarperCollins; the two candidates are the same edition"
   },
   {
     "id": "322745315623963211",
@@ -9433,10 +9479,11 @@
         "reason": "titled \"Television Specials: 5,336 Entertainment Programs, 1936-2012, 2d ed.\", which is not \"David Copperfield\""
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"David Copperfield\" but the apiRef names \"L'histoire, les aventures, et l'expérience personnelles de David Copperfield le jeune\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "declined: E-Kitap Projesi is the exact POD house #344 flagged as the wrong answer"
   },
   {
     "id": "322745315627106891",
@@ -9660,10 +9707,11 @@
         "reason": "titled \"Yukon Ho! : a Calvin and Hobbes Collection\", which is not \"Calvin and Hobbes\""
       }
     ],
-    "approved": null,
+    "approved": "9780836220889",
     "refusal": "refused: stored title \"Calvin and Hobbes\" but the apiRef names \"Coffret en 4 volumes\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Andrews McMeel, the original collection"
   },
   {
     "id": "322745315629205067",
@@ -9780,10 +9828,11 @@
         "reason": "titled \"Metal and Bone Drilling - The Thermal Aspects\", which is not \"Holes (Holes, #1)\""
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"Holes (Holes, #1)\" but the apiRef names \"Le Passage\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "declined: only a large-print edition, which is not the book he owns"
   },
   {
     "id": "322745315630252619",
@@ -10077,10 +10126,11 @@
         "reason": "titled \"A Guide to the Official SAT Study Guide: How to Prepare for the SAT\", which is not \"Official SAT Study Guide\""
       }
     ],
-    "approved": null,
+    "approved": "9780874477184",
     "refusal": "refused: stored title \"Official SAT Study Guide\" but the apiRef names \"The Official SAT Study Guide, 2018 Edition\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "College Board's own, and 2004 matches the stored year"
   },
   {
     "id": "322745315636546123",
@@ -10315,10 +10365,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": "9780143105039",
     "refusal": "refused: stored title \"Frankenstein\" but the apiRef names \"Frankenstein ou le Prométhée moderne\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Penguin Classics Deluxe, 305pp vs stored 345"
   },
   {
     "id": "322745315641787979",
@@ -10455,10 +10506,11 @@
         "reason": "titled \"Harper Lee's To Kill a Mockingbird: A Full-length Play\", which is not \"To Kill a Mockingbird\""
       }
     ],
-    "approved": null,
+    "approved": "9780062369635",
     "refusal": "refused: stored title \"To Kill a Mockingbird\" but the apiRef names \"Ne tirez pas sur l'oiseau moqueur\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "HarperCollins is the actual publisher"
   },
   {
     "id": "322745315643885131",
@@ -10594,10 +10646,11 @@
         "reason": "titled \"Harry Potter: The Chamber of Secrets\", which is not \"Harry Potter and the Chamber of Secrets (Harry Potter, #2)\""
       }
     ],
-    "approved": null,
+    "approved": "9780747543930",
     "refusal": "refused: stored title \"Harry Potter and the Chamber of Secrets (Harry Potter, #2)\" but the apiRef names \"Harry Potter et la Chambre des Secrets\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Bloomsbury 1998 first edition, 366pp vs stored 364"
   },
   {
     "id": "322745315643886155",
@@ -10717,10 +10770,11 @@
         "reason": "titled \"The Time Machine, the Invisible Man, and the War of the Worlds\", which is not \"The Time Machine/The Invisible Man\""
       }
     ],
-    "approved": null,
+    "approved": "9781101042557",
     "refusal": "refused: stored title \"The Time Machine/The Invisible Man\" but the apiRef names \"The Time Machine and The Invisible Man\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Penguin"
   },
   {
     "id": "322745315649128011",
@@ -10858,10 +10912,11 @@
         "reason": "titled \"CliffsNotes on Bradbury's Fahrenheit 451\", which is not \"Fahrenheit 451\""
       }
     ],
-    "approved": null,
+    "approved": "9780743247221",
     "refusal": "refused: stored title \"Fahrenheit 451\" but the apiRef names \"Fahrenheit quatre cent cinquante et un\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Simon & Schuster, 217pp vs stored 213"
   },
   {
     "id": "322745315650175563",
@@ -10995,10 +11050,11 @@
         "reason": "titled \"Jane Eyre: An Autobiography\", which is not \"Jane Eyre\""
       }
     ],
-    "approved": null,
+    "approved": "9780143123149",
     "refusal": "refused: stored title \"Jane Eyre\" but the apiRef names \"Jane Eyre ou les mémoires d'une institutrice\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Penguin Classics"
   },
   {
     "id": "322745315651224139",
@@ -11134,10 +11190,11 @@
         "reason": "no publisher — the mark of a print-on-demand or scraped record"
       }
     ],
-    "approved": null,
+    "approved": "9780451514691",
     "refusal": "refused: stored title \"Animal Farm\" but the apiRef names \"La ferme des animaux\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Signet Classics; the first candidate misspells Orwell"
   },
   {
     "id": "322745315652272715",
@@ -11768,10 +11825,11 @@
         "reason": "titled \"Drink Like a Geek: Cocktails, Brews, and Spirits for the Nerd in All of Us\", which is not \"A Storm of Swords (A Song of Ice and Fire, #3)\""
       }
     ],
-    "approved": null,
+    "approved": "9780553106633",
     "refusal": "refused: stored title \"A Storm of Swords (A Song of Ice and Fire, #3)\" but the apiRef names \"Le Trone de Fer, L'Integrale - 3\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "Bantam; the other is the split UK volume, a different book"
   },
   {
     "id": "322745315662760523",
@@ -11911,10 +11969,11 @@
         "reason": "titled \"“The” Official Guide to the GRE Revised General Test\", which is not \"The Official Guide to the GRE Revised General Test\""
       }
     ],
-    "approved": null,
+    "approved": "9780071700542",
     "refusal": "refused: stored title \"The Official Guide to the GRE Revised General Test\" but the apiRef names \"The Official Guide to the GRE General Test, Third Edition\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "McGraw Hill, and 2010 matches the stored year"
   },
   {
     "id": "322745315669049931",
@@ -12047,10 +12106,11 @@
         "reason": "there would be nothing to file it under"
       }
     ],
-    "approved": null,
+    "approved": "9780387989747",
     "refusal": "refused: stored title \"Stat Labs: Mathematical Statistics Through Applications\" but the apiRef names \"Stat Labs\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Springer, 292pp vs stored 283"
   },
   {
     "id": "322745315671147083",
@@ -12203,10 +12263,11 @@
         "reason": "by Harlan Coben, and this book is by Albert Camus — the titles agreeing is not enough on its own"
       }
     ],
-    "approved": null,
+    "approved": "9780679420262",
     "refusal": "refused: stored title \"The Stranger\" but the apiRef names \"Pouvoirs d'attraction, T0.5 : The Stranger\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Everyman's Library over two CreateSpace reprints"
   },
   {
     "id": "322745315674292811",
@@ -12337,10 +12398,11 @@
         "reason": "titled \"Ecocritical Perspectives in Teacher Education\", which is not \"A Mathematician's Lament: How School Cheats Us Out of Our Most Fascinating and Imaginative Art Form\""
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"A Mathematician's Lament: How School Cheats Us Out of Our Most Fascinating and Imaginative Art Form\" but the apiRef names \"A Mathematician's Lament\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "declined: the only candidate IS the current ref — a stored-title refusal"
   },
   {
     "id": "322745315677438539",
@@ -12585,10 +12647,11 @@
         "reason": "titled \"The Crazy Rich Asians Trilogy Box Set\", which is not \"Crazy Rich Asians\""
       }
     ],
-    "approved": null,
+    "approved": "9780385536981",
     "refusal": "refused: stored title \"Crazy Rich Asians\" but the apiRef names \"Crazy rich à Singapour\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Vintage/Doubleday"
   },
   {
     "id": "322745315681632843",
@@ -12730,10 +12793,11 @@
         "reason": "titled \"The Maze Runner: Enhanced Movie Tie-in Edition\", which is not \"Maze Runner\""
       }
     ],
-    "approved": null,
+    "approved": "9780385737951",
     "refusal": "refused: stored title \"Maze Runner\" but the apiRef names \"L'épreuve - tome 1 Le Labyrinthe\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Delacorte, the US first edition"
   },
   {
     "id": "322745315683731019",
@@ -13005,10 +13069,11 @@
         "reason": "titled \"Zarlah the Martian\", which is not \"The Martian\""
       }
     ],
-    "approved": null,
+    "approved": "9780804139021",
     "refusal": "refused: stored title \"The Martian\" but the apiRef names \"The Martian: Classroom Edition\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Ballantine is the actual publisher"
   },
   {
     "id": "568b0baa-aea3-4cd8-98ab-338ba365afe3",
@@ -13121,10 +13186,11 @@
         "reason": "there would be nothing to file it under"
       }
     ],
-    "approved": null,
+    "approved": false,
     "refusal": "refused: stored title \"Lucifer Book One\" but the apiRef names \"Lucifer\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 0
+    "searchFailures": 0,
+    "approvedBecause": "declined: the only candidate IS the current ref — a stored-title refusal"
   },
   {
     "id": "7073bd54-afcf-4d76-aa36-ea486365ad57",
@@ -13557,9 +13623,10 @@
         "reason": "titled \"Oliver Twist Illustrated\", which is not \"Oliver Twist\""
       }
     ],
-    "approved": null,
+    "approved": "9780140430172",
     "refusal": "refused: stored title \"Oliver Twist\" but the apiRef names \"Les aventures d'Olivier Twist\" — one of them is filed under the other's id",
     "searchPages": 2,
-    "searchFailures": 1
+    "searchFailures": 1,
+    "approvedBecause": "Penguin Classics"
   }
 ]

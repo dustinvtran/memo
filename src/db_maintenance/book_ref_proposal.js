@@ -440,7 +440,10 @@ const proposeForWork = (work, fresh, volumeInfos, { owners, limit = 3 } = {}) =>
     candidates: rankCandidates(work, accepted).slice(0, limit),
     rejected: misses,
     // Filled in by whoever reads the file. `null` is "not looked at yet";
-    // `false` is "looked at, none of these"; an ISBN is an approval.
+    // `false` is "looked at, none of these"; an ISBN is an approval. An
+    // `approvedBecause` beside it is free text saying why, which the Markdown
+    // prints under the table and nothing else reads — a decision this file
+    // exists to make deliberately is worth a sentence of its own.
     approved: null,
   };
 };

@@ -309,6 +309,7 @@ const retryPhase = async (db) => {
       currentRefNames: proposal.currentRefNames,
       refusal: proposal.refusal,
       approved: proposal.approved ?? null,
+      approvedBecause: proposal.approvedBecause,
       searchFailures: search.failures,
       searchPages: search.pages,
     };
@@ -603,10 +604,15 @@ const toMarkdown = (proposals, jsonPath) => {
     lines.push("| --- | --- | --- | --- | --- | --- |");
     for (const candidate of proposal.candidates) {
       lines.push(
-        `| ☐ | \`${candidate.isbn}\` | ${cell(candidate.fullTitle)} | ` +
+        `| ${proposal.approved === candidate.isbn ? "☑" : "☐"} | ` +
+          `\`${candidate.isbn}\` | ${cell(candidate.fullTitle)} | ` +
           `${cell(candidate.publisher)} | ${candidate.year ?? "—"} | ` +
           `${candidate.pageCount} |`
       );
+    }
+    if (proposal.approvedBecause) {
+      lines.push("");
+      lines.push(`_${cellText(proposal.approvedBecause)}_`);
     }
     lines.push("");
   }
@@ -620,6 +626,9 @@ const toMarkdown = (proposals, jsonPath) => {
  * is in and every row after it, which is a bad way for a file somebody is
  * meant to read carefully to fail.
  */
+/** The same collapsing, for prose rather than for a table cell. */
+const cellText = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+
 const cell = (value) =>
   value === undefined || value === null || value === ""
     ? "—"
