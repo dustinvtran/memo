@@ -235,11 +235,27 @@ Write only to the **work** collections. User overrides live on entry
 documents (`entry.overrides`), so a script that never touches `*Entries`
 cannot clobber one.
 
-The one exception is `scripts/prune_orphan_reviews.js`, which deletes review
-documents whose entry is gone — notes no code path can reach, since a review
-is only ever looked up by `entryRef`. It reads `*Entries` but never writes to
-them. Adding a second exception is a human's call: the rule is what keeps a
-maintenance script away from text people can still read.
+Two exceptions delete review documents, and neither writes to an entry.
+`scripts/prune_orphan_reviews.js` deletes reviews whose entry is gone — notes
+no code path can reach, since a review is only ever looked up by `entryRef`.
+`scripts/prune_unreachable_documents.js --only=reviews` (#339) deletes reviews
+holding the empty string — notes a code path reaches and finds empty, which is
+the narrower claim and so the harder one to make. Its argument is *not* that
+an empty string is meaningless: it is deliberately a real value, and #213 is
+the bug that comes of confusing "absent" with "empty". It is that
+`updateEntry_` writes the document again on the next save whether or not it is
+there, and that `getReview`, the export and `changedFields` all treat the two
+states alike — verified, and pinned by tests in
+`src/api/controllers/entries.test.js`. **That half has not been applied**; its
+works half, which writes only to the work collections, needs no exception.
+
+Both read `*Entries` and neither writes to them. Three other scripts do write
+outside the work collections — `strip_dead_entry_fields.js`,
+`retype_entry_revisions.js` and `clear_noop_overrides.js`, the last being the
+only one here that reaches an override at all — and each argues its own case in
+its file header and in `src/db_maintenance/README.md`, which carries the whole
+list. Adding another is a human's call: the rule is what keeps a maintenance
+script away from text people can still read.
 
 ## Tests
 
