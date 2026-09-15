@@ -24,6 +24,7 @@ The scripts, and the section below that explains each:
 | `clear_unusable_work_fields.js` | `$unset`s work fields whose stored value is present and unusable — `publishers: {}`, `externalUrls: [[]]`, `directors: [""]` — so the next backfill can fill them. | `--apply` |
 | `repair_shared_refs.js` | Takes another work's id off the works wearing it, and the links, the cover and every value another work in the same group also holds. Asks each API which work the id names before it writes. | `--apply` |
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
+| `prune_unreachable_documents.js` | Deletes cached works no entry in any collection points at, and review documents holding the empty string. Two halves, run separately with `--only=works` / `--only=reviews`. | `--apply` |
 | `strip_dead_entry_fields.js` | Unsets `review` and `commonMetadata` from entry documents — a duplicated note and a stale copy of the work, neither of which any reader uses. | `--apply` |
 | `clear_noop_overrides.js` | `$unset`s the `overrides.<field>` keys holding a byte-identical copy of the work's own value, so a corrected work can reach the page again. Leaves every different value, every `null`, and every entry with no work. | `--apply` |
 | `retype_entry_revisions.js` | Rewrites `entryRevisions.entryType` from the url spelling to the one every other collection uses: `films` to `Film`. | `--apply` |
@@ -35,12 +36,14 @@ the overrides a user set by hand, which live on the entry documents, are out
 of reach by construction; `dedupe_works.js` is the one that also writes to the
 entry collections, repointing `workRef` at the document it merged into.
 
-Four scripts write outside the work collections, and each says so in its own
+Five scripts write outside the work collections, and each says so in its own
 section below: `prune_orphan_reviews.js` deletes review documents nothing can
-reach, `strip_dead_entry_fields.js` unsets two named dead fields from entry
-documents, `retype_entry_revisions.js` corrects one field on the history and
-draft documents, and `clear_noop_overrides.js` removes the overrides that are
-copies of the work they override. None creates or deletes an entry.
+reach, `prune_unreachable_documents.js --only=reviews` deletes review
+documents holding nothing, `strip_dead_entry_fields.js` unsets two named dead
+fields from entry documents, `retype_entry_revisions.js` corrects one field on
+the history and draft documents, and `clear_noop_overrides.js` removes the
+overrides that are copies of the work they override. None creates or deletes
+an entry.
 
 The last of those is the only one that reaches an override at all, and it is
 the only one whose exception is about the overrides rather than in spite of
@@ -1159,6 +1162,100 @@ an `entryType`; the four values in `entryRevisions` are now exactly the four
 the works collections use; all 18 still carry their `snapshot`; and every
 collection in the database still holds the number of documents the pre-run
 snapshot recorded.
+
+## Documents nothing can reach
+
+`scripts/prune_unreachable_documents.js` is two prunes under one roof, because
+they make the same claim — the document is there and no code path the site has
+can put it in front of a reader — and they are kept apart by `--only` because
+the claim is argued differently for each. `--types=` restricts to a work type,
+the way `--only=` does everywhere else here. #339.
+
+```
+node scripts/prune_unreachable_documents.js --only=works
+node scripts/prune_unreachable_documents.js --only=reviews --types=books --list
+node scripts/prune_unreachable_documents.js --only=works --apply
+```
+
+### Works no entry points at
+
+A work is only ever reached through an entry's `workRef`, so one that no entry
+names is unreachable from the site. The dry run of 2026-09-14 found **184**
+across the four collections — films 45, tv 10, games 81, books 48 — which is
+the figure `audit_database.js` reports under "not problems, for information".
+Most are the residue of the hole #174 closed: `/api/works/retrieve` was
+unauthenticated and also *wrote*, so walking an API's ids anonymously left a
+work document per id.
+
+Two things this does that the audit's count does not.
+
+**It asks every entry collection, not the matching one.** `auditCollection`
+reads one works/entries/reviews triple at a time, which is right for a count
+and too weak for a delete: nothing in the schema stops a `bookEntries` row
+carrying the `_id` of a document in `films`. The run prints how many works
+only a foreign collection reaches, zero included — zero is the evidence that
+the question was asked. It was zero on 2026-09-14.
+
+**It refuses to touch a work in an open collision group**, and prints the ones
+it refused with the group that objected. `title_year_check.js` (#319, #322)
+finds one work filed under two ids; `shared_ref_check.js` finds two documents
+under one id whose titles agree. Several of those groups are a live document
+beside an unreachable one, and the unreachable one is half the evidence for a
+decision nobody has made — a prune that took it would settle the question by
+destroying it. 18 of the 184 were skipped on that ground: `stalker|1979`,
+`mother|2009`, `cure|1997`, `supermetroid|1994`, `control|2019`,
+`thewisemansfear|2011` and eleven more. 166 were left to delete.
+
+This half writes only to the work collections, so it needs no exception to the
+rule at the top of this file.
+
+### Reviews holding nothing
+
+1,869 review documents hold the empty string — films 741, tv 364, games 306,
+books 458, which is 49% of the 3,838 stored. They exist because `createEntry`
+writes a review document whenever `review !== undefined` and the entry form
+always sends the field.
+
+This half **is** a second exception to "write only to the work collections",
+and the argument is narrower than `prune_orphan_reviews.js`'s rather than the
+same one again. That script deletes notes no code path can reach: the entry is
+gone, and a review is only ever looked up by `entryRef`. This deletes notes a
+code path reaches and finds empty.
+
+What makes it safe is not that an empty string is meaningless. It is
+deliberately a real value — #213 is the bug that comes of reading an absent
+`review` as an instruction to clear one — and the argument is instead that
+removing the document is invisible to every reader and to the next save. That
+was verified rather than assumed, and the four readers are all of them:
+
+- `updateEntry_` writes `existingReview ? updateByRef_(...) : create_(...)`,
+  so the document comes back on the next save whether or not it is there.
+- `getReview` answers `{}` for a missing document, which is what the `?.` in
+  `review?.data?.text || '*None yet...*'` already turns into the placeholder.
+- `findReviews` in `controllers/export.js` filters on `review?.text`, so an
+  empty note is left out of an export either way.
+- `changedFields` in `utils/revision_history.js` calls `''` and `undefined`
+  the same absence, so the version list draws the same history and records no
+  version it would not have recorded.
+
+`api/controllers/entries.test.js` pins those, driving the real handler and
+comparing a save over an empty note against the same save after a prune.
+
+One difference survives, and it is why this half is a separate flag: `writeForm`
+in `frontend/_includes/js/utils/entry_form_io.js` restores a snapshot's note
+only `if (snapshot.review !== undefined)`. A version recorded *after* a prune
+has no `review` key, so restoring it leaves whatever is in the textarea rather
+than emptying it. It takes an entry whose note was empty at the version being
+restored and is not empty now, and it changes a restore rather than a save.
+
+Reviews whose *entry* is gone are counted and left alone: they are
+`prune_orphan_reviews.js`'s population, and "a save writes it again" is not
+available for an entry that no longer exists. There were none on 2026-09-14,
+that script having already run.
+
+**Not yet applied.** The dry runs above are what this landed with; both halves
+want a fresh snapshot and a human's decision first, and the reviews half in
+particular is the repository owner's call.
 
 ## Backing up the database, with history
 

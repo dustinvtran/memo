@@ -584,3 +584,119 @@ test('a real user with an empty list is still an empty list', options, async () 
   assert.equal(statusCode, 200)
   assert.deepEqual(body, [])
 })
+
+///////////////////////////////////////////////////////////////////////////////
+// What a save does when the note document is not there. #339 proposes
+// deleting the 1,869 reviews holding the empty string, and the whole of its
+// safety is the branch below `reviewProvided` in `updateEntry_`: the document
+// is written again whether or not one is there. These pin that, and pin that
+// the save which follows a prune is the same save.
+
+/**
+ * One save over one starting state, reduced to what a reader could tell apart
+ * afterwards: the entry, the notes, and the diff the history panel draws.
+ *
+ * The timestamps are dropped rather than compared — `Date.now()` and a
+ * generated `_id` differ between two runs of the same code, and are not what
+ * this is asking about.
+ */
+const saveOver = async (reviews) => {
+  seedSavedEntry()
+  store.filmReviews = reviews
+
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: form({ review: 'a note typed after the prune' }),
+  })
+
+  const { body } = await call(revisions, 'GET', 'revisions/films/e1', {
+    as: 'u1',
+  })
+
+  const { updatedDate, ...entry } = store.filmEntries[0]
+  return {
+    statusCode,
+    entry,
+    notes: store.filmReviews.map(({ entryRef, text }) => ({ entryRef, text })),
+    changes: body.versions.map(({ changes }) => changes),
+  }
+}
+
+test('a save writes the note document again when it is not there', options, async () => {
+  seedSavedEntry()
+  // The state a prune of an empty note leaves behind.
+  store.filmReviews = []
+
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: form({ review: 'a note typed after the prune' }),
+  })
+
+  assert.equal(statusCode, 200)
+  assert.equal(store.filmReviews.length, 1)
+  assert.equal(store.filmReviews[0].entryRef, 'e1')
+  assert.equal(store.filmReviews[0].text, 'a note typed after the prune')
+  assert.equal(store.filmEntries[0].status, 'Completed')
+})
+
+test('a prune of an empty note leaves the next save writing exactly what it wrote before', options, async () => {
+  const withEmptyNote = await saveOver([{ _id: 'r1', entryRef: 'e1', text: '' }])
+  const afterAPrune = await saveOver([])
+
+  assert.equal(withEmptyNote.statusCode, 200)
+  assert.deepEqual(afterAPrune, withEmptyNote)
+})
+
+test('clearing a note still empties it rather than removing the document', options, async () => {
+  seedSavedEntry()
+
+  // #213's distinction, which a prune must not be read as softening: an empty
+  // string is the user clearing their note, and it is still stored as one.
+  await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: form({ review: '' }),
+  })
+
+  assert.equal(store.filmReviews.length, 1)
+  assert.equal(store.filmReviews[0].text, '')
+})
+
+test('a save that omits the note does not write one over a prune', options, async () => {
+  seedSavedEntry()
+  store.filmReviews = []
+
+  // "Absent" is still not "empty": a request that says nothing about the note
+  // leaves the collection as it found it, rather than putting the document
+  // back holding nothing.
+  const { review, ...withoutReview } = form()
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: withoutReview,
+  })
+
+  assert.equal(statusCode, 200)
+  assert.deepEqual(store.filmReviews, [])
+})
+
+test('an entry with no note document reads the same as one holding the empty string', options, async () => {
+  seedSavedEntry()
+  store.filmReviews = [{ _id: 'r1', entryRef: 'e1', text: '' }]
+  const withEmptyNote = await call(revisions, 'GET', 'revisions/films/e1', {
+    as: 'u1',
+  })
+
+  seedSavedEntry()
+  store.filmReviews = []
+  const afterAPrune = await call(revisions, 'GET', 'revisions/films/e1', {
+    as: 'u1',
+  })
+
+  // The snapshot itself differs — `toSnapshot` drops a field that is
+  // `undefined` — but `changedFields` calls `''` and `undefined` the same
+  // absence, so the version list says the same thing either way.
+  assert.equal(afterAPrune.statusCode, withEmptyNote.statusCode)
+  assert.deepEqual(
+    afterAPrune.body.versions.map(({ changes }) => changes),
+    withEmptyNote.body.versions.map(({ changes }) => changes)
+  )
+})
