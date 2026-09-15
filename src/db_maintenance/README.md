@@ -22,13 +22,10 @@ The scripts, and the section below that explains each:
 | `repair_durations.js` | Repairs `duration` values that cannot be true — a playtime multiplied by 60 one time too many. Only ever writes a value an entry override corroborates. | `--apply` |
 | `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
 | `clear_unusable_work_fields.js` | `$unset`s work fields whose stored value is present and unusable — `publishers: {}`, `externalUrls: [[]]`, `directors: [""]` — so the next backfill can fill them. | `--apply` |
-| `repair_shared_refs.js` | Takes another work's id off the works wearing it, and the links, the cover and every value another work in the same group also holds. Asks each API which work the id names before it writes. | `--apply` |
 | `propose_book_refs.js` | Proposes English editions for the books whose ISBN names another title, filtered hard and ranked, to a file a person approves; then repoints the refs that were approved. Never picks a candidate itself. | `--apply` |
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
 | `prune_unreachable_documents.js` | Deletes cached works no entry in any collection points at, and review documents holding the empty string. Two halves, run separately with `--only=works` / `--only=reviews`. | `--apply` |
-| `strip_dead_entry_fields.js` | Unsets `review` and `commonMetadata` from entry documents — a duplicated note and a stale copy of the work, neither of which any reader uses. | `--apply` |
 | `clear_noop_overrides.js` | `$unset`s the `overrides.<field>` keys holding a byte-identical copy of the work's own value, so a corrected work can reach the page again. Leaves every different value, every `null`, and every entry with no work. | `--apply` |
-| `retype_entry_revisions.js` | Rewrites `entryRevisions.entryType` from the url spelling to the one every other collection uses: `films` to `Film`. | `--apply` |
 
 Everything marked `--apply` is a **dry run without it**, and takes a backup of
 each collection it writes to first — except `ensure_indexes.js`, which writes
@@ -37,14 +34,11 @@ the overrides a user set by hand, which live on the entry documents, are out
 of reach by construction; `dedupe_works.js` is the one that also writes to the
 entry collections, repointing `workRef` at the document it merged into.
 
-Five scripts write outside the work collections, and each says so in its own
+Three scripts write outside the work collections, and each says so in its own
 section below: `prune_orphan_reviews.js` deletes review documents nothing can
 reach, `prune_unreachable_documents.js --only=reviews` deletes review
-documents holding nothing, `strip_dead_entry_fields.js` unsets two named dead
-fields from entry documents, `retype_entry_revisions.js` corrects one field on
-the history and draft documents, and `clear_noop_overrides.js` removes the
-overrides that are copies of the work they override. None creates or deletes
-an entry.
+documents holding nothing, and `clear_noop_overrides.js` removes the overrides
+that are copies of the work they override. None creates or deletes an entry.
 
 The last of those is the only one that reaches an override at all, and it is
 the only one whose exception is about the overrides rather than in spite of
@@ -241,99 +235,24 @@ It is off by default because a diagnostic that spends someone else's rate
 limit every time it runs is a diagnostic that stops being run, and because
 that flag is the only thing here that wants the adapter keys.
 
-Fifteen of the 25 are settled outright — the id belongs to the sequel and the
-base game is wearing it, or the reverse. The other ten answer "none of these",
-which is a real answer rather than a failure: `igdb__127111` names *The Wolf
-Among Us: Episode 5 - Cry Wolf*, so both `The Wolf Among Us` and `Among Us`
-are wearing an id that is neither of theirs, and `9781781101032` comes back as
-*Harry Potter à L'école des Sorciers*. Those want a human, not a rule.
+Fifteen of the 25 were settled outright — the id belongs to the sequel and the
+base game is wearing it, or the reverse. The other ten answered "none of
+these", which is a real answer rather than a failure: `igdb__127111` names *The
+Wolf Among Us: Episode 5 - Cry Wolf*, so both `The Wolf Among Us` and `Among
+Us` were wearing an id that is neither of theirs, and `9781781101032` comes
+back as *Harry Potter à L'école des Sorciers*.
 
-Two guards stop this getting worse, and both are already in: `mergeWork`
+**All 25 were repaired on 2026-09-03, and the audit reports none today.**
+`repair_shared_refs.js` is what did it, and #351 deleted it: the population is
+zero in all four collections and two guards stop it coming back — `mergeWork`
 refuses a work whose title the API disagrees with (below), and the retrieve
-route treats an ambiguous ref as a cache miss rather than picking one of the
-matches, so new entries stop landing on the wrong side of a collision that
-already exists. Nothing is deteriorating; what is left is undoing what already
-happened.
-
-### Repairing a collision
-
-`repair_shared_refs.js` is that. It runs the same identity checks
-`--verify-shared-refs` runs — live, immediately before it writes, so no verdict
-is ever older than the write it justifies — and hands them to
-`../shared_ref_repair_plan.js`, which decides everything that gets written. The
-verdicts come from the APIs and the plan reads nothing else; there is
-deliberately no list of ids in the script, because a list would be a second
-source of truth about which side of a pair is wrong and would be stale the
-first time somebody adds an entry.
-
-A misfiled work loses:
-
-- **the shared id**, and anything else the group holds in common. Two works an
-  API has just called different works cannot both be right about one external
-  id, and the document it called misfiled is not the one to give the benefit of
-  the doubt to. That is what takes `hltb__13157` off `Kingdom Hearts` — it is
-  Kingdom Hearts III's HowLongToBeat page and no grouping would have found it,
-  because an `hltb` ref is not an identity ref. An id only one work in the
-  group carries is left alone.
-- **every value another work in its group also holds**, of the fields an
-  adapter fills: the year, the playtime, the genres, platforms, studios,
-  publishers, authors and cast. Not just the four the issue names —
-  `authors: ["Dan Brown"]` on Dostoevsky's `Demons` is exactly as wrong as its
-  600 pages — but not everything either. The merge that did the damage ran with
-  `--missing-only` and it copies, so a value it wrote here is still on the
-  document it was copied from: an identical value is the evidence that the
-  wrong id wrote this one, and a value no partner shares has none against it
-  (#313). On the production dry run that is 234 values rather than 276, the 42
-  it keeps being 27 release years, 12 playtimes and page counts, and the
-  authors of `Demons`, `The Da Vinci Code` and `Numerical Linear Algebra`.
-- **the links and the cover**, `externalUrls` and `imageUrl`, whether or not
-  anything else in the group has the same ones. They name the wrong id's page
-  and its artwork whatever they say, and they are what a reader clicks. So do
-  `metadataUpdatedDate` and `durationSource`, which are bookkeeping about an
-  id that is going away.
-
-`--clear-all-fields` takes every field an adapter fills instead, which is the
-behaviour before #313 and is defensible for a confirmed-owner group: `Hero` is
-carrying Big Hero 6's cover, runtime, genres, directors and entire cast, and
-only its `releaseYear` is its own. It is not the default because one run cannot
-tell those groups from the ones where it would delete the only copy of
-something true, on a work it is about to make unrefreshable.
-
-The identity test errs towards clearing, and the place it shows is a series:
-five Haruhi volumes filed under one ISBN share an author honestly, and lose it
-anyway. Nine of the twelve stored `authors` on the misfiled books go for that
-reason.
-
-The titles stay, and so does `entryType`. A title is the one field the wrong id
-demonstrably did not write — a `--missing-only` merge only fills what is empty
-— and it is what a human needs in order to look the right id up. `apiRefs` is
-narrowed rather than unset, because an absent `apiRefs` is what the audit calls
-corrupt and an empty one honestly says we know of no id for this work.
-
-**A repaired work usually cannot be refreshed again**, and the script says so
-rather than reporting it as fixed. With the id gone there is nothing to
-retrieve from, so the work moves onto the "no `<prefix>__` ref (cannot be
-refreshed)" line of the audit and stays there until somebody supplies the right
-id by hand. That is the honest state for a work whose id nobody knows, and it
-is the only state a backfill can ever do the right thing from: `$unset` leaves
-a *missing* field, which is what `isEmptyValue` recognises, so a correct ref
-arriving later fills everything back in. The run prints the before and after of
-that count for each collection and for the run as a whole.
-
-The confirmed owners are never written to, and the check afterwards proves it
-rather than asserting it: each one is compared in full against the document
-read before the write.
-
-```
-node scripts/repair_shared_refs.js                  # dry run, 25 API calls
-node scripts/repair_shared_refs.js --only=books
-node scripts/repair_shared_refs.js --clear-all-fields   # the pre-#313 clear
-node scripts/repair_shared_refs.js --apply
-```
-
-It is a write to real user-visible data, so take a snapshot with
-`backup_database.js` and verify it with `verify_backup.js` first — see "Writing
-to the database" in the root `CLAUDE.md`.
+route in `api/controllers/works.js` treats an ambiguous ref as a cache miss
+rather than picking one of the matches, so a new entry cannot land on the
+wrong side of a collision. Both have tests. What remains is the **detection**,
+which is cheap and stays: `shared_ref_check.js` still splits the three cases
+and the audit still prints the collision line, so if the impossible happens it
+says so. The repair itself is in git history, which is where a migration whose
+cause is fixed belongs.
 
 ### Works whose own id names something else
 
@@ -782,7 +701,7 @@ an unanswered question replaces nothing.
 
 ### What a repoint writes
 
-`apiRefs` is **narrowed**, the way `repair_shared_refs.js` narrows it: every
+`apiRefs` is **narrowed**, the way #290's repair narrowed it: every
 ref naming the old ISBN comes off under either prefix that names a book, the
 new one goes on, and any other ref stays. Then the values that belong to the
 *edition* rather than to the work come off, so the next `--missing-only`
@@ -806,7 +725,7 @@ French printing's, and clearing it would invite the next run to replace the
 first with the second.
 
 The line is *certainly the edition's* rather than *possibly the work's*, which
-is narrower than `repair_shared_refs.js` draws it — that script has evidence
+is narrower than #290's repair drew it — that had evidence
 per value, because a value copied onto two documents in a collision group is
 one retrieve's output, and there is no partner document here to compare
 against. `publishers` is the field it looks least right on and it is kept
@@ -824,7 +743,7 @@ spent two rounds cleaning up:
 3. After the write, the whole collection is re-read and every ISBN counted.
 
 The approved ISBN is also **verified against Google Books again, immediately
-before the write**, the way `repair_shared_refs.js` re-runs its identity checks
+before the write**, the way #290's repair re-ran its identity checks
 rather than trusting a saved answer. An approval whose ISBN no longer names the
 stored title is skipped — which also means an approval that would not unblock
 the backfill is refused, since it is the same `titlesAgree` either way. #343
@@ -1106,81 +1025,6 @@ the 28 absent `apiRefs` — and nothing it had to leave alone. Applying it wants
 a fresh snapshot taken and verified immediately beforehand, as everything in
 this folder does.
 
-## Dead fields on entry documents
-
-Two fields on an entry document are written and never read back:
-
-- **`review`** — a second copy of the note. The note's home is the `*Reviews`
-  collections, which is where `getReview`, the export and the history all read
-  it from, and `toUserEntriesPipeline` projects the entry's copy away
-  specifically so it cannot reach a response.
-- **`commonMetadata`** — a snapshot of the work document the entry points at,
-  taken before the `$lookup` existed. `getUserEntries` sets
-  `commonMetadata: work.data` from the lookup *after* spreading the entry, so
-  the stored value is overwritten on every read. These are not merely
-  redundant, they are stale: they disagree with the `works` collections they
-  mirror.
-
-Measured over `snapshot-2026-08-19T02-51-54-658Z`, the two came to **3.21 MB
-of the entry collections' 4.32 MB** — 1.9 MB of duplicated note across 1034
-entries, and 1.2 MB of stale metadata across 3267 (762 of them literally
-`null`). See #176.
-
-`scripts/strip_dead_entry_fields.js` `$unset`s them. It is a **dry run unless
-you pass `--apply`**, and it dumps each entry collection before writing to it.
-
-```
-node scripts/strip_dead_entry_fields.js
-node scripts/strip_dead_entry_fields.js --fields=commonMetadata
-node scripts/strip_dead_entry_fields.js --apply
-```
-
-Flags: `--only=films,tv,games,books`, `--fields=review,commonMetadata`,
-`--json=path`, `--backup-dir=path`.
-
-**Before it drops a note it proves the other copy is there.** Every entry
-carrying a `review` must have a review document under its `_id` holding the
-same text, verbatim — not merely a review document, the same text. An entry
-that fails is printed and left entirely alone, `commonMetadata` included: a
-document we cannot account for is not one to write to. The check is equality
-rather than existence for a second reason, too. `toSnapshot` takes
-`reviewText ?? entryData.review`, so a revision falls back to the entry's copy
-when the review document has no text, and verbatim equality is exactly the
-condition under which that fallback cannot change its answer.
-
-It is the second script here that writes outside the work collections, and the
-only one that writes to `*Entries`. What bounds it:
-
-- It `$unset`s those two named fields and nothing else. `overrides`, `status`,
-  `score`, the dates and `workRef` are unreachable from it, and an `$unset`
-  can neither create, delete nor repoint a document.
-- It never touches `updatedDate`. A write that bumped it would reorder every
-  list on the site — a visible change to data nobody asked to change.
-- It re-reads the collection afterwards and reports the entry count and what
-  still carries each field, so a run that did something other than what it
-  planned says so rather than exiting quietly.
-
-**Applied to production on 2026-08-19 (UTC)**, against snapshot
-`snapshot-2026-08-19T17-25-19-670Z` — verified first against live
-`countDocuments()` and the manifest's own SHA-256s, all 14 collections
-agreeing. The dry run matched every one of the 1034 notes to its review
-document verbatim and refused none, and found 3267 stale metadata objects
-(762 `null`). Applying removed both. The four entry collections went from
-**4,320,256 bytes to 1,119,513** — 74% gone, and within 5 KB of what #176
-predicted.
-
-Afterwards: entry counts unchanged in all four collections (1527 / 548 / 1089
-/ 660), the audit reports zero dangling `workRef`s and zero unreachable
-reviews, the `*Reviews` collections are unchanged document for document, and
-all 1034 notes were re-read from them verbatim.
-
-The write side is a separate fix: the form's `readForm` sends
-`commonMetadata: null` and `review` on every save, and the update path used to
-store the request body wholesale. #171 (PR #183) validates a PATCH body
-against what an entry may hold instead, which is what stops these coming back.
-Until that lands, a run of this clears the backlog rather than settling the
-question, and an entry edited through the form afterwards carries them again.
-
 ## Overrides that override nothing
 
 An override on an entry shadows the work's own metadata in the two places the
@@ -1233,8 +1077,7 @@ The argument is that **a value byte-identical to the work it overrides is not
 a user decision**. Nobody typed it; it is the artefact of a comparison against
 `undefined`. And removing it changes nothing a reader sees, because both
 merges produce the same value whether the copy is there or not — which is the
-test, and it is the same test `strip_dead_entry_fields.js` had to pass for a
-field nothing reads.
+test, and it is the same test #176 had to pass for a field nothing reads.
 
 What bounds it:
 
@@ -1328,77 +1171,6 @@ instead of a number you have to trust.
 This is only safe *after* #321, which is in production and confirmed: entries
 saved since it shipped contribute no no-op overrides at all. Run before it,
 this would have cleared a backlog the next save refilled.
-
-## One `entryType`, spelled the way the works collections spell it
-
-`entryType` named two different values. A work document carries `Film` — the
-spelling `parsers/works.js` enforces on all four works collections, and the
-one `db/shapes.js` stands in for a missing work — while `entryRevisions`
-documents were written with `films`, which is the `:type` segment a url starts
-with and is stored nowhere else. Both are real values in the same field name,
-and the two parsers each accepted their own and rejected the other.
-
-It came from one helper. `toEntryType` in `api/controllers/utils.js` returned
-`workTypes.byEntryCollection(col)?.type` — the url spelling, under a name that
-promises the other one — and both of its callers stored the result in a field
-they also called `entryType`. `parsers/revisions.js` was then written around
-the value it was being handed, which is why nothing objected. See #220.
-
-The API writes `Film` now, and the revisions parser shares the works enum, so
-there is one spelling and one enum. `scripts/retype_entry_revisions.js` is the
-backfill for the documents written before that. It is a **dry run unless you
-pass `--apply`**.
-
-```
-node scripts/retype_entry_revisions.js
-node scripts/retype_entry_revisions.js --apply
-```
-
-Flags: `--json=path`, `--backup-dir=path`.
-
-The mapping is read out of `api/utils/work_types.js`, the one table that holds
-both spellings, so this cannot disagree with the code that produced the values
-it corrects. `entry_revision_type_plan.js` decides; the script only writes what
-it is given.
-
-It is the third script here that writes outside the work collections. What
-bounds it:
-
-- It `$set`s one field to one of four constants. `snapshot` — where the
-  writing a user can still read back lives — is unreachable from it, as are
-  `entryRef`, `kind` and `userId`.
-- **It never reads a snapshot.** The plan needs `_id`, `entryType` and `kind`,
-  so that is the projection. No note is loaded, printed, or written to the
-  before-map.
-- It touches no dates. `createdDate` and `supersededDate` say when a version
-  was saved and when it was replaced; a migration is neither.
-- A document carrying neither spelling is printed and skipped. Its type is
-  recoverable from the entry it belongs to, which beats a guess.
-- Re-running is a no-op: a document already carrying the document spelling is
-  counted, not rewritten.
-
-Afterwards it re-reads the collection and reports the document count and how
-many still carry a url spelling, so a run that did something other than what
-it planned says so rather than exiting quietly.
-
-Order does not matter against a deploy. Nothing reads `entryRevisions.entryType`
-back — the version list projects `createdDate`, `supersededDate` and `snapshot`,
-and the draft route returns `createdDate` and `snapshot` — so an unmigrated
-document is never validated, and saving a draft rewrites the whole document
-through the parser anyway.
-
-**Applied to production on 2026-08-26 (UTC)**, against snapshot
-`snapshot-2026-08-26T07-27-44-541Z` — verified first against live
-`countDocuments()` and the manifest's own SHA-256s, all 14 collections
-agreeing. The dry run found all 18 documents carrying a url spelling and none
-it could not recognise; applying rewrote 3 to `Film`, 2 to `TVShow`, 11 to
-`Game` and 2 to `Book`.
-
-Afterwards: 18 documents still, none carrying a url spelling and none without
-an `entryType`; the four values in `entryRevisions` are now exactly the four
-the works collections use; all 18 still carry their `snapshot`; and every
-collection in the database still holds the number of documents the pre-run
-snapshot recorded.
 
 ## Documents nothing can reach
 
@@ -1750,8 +1522,8 @@ put back 12 deleted documents and touched nothing else.`
 The parts that decide what to write (`work_metadata_merge.js`,
 `game_playtime_plan.js`), what to spend an API call on and in what order
 (`metadata_refresh_plan.js`), what to delete (`work_dedupe_plan.js`,
-`orphan_review_plan.js`, `dead_entry_fields_plan.js`), what to clear
-(`unusable_field_plan.js`), which English edition a misfiled book could be
+`orphan_review_plan.js`, `unreachable_document_plan.js`), what to clear
+(`unusable_field_plan.js`, `noop_override_plan.js`), which English edition a misfiled book could be
 repointed at (`book_ref_proposal.js`), which snapshots a retention policy
 keeps (`backup_plan.js`), whether a snapshot is still what the backup wrote
 (`backup_verification.js`) and which indexes are missing (`index_plan.js`)
@@ -1796,6 +1568,28 @@ went with it.
 Games carrying a `duration` with no HowLongToBeat link are reported by the
 audit and left alone: no API can add one now, and their playtimes are worth
 more than IGDB's replacements would be.
+
+#351 applied the paragraph above to three scripts that had done their job.
+`strip_dead_entry_fields.js` unset `review` and `commonMetadata` from entry
+documents (#176); #171, fixed by PR #183 on 2026-08-19, is why nothing writes
+them any more — `entryUpdateParser` omits `review` and zod drops
+`commonMetadata`, so a save cannot put either back, and a dry run finds 0
+across all four entry collections. `retype_entry_revisions.js` rewrote
+`entryRevisions.entryType` from the url spelling to the document one (#220);
+the API has written the document spelling since 2026-08-26 and all 32
+revisions are already correct. `repair_shared_refs.js` took another work's id
+off the 53 works wearing one (#290); all 25 groups were repaired on
+2026-09-03, both guards are in with tests, and the audit reports zero in every
+collection.
+
+What each of those had in common is the thing worth checking before deleting
+the next one: **the population is zero *and* the cause is fixed in code**. A
+script whose population is zero today but whose cause is still live is a
+different animal and stays — `prune_orphan_reviews.js` finds no orphan today
+and will the first time somebody deletes an entry, and `clear_noop_overrides.js`
+found four keys the night after it was applied, written not by a save but by
+the refresh crawl correcting a work to match an override that was real when it
+was typed. Neither of those is finished; the three above are.
 
 ## Taking a dump with the Mongo tools
 

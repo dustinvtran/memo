@@ -55,8 +55,8 @@
 /**
  * Which overrides may go, from which entries, and what is being left behind.
  *
- * `blocked` means the same thing here as in ./dead_entry_fields_plan.js and
- * ./orphan_review_plan.js: a collection read that quietly came back empty.
+ * `blocked` means the same thing here as in ./orphan_review_plan.js:
+ * a collection read that quietly came back empty.
  * Entries that point at works beside a works collection of zero documents
  * would make every one of those entries look like a dangling ref — safe,
  * since an entry with no work is skipped, but safe by accident, and it reads
