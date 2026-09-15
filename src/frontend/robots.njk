@@ -24,12 +24,42 @@ eleventyExcludeFromCollections: true
 # instead of JSON, or ?limit=200 to /api/export/<username> for a bounded slice
 # of every list at once.
 
+{# The named groups exist because the `*` group below asks a parser to get a
+   precedence rule right, and the export url is the one url on this site where
+   being wrong costs everything.
+
+   `Allow` is an extension to the 1994 standard, not part of it. A parser that
+   implements only `Disallow` — and simple ones do — reads `Disallow: /api/`
+   and stops, never reaching the `Allow: /api/export/` that was supposed to
+   rescue it. Google and Bing take the longest match and get this right; the
+   agents below are not Google and Bing, and #334 is an agent saying it could
+   not fetch a url that every check from a laptop says is fine.
+
+   A crawler that matches a named group uses that group and ignores `*`
+   entirely, so none of these has a `Disallow` to misread in the first place.
+   That is the whole point: the question stops being which rule wins.
+
+   The list is the fetchers that read a url on a user's behalf (ChatGPT-User,
+   Claude-User, Perplexity-User), the search indexers behind them (OAI-SearchBot,
+   PerplexityBot), the training crawlers (GPTBot, ClaudeBot, CCBot), and
+   Google-Extended, which is the token Gemini's grounding honours. Naming one
+   is not an invitation — `/` is already allowed for everyone — it is removing
+   an ambiguity for the readers this site is trying to be legible to. -#}
+{% for agent in [
+  "Google-Extended", "GPTBot", "OAI-SearchBot", "ChatGPT-User",
+  "ClaudeBot", "Claude-User", "PerplexityBot", "Perplexity-User", "CCBot"
+] -%}
+User-agent: {{ agent }}
+Allow: /api/export/
+Allow: /
+
+{% endfor -%}
 User-agent: *
 
 # The export endpoint is named first so that a crawler reading these rules in
 # order allows it before reaching the Disallow below. The ones that instead
 # take the most specific match — Google and Bing both do — get the same answer
-# out of the longer path.
+# out of the longer path. The named groups above are for everyone else.
 Allow: /api/export/
 
 # The rest of /api/ is what the page calls while it draws: request-shaped urls
