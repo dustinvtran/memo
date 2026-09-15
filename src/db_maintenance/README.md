@@ -804,6 +804,53 @@ stored title is skipped — which also means an approval that would not unblock
 the backfill is refused, since it is the same `titlesAgree` either way. #343
 asks for that shape for the 191 works with no ref at all, one population over.
 
+### The run applied on 2026-09-15
+
+Of the 147 refused books, 67 had a candidate that cleared every filter and 52
+of those were approved by hand. The write repointed **48** and cleared **166
+stored values**; 650 books, 660 entries and 202 reviews before and after, no
+dangling `workRef`, and no ISBN held by two books.
+
+The four that were approved and not written are the useful part. Each was
+skipped because the re-verification asked Google Books what the approved ISBN
+names and got back a title that no longer matched:
+
+```
+The Idea Factory: Bell Labs and ...   names "The Idea Factory"
+Inanna, Queen of Heaven and Earth ...  names "Inanna"
+Elementary Analysis: The Theory of ... names "Elementary Analysis"
+Stat Labs: Mathematical Statistics ... names "Stat Labs"
+```
+
+All four are the same shape: a search result carries `title` **and**
+`subtitle` and `retrieve` returns only `title`, so a book stored under its
+full subtitled name matches a candidate at proposal time and fails the guard
+at write time. Repointing them would have bought nothing, because the backfill
+would refuse the new ref for the same reason. The fix for those is the stored
+title, which is #327's business — and the re-verify is what caught it, which is
+the argument for asking again at the moment of the write rather than trusting
+the file.
+
+Three more were declined before that for the same underlying reason, having
+already been filed under the only candidate offered: `The Life-Changing Magic
+of Tidying Up`, `A Mathematician's Lament` and `Lucifer Book One`.
+
+The other twelve declines were editions rather than works: the only candidates
+left were print-on-demand or scan reprints — Forgotten Books, Nabu Press,
+Andesite, CreateSpace, Independently Published, and for `David Copperfield`
+E-Kitap Projesi, which is the house #344 names as the wrong answer for `The
+Little Prince`. They pass every filter here and are still the wrong printing,
+which is why the last call is a person's.
+
+**45 of the 147 were never searched at all**, because Google Books spent the
+run's rate limit (95 refused pages out of 294). They are marked in the file
+rather than counted as books with no English edition, and `--retry` finishes
+them on a later day's quota.
+
+The proposal file itself is not in the repo. It is a report, and reports live
+in `backups/` with the snapshots — `book_refs_2026-09-14_applied.json` beside
+the `books_*.json` the run wrote before it touched anything.
+
 ### The rate limit
 
 Google Books gives about a thousand calls a day. A propose run costs one call
