@@ -205,10 +205,17 @@ const deleteOne = async (db, collection, op, entry, apply) => {
     return false;
   }
 
-  const others = await db
-    .collection(collection.entries)
-    .find({ workRef: String(target.workRef), _id: { $ne: target._id } })
-    .toArray();
+  // An entry with no work is a real shape here, not a broken one — it is what
+  // 23 of these rows are. So the work half of this is skipped rather than run
+  // against `undefined`, which the driver would send as `{ _id: null }` and
+  // which really does match a document if one ever carries a null id.
+  const workRef = typeof target.workRef === "string" && target.workRef !== "" ? target.workRef : undefined;
+  const others = workRef
+    ? await db
+        .collection(collection.entries)
+        .find({ workRef, _id: { $ne: target._id } })
+        .toArray()
+    : [];
   const refusal = deleteRefusalReason({ entry: target, otherEntries: others });
   if (refusal) {
     console.log(`  ! delete ${target._id}: refused — ${refusal}`);
@@ -221,7 +228,11 @@ const deleteOne = async (db, collection, op, entry, apply) => {
     .toArray();
 
   console.log(`  ~ delete "${op.was ?? target._id}" (entry ${target._id}, ${target.status}${target.score != null ? ` ${target.score}` : ""})`);
-  console.log(`      work ${target.workRef} goes with it — no other entry is on it`);
+  console.log(
+    workRef
+      ? `      work ${workRef} goes with it — no other entry is on it`
+      : `      it has no work — the entry and its notes are all there is`
+  );
   // Printed in full rather than counted. A note is the one thing in here that
   // cannot be reconstructed from an API, and a person who said "delete the
   // duplicate" may not have known there was one on it.
@@ -240,7 +251,7 @@ const deleteOne = async (db, collection, op, entry, apply) => {
       await db.collection(collection.reviews).deleteOne({ _id: review._id });
     }
     await db.collection(collection.entries).deleteOne({ _id: target._id });
-    await db.collection(collection.works).deleteOne({ _id: target.workRef });
+    if (workRef) await db.collection(collection.works).deleteOne({ _id: workRef });
   }
   return true;
 };

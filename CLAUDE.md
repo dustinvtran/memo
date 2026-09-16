@@ -334,6 +334,16 @@ Tests that do need the dependencies skip themselves when they aren't there.
   game through the next refresh, which reported `kept the stored duration 780
   (source unrecorded); igdb offered 1115` and said nothing else about it.
   Clearing both fields lets the next run fill them and record where from.
+
+  **Widening a work is the same event without a repoint.** A work that had no
+  identity ref, retitled from a part to the whole as one is given to it —
+  `Resident Evil 4: Assignment Ada` becoming `Resident Evil 4`, `Spyro
+  Reignited Trilogy: Spyro 2` becoming the trilogy — keeps a playtime measured
+  for the part. Both of those did in 2026-09: one hour for Resident Evil 4, and
+  nine for a twenty-five hour trilogy. The ref never changed, so nothing in the
+  repoint rule fires; the work it describes changed anyway. The test is whether
+  the stored title *contained* the new one, which is the same test
+  `set_work_ref.js` warns on.
 - **IGDB replaced `external_games.category`** with
   `external_games.external_game_source` (`1` = Steam). Querying the old field
   returns zero rows silently instead of erroring.

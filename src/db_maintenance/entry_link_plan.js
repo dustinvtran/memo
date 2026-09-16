@@ -102,6 +102,10 @@ const linkRefusalReason = ({ entry, work, ref, collection, entryTitle, siblings,
  * older one goes — but an unread note is the one thing worth making loud, so
  * the caller is handed the count and prints the text before it writes.
  *
+ * An entry with no work at all passes with an empty `otherEntries`, because
+ * there is no work for anything else to be on. The caller is what knows not to
+ * go looking for one.
+ *
  * @type {(args: { entry: any, otherEntries?: any[] }) => string | undefined}
  */
 const deleteRefusalReason = ({ entry, otherEntries }) => {
