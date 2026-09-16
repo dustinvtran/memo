@@ -65,6 +65,7 @@ const STOCK_MESSAGES = {
   UnauthorizedError: 'not authorized',
   NotFound: 'not found',
   InternalError: 'something went wrong',
+  Conflict: 'that is already on your list',
 }
 
 /** @type {(statusCode: number) => ResponseCreator} */
@@ -99,6 +100,9 @@ const fromError = (error) => {
     // A URL naming something that doesn't exist — an unknown entry type, say —
     // is the caller's mistake, not a server fault.
     .with('NotFound', () => response(404)(body))
+    // Already stored, rather than badly asked for. 409 so the form can tell
+    // the two apart and say something useful about the one it can act on.
+    .with('Conflict', () => response(409)(body))
     .with('InternalError', () => response(500)(body))
     .otherwise(() => response(500)(body))
 }
