@@ -323,6 +323,87 @@ test('another user listing the same work is not a duplicate', options, async () 
   assert.equal(store.filmEntries.length, 2)
 })
 
+///////////////////////////////////////////////////////////////////////////////
+// #341. A state the form would not produce is refused rather than tidied, so
+// the field the user typed is still there to be deleted by the user.
+
+test('a Planned entry carrying a completed date is refused, and nothing is written', options, async () => {
+  seed()
+
+  const { statusCode, body } = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: form({ status: 'Planned', score: null, completedDate: 1700100000000 }),
+  })
+
+  assert.equal(statusCode, 400)
+  assert.match(body.message, /Planned/)
+  assert.equal(store.filmEntries.length, 0)
+  assert.equal(store.filmReviews.length, 0)
+})
+
+test('a Completed entry with no completed date is refused', options, async () => {
+  seed()
+
+  const { statusCode, body } = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: form({ completedDate: null }),
+  })
+
+  assert.equal(statusCode, 400)
+  assert.match(body.message, /needs a completed date/)
+  assert.equal(store.filmEntries.length, 0)
+})
+
+test('a completed date before the started date is refused', options, async () => {
+  seed()
+
+  const { statusCode, body } = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: form({ startedDate: 1700100000000, completedDate: 1700000000000 }),
+  })
+
+  assert.equal(statusCode, 400)
+  assert.match(body.message, /before the started date/)
+  assert.equal(store.filmEntries.length, 0)
+})
+
+/**
+ * The case a check on the request body alone would miss: the date that breaks
+ * the rule is the one already stored, and this PATCH does not mention it.
+ */
+test('an update is judged on the entry it would produce, not on what it sends', options, async () => {
+  seedSavedEntry()
+  store.filmEntries[0].completedDate = 1700100000000
+  store.filmEntries[0].status = 'Completed'
+
+  const { statusCode, body } = await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: { status: 'Dropped' },
+  })
+
+  assert.equal(statusCode, 400)
+  assert.match(body.message, /Dropped/)
+
+  // Refused, and the stored date is still there for the user to clear.
+  assert.equal(store.filmEntries[0].completedDate, 1700100000000)
+  assert.equal(store.filmEntries[0].status, 'Completed')
+})
+
+test('an update that clears the offending field in the same save goes through', options, async () => {
+  seedSavedEntry()
+  store.filmEntries[0].completedDate = 1700100000000
+  store.filmEntries[0].status = 'Completed'
+
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: { status: 'Dropped', completedDate: null },
+  })
+
+  assert.equal(statusCode, 200)
+  assert.equal(store.filmEntries[0].status, 'Dropped')
+  assert.equal(store.filmEntries[0].completedDate, null)
+})
+
 test('creating an entry answers with the entry, not with its note', options, async () => {
   seed()
 

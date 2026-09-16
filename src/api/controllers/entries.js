@@ -13,6 +13,7 @@ import * as db from '../utils/db/index.js'
 import * as updateParsers from '../utils/parsers/updates.js'
 import { recordRevision, discardDraft, discardHistory } from './revisions.js'
 import { toSnapshot } from '../utils/revision_history.js'
+import { impossibleStateReason } from '../utils/entry_state.js'
 /**
  * GET /api/entries/:type/:username/:limit?
  *
@@ -172,6 +173,11 @@ const createEntry = async ([userId, body, collection]) => {
           + 'separately, give this one its own title.',
         ))
       }
+      // Refused rather than tidied away: see entry_state.js. Whatever the
+      // user typed stays on the form, so the message has something to point
+      // at and they are the one who deletes it.
+      const impossible = impossibleStateReason(entryWithoutReview)
+      if (impossible) throwIt(errors.req(impossible, `This entry cannot be saved: ${impossible}.`))
       const created = await orThrow(db.create_(collection, {
         ...entryWithoutReview,
         userId,
@@ -237,6 +243,16 @@ const updateEntry_ = async (uid, body, col, entry) => {
   const parsed = updateParsers[col](rest)
   if (parsed.isErr()) return responses.fromError(parsed.error)
   const entryWithoutReview = parsed.value
+
+  // An update is a partial document, so the rules have to be read against the
+  // entry this save *produces* rather than against the fields it carries. A
+  // PATCH of `{ status: 'Dropped' }` alone says nothing about the completed
+  // date it now forbids — the stored one is what would be left behind, and
+  // the stored one is what the rule is about.
+  const impossible = impossibleStateReason({ ...entry, ...entryWithoutReview })
+  if (impossible) {
+    return responses.fromError(errors.req(impossible, `This entry cannot be saved: ${impossible}.`))
+  }
 
   const reviewCollection = toReviewCollection(col)
 
