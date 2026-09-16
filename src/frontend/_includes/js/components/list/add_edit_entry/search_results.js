@@ -4,11 +4,19 @@ const { initComponent, setContent, WithRemoteData } = Components
 const { retrieveWork } = Netlify
 const { EntryForm } = Components.List
 
-const SearchResults = (type, results) => initComponent({
+/**
+ * `onPick` is what a result does when it is clicked, and it has two callers.
+ * The add flow leaves it out and gets the original behaviour: replace the
+ * results with a form for the work just chosen. The link flow (#343) passes
+ * its own, because there is already a form on screen with a half-filled entry
+ * in it and the work is being attached to that rather than starting a new one.
+ * @type {(type: string, results: any[], onPick?: (result: any) => void) => object}
+ */
+const SearchResults = (type, results, onPick) => initComponent({
   content: ({ include }) => html`
     <div id="search-results">
       ${results.length > 0
-        ? include(results.map((r) => Result(type, r)))
+        ? include(results.map((r) => Result(type, r, onPick)))
         : html`<i>No results found for this query...</i>`
       }
     </div>
@@ -19,7 +27,7 @@ Components.List.SearchResults = SearchResults
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const Result = (type, { title, year, imageUrl, ref }) => initComponent({
+const Result = (type, { title, year, imageUrl, ref }, onPick) => initComponent({
   content: ({ id }) => html`
     <div id="${id}" class="search-result">
       <div class="search-result-img"><img src="${toSafeUrl(imageUrl) || '/img/mawaru.png'}"></div>
@@ -54,6 +62,8 @@ const Result = (type, { title, year, imageUrl, ref }) => initComponent({
   `,
   initializer: ({ id }) => {
     onClick(`#${id}`, () => {
+      if (onPick) return onPick({ title, year, imageUrl, ref })
+
       setContent('#search-results', WithRemoteData({
         remoteData: retrieveWork(type, ref),
         component: (data) => EntryForm(type, { commonMetadata: data })
