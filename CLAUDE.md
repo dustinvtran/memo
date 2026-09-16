@@ -249,15 +249,28 @@ states alike — verified, and pinned by tests in
 `src/api/controllers/entries.test.js`. **That half has not been applied**; its
 works half, which writes only to the work collections, needs no exception.
 
-Both read `*Entries` and neither writes to them. One other script does write
-outside the work collections — `clear_noop_overrides.js`, which is the only one
-here that reaches an override at all — and it argues its own case in its file
-header and in `src/db_maintenance/README.md`, which carries the whole list.
-There were three until #351: `strip_dead_entry_fields.js` and
-`retype_entry_revisions.js` were migrations against bugs since fixed in code
-(#176 and #220), and both are in git history rather than in the folder. Adding
-another is a human's call: the rule is what keeps a maintenance script away
-from text people can still read.
+Both read `*Entries` and neither writes to them. Two other scripts do write
+outside the work collections. `clear_noop_overrides.js` reaches an override,
+and argues its own case in its file header and in
+`src/db_maintenance/README.md`, which carries the whole list. There were three
+until #351: `strip_dead_entry_fields.js` and `retype_entry_revisions.js` were
+migrations against bugs since fixed in code (#176 and #220), and both are in
+git history rather than in the folder.
+
+`link_entry.js` (#343) is the second, and writes both an entry's `workRef` and
+the name it is filed under. **What makes it allowed is that it is not a
+population.** Every operation names one entry by its id, and every `entryTitle`
+it writes was typed by hand, for that row, by the person whose row it is — the
+script selects nothing and infers nothing, it takes its work from a file a
+human filled in. It is also why the two halves of that repair are two scripts:
+`set_work_ref.js` renames a *work* to the API's own title, which can leave a
+name like `Portal 2: Coop` written down nowhere, and it says so rather than
+writing an override to fix it. Inventing that text is the line.
+
+Adding another is a human's call, and "it only touches one field" is not the
+test: the rule is what keeps a maintenance script away from text people can
+still read, and a script that chooses its own targets fails it however
+carefully the field was chosen.
 
 ## Tests
 
