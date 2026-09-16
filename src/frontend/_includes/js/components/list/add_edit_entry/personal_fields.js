@@ -129,21 +129,22 @@ const PersonalFields = (data, type) => {
           show('#progress-container')
           setScoreLabel('Preference')
           ;['started-date', 'completed-date'].forEach((field) => {
-            setField(field, '')
-            hide(`#${field}-container`)
+            hideIfEmpty(`#${field}-container`, field)
           })
           show('#progress-container')
         } else if (status.value === 'Dropped') {
           setScoreLabel('Score')
           show('#progress-container')
           show('#started-date-container')
-          setField('completed-date', '')
-          hide('#completed-date-container')
+          hideIfEmpty('#completed-date-container', 'completed-date')
         } else if (status.value === 'Completed') {
           setScoreLabel('Score')
           show('#started-date-container')
           show('#completed-date-container')
-          setField('completed-date', today())
+          // Only when there is nothing there. Filling an empty field is a
+          // convenience; writing over a date someone typed is the same silent
+          // edit this handler used to make everywhere else.
+          if (!fieldValue('completed-date')) setField('completed-date', today())
           hide('#progress-container')
           // A `.val()` on `#progress-container`, given the `.html()` of
           // `#episodes`, used to follow — and it did nothing twice over.
@@ -155,12 +156,13 @@ const PersonalFields = (data, type) => {
         } else if (status.value === 'InProgress') {
           setScoreLabel('Score')
           show('#started-date-container')
-          setField('completed-date', '')
-          setField(
-            'started-date',
-            data.startedDate ? timestampToString(data.startedDate) : today()
-          )
-          hide('#completed-date-container')
+          if (!fieldValue('started-date')) {
+            setField(
+              'started-date',
+              data.startedDate ? timestampToString(data.startedDate) : today()
+            )
+          }
+          hideIfEmpty('#completed-date-container', 'completed-date')
           show('#progress-container')
         }
       })
@@ -224,6 +226,26 @@ const attachDatePickers = async (ids) => {
  * The label over the score dropdown, which reads "Preference" for something
  * nobody has got to yet. `textContent`, not `innerHTML`: it is a word.
  */
+/** What is typed in a field right now, as opposed to what `data` was built with. */
+const fieldValue = (id) => el(`#${id}`)?.value ?? ''
+
+/**
+ * Hides a field this status has no use for — unless something is in it.
+ *
+ * This handler used to empty the field and hide it, which is a silent edit: a
+ * date someone typed disappeared on a status change, the save went through, and
+ * nothing said so. The rule is now enforced on the server (`entry_state.js`),
+ * which refuses the save and says why — so the field has to stay visible and
+ * filled for that message to have anything to point at, and for the person to
+ * be the one who clears it.
+ *
+ * @type {(container: string, field: string) => void}
+ */
+const hideIfEmpty = (container, field) => {
+  if (fieldValue(field)) show(container)
+  else hide(container)
+}
+
 const setScoreLabel = (text) => {
   const label = el('label[for="score"]')
   if (label) label.textContent = text
