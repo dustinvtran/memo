@@ -65,6 +65,10 @@ const {
   isMissingPlaytimeLink,
 } = require("../work_metadata_merge");
 const {
+  sharedSecondaryRefs,
+  describeSharedSecondaryRef,
+} = require("../secondary_ref_check");
+const {
   classifySharedRefs,
   sharedRefReason,
   // `describe` moved there when #290's repair started joining its own reads
@@ -210,6 +214,12 @@ const auditCollection = async (db, collection) => {
   // Three findings out of what used to be one. A group of works under one
   // identity ref is copies of one work, seasons of one show, or one work
   // wearing another's id — and only the last is #290's damage.
+  // And the one nothing looked at: a ref that is not an identity ref, shared.
+  // `work_dedupe_plan.js` groups on identity refs only and says why — an hltb
+  // id names a page rather than a game, so merging on one would be wrong — and
+  // the consequence was that nobody reported them either. ../secondary_ref_check.js.
+  const sharedSecondary = sharedSecondaryRefs(collection, works).map(describeSharedSecondaryRef);
+
   const shared = classifySharedRefs(collection, works);
   const duplicateWorks = shared.duplicates.map(describeGroup);
   const expectedSharedRefs = shared.expected.map(describeGroup);
@@ -276,6 +286,7 @@ const auditCollection = async (db, collection) => {
     duplicateWorks,
     expectedSharedRefs,
     sharedIdentityRefs,
+    sharedSecondaryRefs: sharedSecondary,
     identityChecks,
     titleYearDuplicates: titleYear.duplicates,
     titleYearUnidentified: titleYear.unidentified,
