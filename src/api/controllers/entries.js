@@ -135,13 +135,19 @@ const filedAs = (entry) => {
  * a work the databases do not have — and several of those are not duplicates
  * of each other, they are simply all unlinked.
  *
+ * `exceptRef` is the entry being edited, which is on the list already and is
+ * not its own duplicate. An update reaches here too: `workRef` and the title
+ * override are both things a PATCH may change, so a save can move an entry
+ * onto a work the user already has, or rename it onto a sibling's name. That
+ * was open until this — #356 checked the create path only.
+ *
  * The read runs in the caller's transaction, which is as far as this can go on
  * its own. Two saves racing each other both read nothing and both write, since
  * neither touches a document the other wrote; only a unique index refuses that,
  * and the data cannot carry one yet. See the issue this references.
  * @type {(collection: ValidCollection, userId: string, entry: any, session: any) => Promise<boolean>}
  */
-const alreadyListed = async (collection, userId, entry, session) => {
+const alreadyListed = async (collection, userId, entry, session, exceptRef) => {
   if (typeof entry?.workRef !== 'string' || entry.workRef === '') return false
 
   const existing = await orThrow(db.findMany_(
@@ -151,7 +157,8 @@ const alreadyListed = async (collection, userId, entry, session) => {
   ))
 
   const name = filedAs(entry)
-  return existing.some((other) => filedAs(other) === name)
+  return existing.some((other) =>
+    String(other._id) !== String(exceptRef) && filedAs(other) === name)
 }
 /** @type {([userId, body, collection]: [string, any, ValidCollection]) => Promise<Response>} */
 const createEntry = async ([userId, body, collection]) => {
@@ -249,9 +256,23 @@ const updateEntry_ = async (uid, body, col, entry) => {
   // PATCH of `{ status: 'Dropped' }` alone says nothing about the completed
   // date it now forbids — the stored one is what would be left behind, and
   // the stored one is what the rule is about.
-  const impossible = impossibleStateReason({ ...entry, ...entryWithoutReview })
+  const merged = { ...entry, ...entryWithoutReview }
+
+  const impossible = impossibleStateReason(merged)
   if (impossible) {
     return responses.fromError(errors.req(impossible, `This entry cannot be saved: ${impossible}.`))
+  }
+
+  // The same rule the create path applies, against the entry this save would
+  // produce and excluding the entry itself. Read outside the transaction below
+  // because that transaction wraps the write half; the race this cannot close
+  // is the same one #356 documents and needs the index, not a wider lock.
+  if (await alreadyListed(col, uid, merged, undefined, entry._id)) {
+    return responses.fromError(errors.conflict(
+      `duplicate entry for work ${merged.workRef}`,
+      'That is already on your list. To track another season or volume '
+      + 'separately, give this one its own title.',
+    ))
   }
 
   const reviewCollection = toReviewCollection(col)
