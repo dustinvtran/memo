@@ -79,4 +79,24 @@ const impossibleStateReason = (entry) => {
   return undefined
 }
 
-export { impossibleStateReason, FORBIDDEN }
+/**
+ * The name an entry is filed under, or `null` when it has none.
+ *
+ * A show's seasons are several entries on one work document, told apart by a
+ * title override - `Succession: Season 1` beside `Succession: Season 2`. So the
+ * pair that identifies an entry is the work *and* this, and an absent, null or
+ * blank override are one value between them: all three render as the work's own
+ * title, so all three are the same row to the person looking at the list.
+ *
+ * It lives here rather than in the controller that had it because
+ * src/db_maintenance needs the same answer: a backfill that moves an entry onto
+ * a work is subject to the rule the API enforces, and a second copy of three
+ * lines is how the two would come to disagree about what a duplicate is.
+ * @type {(entry: any) => string | null}
+ */
+const filedAs = (entry) => {
+  const name = entry?.overrides?.englishTranslatedTitle
+  return typeof name === 'string' && name.trim() !== '' ? name.trim() : null
+}
+
+export { impossibleStateReason, filedAs, FORBIDDEN }

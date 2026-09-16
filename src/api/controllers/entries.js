@@ -13,7 +13,7 @@ import * as db from '../utils/db/index.js'
 import * as updateParsers from '../utils/parsers/updates.js'
 import { recordRevision, discardDraft, discardHistory } from './revisions.js'
 import { toSnapshot } from '../utils/revision_history.js'
-import { impossibleStateReason } from '../utils/entry_state.js'
+import { impossibleStateReason, filedAs } from '../utils/entry_state.js'
 /**
  * GET /api/entries/:type/:username/:limit?
  *
@@ -112,21 +112,6 @@ const getUserEntries = ([uid, col, limit]) => toPromise(
     .map(responses.ok)
     .mapErr(responses.fromError)
 )
-
-/**
- * The name an entry is filed under, or `null` when it has none.
- *
- * A show's seasons are several entries on one work document, told apart by a
- * title override — `Succession: Season 1` beside `Succession: Season 2`. So the
- * pair that identifies an entry is the work *and* this, and an absent, null or
- * blank override are one value between them: all three render as the work's own
- * title, so all three are the same row to the person looking at the list.
- * @type {(entry: any) => string | null}
- */
-const filedAs = (entry) => {
-  const name = entry?.overrides?.englishTranslatedTitle
-  return typeof name === 'string' && name.trim() !== '' ? name.trim() : null
-}
 
 /**
  * Whether this user already has this work under this name.

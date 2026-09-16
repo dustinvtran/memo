@@ -15,6 +15,9 @@ The scripts, and the section below that explains each:
 | `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, works filed under another work's id, dangling `workRef`s. Needs no API keys unless you pass `--verify-shared-refs`, `--verify-title-years` or `--verify-titles`. | never |
 | `backup_database.js` | Takes a timestamped snapshot of every collection and prunes old ones to a retention policy. | to disk only |
 | `verify_backup.js` | Checks a snapshot against its own manifest — every file present, hashing to the `sha256` recorded for it, holding the documents claimed. `--live` also counts the database beside it. | never |
+| `propose_work_refs.js` | Searches each work with no identity ref, and each entry with no work, and writes a worklist of candidates to confirm. | never |
+| `set_work_ref.js` | Gives one work the identity ref it has none of, after asking the API whether that id really names it. Renames it to the API's title when a person has said which of the two is right. | `--apply` |
+| `link_entry.js` | Attaches a named entry to the work it belongs on, moves one off a sub-work that should never have been a work, and deletes a duplicate row. Takes its operations from a file a person filled in. | `--apply` |
 | `restore_backup.js` | Puts a snapshot, or one collection of it, back — matching on `_id`. | `--apply` |
 | `ensure_indexes.js` | Creates the indexes the site's queries need. Re-running is a no-op. | `--apply` |
 | `backfill_work_metadata.js` | Re-runs the API adapters over cached works, filling gaps and refreshing stale metadata. | `--apply` |
@@ -34,16 +37,21 @@ the overrides a user set by hand, which live on the entry documents, are out
 of reach by construction; `dedupe_works.js` is the one that also writes to the
 entry collections, repointing `workRef` at the document it merged into.
 
-Three scripts write outside the work collections, and each says so in its own
+Four scripts write outside the work collections, and each says so in its own
 section below: `prune_orphan_reviews.js` deletes review documents nothing can
 reach, `prune_unreachable_documents.js --only=reviews` deletes review
-documents holding nothing, and `clear_noop_overrides.js` removes the overrides
-that are copies of the work they override. None creates or deletes an entry.
+documents holding nothing, `clear_noop_overrides.js` removes the overrides
+that are copies of the work they override, and `link_entry.js` writes an
+entry's `workRef` and the name it is filed under.
 
-The last of those is the only one that reaches an override at all, and it is
-the only one whose exception is about the overrides rather than in spite of
-them, so it argues the case in its own file header and in its section below
-rather than inheriting one.
+The last two are the ones that reach an override at all, and their exceptions
+are about the overrides rather than in spite of them, so each argues the case
+in its own file header and section rather than inheriting one.
+`link_entry.js` is also the only script here that deletes an entry, and the
+only one that creates a work outside a backfill. What holds it inside the rule
+is that it is not a population: every operation names one entry by its id and
+carries text a person typed for that row, so the script selects nothing and
+infers nothing.
 
 The commands below are written from this folder, as
 `node scripts/audit_database.js`, but nothing depends on that. The `.env` and
