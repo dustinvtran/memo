@@ -1510,8 +1510,38 @@ Repeat the drill whenever the snapshot format changes — a new field in the
 manifest, a different file layout — since that is when a restore silently
 stops understanding what it is reading.
 
-**Last drill: still never run. But the script has now been used in anger,
-which is worth recording separately because it answers a different question.**
+**Last drill: 2026-09-16, into a scratch Atlas M0 in its own project.
+Passed.** What follows is that drill; the real recovery it was owed after is
+recorded beneath it, because the two answer different questions.
+
+Snapshot `snapshot-2026-09-16T06-54-09-686Z`, restored into an empty
+deployment — `cluster0.5hmkmzl`, project `memo-restore-drill`, its access list
+holding one IP and not `0.0.0.0/0`. Before anything was written the target was
+proved to be the target: the host was matched against production's and the
+run refused to start if it saw it, and `memo` did not exist on the cluster at
+all. Both of `env.js`'s guarantees were leaned on deliberately — a variable
+already in the environment always wins over the `.env`, and the local copy has
+no `.env` to find — so a production credential could not be picked up.
+
+1. **Full restore.** 14 collections, 9,569 documents, all reported as `to
+   restore` and none as `unchanged`, which is what an empty target should say.
+2. **Counts.** `verify_backup.js --live` against the scratch cluster: manifest,
+   files, `sha256` and live `countDocuments()` agreeing on all 14.
+3. **Fidelity, every document rather than a sample.** All 9,569 compared
+   against the snapshot's own `.json` files and identical, the longest note
+   among them 40,052 characters.
+4. **`--only`, against damage of both kinds** — the gap the earlier real
+   recovery left. 12 `bookReviews` deleted and 3 overwritten with junk, then
+   `--only=bookReviews`: the dry run predicted `12 to restore, 3 to overwrite,
+   187 unchanged`, exactly the damage done, and the apply wrote 15. A full
+   re-verify afterwards found 0 mismatches across all 9,569, so the
+   single-collection restore touched nothing outside its collection.
+
+The scratch project was deleted afterwards and its credential rotated. Do
+both: a drill cluster holding a full copy of everyone's entries is a second
+production database with none of the attention.
+
+**The real recovery, kept because it answers a different question.**
 
 2026-09-16, recovering from a bad `--apply` rather than rehearsing one. A
 one-off dedupe deleted 24 entries, ten of which it should not have: they were
@@ -1528,11 +1558,10 @@ writing, and `tvShowEntries` and `tvShowReviews` came back to 549 and 182 —
 their pre-change counts — with no orphaned review and no dangling `workRef`
 afterwards. The audit that caught the mistake was re-run and came back clean.
 
-What it does not prove, and why the drill above is still owed: this restored
-two collections out of fourteen, into the deployment the snapshot came from,
-against documents that had been deleted rather than overwritten or corrupted.
-A full restore into an empty deployment is a different code path and the one
-an actual disaster would use.
+What it did not prove, and what the drill above was therefore run to cover:
+this restored two collections out of fourteen, into the deployment the
+snapshot came from, against documents that had been deleted rather than
+overwritten or corrupted.
 
 The wider lesson is not about the restore. A script that deletes rows should
 diff what it is about to delete against what it is keeping, across *every*
