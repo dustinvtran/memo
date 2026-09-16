@@ -164,6 +164,17 @@ const FINDINGS = [
     label: () => "works sharing a show id (separate seasons, expected)",
     only: "tv",
   },
+  // A problem rather than a note, unlike the two above it, and the difference
+  // is worth stating: a shared *identity* ref means one work is filed under
+  // another's id, which the title check and the refresh both eventually
+  // notice. A shared *secondary* ref means a playtime or a link is attached to
+  // the wrong work, while both documents stay otherwise correct and refresh
+  // cleanly. Nothing else here can see it, so nothing else will raise it. #366.
+  {
+    key: "sharedSecondaryRefs",
+    kind: "problem",
+    label: () => "a non-identity ref shared by works that are not the same work",
+  },
   {
     key: "orphanWorks",
     kind: "note",
