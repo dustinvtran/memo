@@ -3,17 +3,19 @@
  *
  * The one module up here that is not pure: it `require`s the real adapters,
  * so it is not part of the no-install suite. It sits beside them rather than
- * in `scripts/` because three scripts now need it —
- * `scripts/backfill_work_metadata.js`, which has always had it, and
- * `scripts/audit_database.js` and `scripts/repair_shared_refs.js`, which ask
- * an adapter what a shared id really names (#290). A second copy of the
+ * in `scripts/` because three scripts need it —
+ * `scripts/backfill_work_metadata.js`, which has always had it,
+ * `scripts/audit_database.js`, which asks an adapter what a shared id really
+ * names (#290), and `scripts/propose_book_refs.js`. A second copy of the
  * reasoning below is exactly the thing that would rot.
  *
- * `verifyIdentities` is here for the same reason and not a better one: the
- * audit asks the question and the repair has to ask it again, live, at the
+ * `verifyIdentities` is here because the audit asks what a shared id names and
+ * anything that would act on the answer has to ask it again, live, at the
  * moment it writes. A saved answer would be a second source of truth about
  * which side of a collision is misfiled, and the wrong half of it would be a
- * write to a work no API ever accused.
+ * write to a work no API ever accused. #290's repair is gone — the collisions
+ * are repaired and both guards are in — but the question it asked is still the
+ * audit's, and still the one a repair would have to re-ask.
  *
  * `verifyTitleYearGroups` is its opposite number for #319 — one question per
  * id in a title-and-year group rather than one question about a shared id —
@@ -90,10 +92,10 @@ const loadAdapter = (collection) => {
  * dropped — "IGDB would not say" and "IGDB says neither of these" are
  * different answers, and only the second is a finding.
  *
- * The array it returns is the audit's `identityChecks`, and
- * ./shared_ref_repair_plan.js takes exactly that shape, so a repair can be
- * planned from a live run or read back out of an audit's `--json` report
- * without either side knowing which it got.
+ * The array it returns is the audit's `identityChecks`, and it is the same
+ * shape whether it came from a live run or was read back out of an audit's
+ * `--json` report — which is what let #290's repair be planned from either
+ * without knowing which it got.
  *
  * @type {(collection: any, groups: any[]) => Promise<object[]>}
  */

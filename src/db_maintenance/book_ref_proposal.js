@@ -96,7 +96,7 @@ const MIN_PAGE_COUNT = 10;
  * one is certainly the *edition's* rather than possibly the work's.
  *
  * That is the whole test, and it is narrower than "everything the wrong ref
- * wrote". `shared_ref_repair_plan.js` can be wider because it has evidence per
+ * wrote". #290's repair could be wider because it had evidence per
  * value — a value copied onto two documents in a collision group is one
  * retrieve's output — and there is no such evidence here: these books have no
  * partner to compare against. So the line is drawn on the field rather than on
@@ -507,14 +507,14 @@ const refOwners = (collection, works) => {
  * What to write for the approvals in a proposal file, given what the API says
  * about each approved ISBN right now.
  *
- * `blocked` means what it means in ./shared_ref_repair_plan.js: a condition
+ * `blocked` means what it means in ./orphan_review_plan.js: a condition
  * under which planning at all would be a mistake, and the caller stops rather
  * than writing a subset.
  *
  * **The approved ISBN is verified against the API again here**, and against
  * the collection as it stands, rather than trusted because it was in the file.
- * `repair_shared_refs.js` re-runs its identity checks immediately before it
- * writes for the same reason: a proposal file is a saved answer, it may be
+ * #290's repair re-ran its identity checks immediately before it
+ * wrote for the same reason: a proposal file is a saved answer, it may be
  * days old, and the one thing that must not happen is a write that files two
  * books under one ISBN because a second proposal was applied in between. An
  * approval that no longer verifies is skipped and reported; it is not a
@@ -680,8 +680,8 @@ const approvalOf = (proposal) =>
  * One book's write: the new ref in, the old identity refs out, the edition's
  * values with them.
  *
- * `apiRefs` is narrowed and never unset, the way `repair_shared_refs.js`
- * narrows it: every ref naming the ISBN this book is losing comes off under
+ * `apiRefs` is narrowed and never unset, the way #290's repair
+ * narrowed it: every ref naming the ISBN this book is losing comes off under
  * any prefix that names a book, the new one goes on, and anything else the
  * document carries is left exactly where it is. An unset-and-set would be
  * shorter and would throw away a ref nothing here has an opinion about.

@@ -249,13 +249,15 @@ states alike — verified, and pinned by tests in
 `src/api/controllers/entries.test.js`. **That half has not been applied**; its
 works half, which writes only to the work collections, needs no exception.
 
-Both read `*Entries` and neither writes to them. Three other scripts do write
-outside the work collections — `strip_dead_entry_fields.js`,
-`retype_entry_revisions.js` and `clear_noop_overrides.js`, the last being the
-only one here that reaches an override at all — and each argues its own case in
-its file header and in `src/db_maintenance/README.md`, which carries the whole
-list. Adding another is a human's call: the rule is what keeps a maintenance
-script away from text people can still read.
+Both read `*Entries` and neither writes to them. One other script does write
+outside the work collections — `clear_noop_overrides.js`, which is the only one
+here that reaches an override at all — and it argues its own case in its file
+header and in `src/db_maintenance/README.md`, which carries the whole list.
+There were three until #351: `strip_dead_entry_fields.js` and
+`retype_entry_revisions.js` were migrations against bugs since fixed in code
+(#176 and #220), and both are in git history rather than in the folder. Adding
+another is a human's call: the rule is what keeps a maintenance script away
+from text people can still read.
 
 ## Tests
 

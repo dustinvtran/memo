@@ -67,8 +67,8 @@ const {
 const {
   classifySharedRefs,
   sharedRefReason,
-  // `describe` moved there when scripts/repair_shared_refs.js started joining
-  // its own reads onto the `id` it writes.
+  // `describe` moved there when #290's repair started joining its own reads
+  // onto the `id` it writes; the audit and its `--json` readers still share it.
   describeWork: describe,
 } = require("../shared_ref_check");
 const {

@@ -147,9 +147,9 @@ const resolveIdentity = (group, fresh) => {
 
 /**
  * How a report names one work. Shared so that the audit's findings and the
- * `identityChecks` a repair reads back are the same shape rather than two
- * spellings of it — scripts/repair_shared_refs.js joins on the `id` this
- * writes.
+ * `identityChecks` read back out of its `--json` report are the same shape
+ * rather than two spellings of it — anything joining the two does it on the
+ * `id` this writes.
  * @type {(work: any) => { id: any, title: string, apiRefs: unknown }}
  */
 const describeWork = (work) => ({

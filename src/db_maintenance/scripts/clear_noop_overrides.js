@@ -15,7 +15,7 @@
  * exists to keep a maintenance script away from the user overrides that live
  * there, and this script's entire job is to touch them, so the exception is
  * argued rather than assumed — the way ./prune_orphan_reviews.js argues its
- * own, and one field narrower than ./strip_dead_entry_fields.js.
+ * own.
  *
  * The argument is that an override holding the work's own value is not a user
  * decision. Nobody typed it: it is the artefact of a comparison against
@@ -231,10 +231,9 @@ const clearCollection = async (db, collection) => {
 };
 
 /**
- * One `bulkWrite` of per-document `$unset`s, rather than the two `updateMany`s
- * ./strip_dead_entry_fields.js gets away with: there the same field comes off
- * every entry in a set, here each entry has its own list of keys, so the
- * operation genuinely differs document by document. `$unset` and not
+ * One `bulkWrite` of per-document `$unset`s, rather than the single
+ * `updateMany` a named field would allow: each entry has its own list of keys,
+ * so the operation genuinely differs document by document. `$unset` and not
  * `$set: null` — a null is a stored field, and on `overrides` it is
  * specifically the one value that means something.
  */
