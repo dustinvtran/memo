@@ -80,12 +80,65 @@ test("the list covers every field the issue names, and no field twice", () => {
   }
 });
 
-test("users.username is the only unique index, and it is unique", () => {
+test("the unique indexes are the username and one per entry collection", () => {
   assert.deepEqual(
     uniqueIndexes(DESIRED_INDEXES).map((index) => index.collection),
-    ["users"]
+    ["users", "filmEntries", "tvShowEntries", "gameEntries", "bookEntries"]
   );
   assert.deepEqual(uniqueIndexes(DESIRED_INDEXES)[0].key, { username: 1 });
+});
+
+/**
+ * The name is in the key because seasons are several entries on one work told
+ * apart by a title override, so `(userId, workRef)` is deliberately not unique.
+ * The partial filter is there because entries with no `workRef` are written on
+ * purpose and are not duplicates of each other — without it they would collide
+ * on a single null key and only the first would ever save.
+ */
+test("the entry constraint is on the name as well as the work, and skips unlinked entries", () => {
+  for (const index of uniqueIndexes(DESIRED_INDEXES).slice(1)) {
+    assert.deepEqual(index.key, {
+      userId: 1,
+      workRef: 1,
+      "overrides.englishTranslatedTitle": 1,
+    });
+    assert.deepEqual(index.options.partialFilterExpression, {
+      workRef: { $type: "string" },
+    });
+  }
+});
+
+test("a partial index and a full one over the same key are not the same index", () => {
+  const partial = {
+    collection: "filmEntries",
+    key: { userId: 1 },
+    options: { unique: true, partialFilterExpression: { workRef: { $type: "string" } } },
+  };
+  const existingFull = [{ name: "userId_1", key: { userId: 1 }, unique: true }];
+
+  const plan = planIndexes([partial], { filmEntries: existingFull });
+
+  assert.equal(plan.satisfied.length, 0);
+  assert.equal(plan.conflicting.length, 1);
+});
+
+test("a partial index already built exactly as wanted is satisfied", () => {
+  const wanted = {
+    collection: "filmEntries",
+    key: { userId: 1 },
+    options: { unique: true, partialFilterExpression: { workRef: { $type: "string" } } },
+  };
+  const existing = [{
+    name: "userId_1",
+    key: { userId: 1 },
+    unique: true,
+    partialFilterExpression: { workRef: { $type: "string" } },
+  }];
+
+  const plan = planIndexes([wanted], { filmEntries: existing });
+
+  assert.equal(plan.satisfied.length, 1);
+  assert.equal(plan.conflicting.length, 0);
 });
 
 test("a database with no indexes needs every one of them created", () => {

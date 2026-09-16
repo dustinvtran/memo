@@ -47,6 +47,7 @@ const {
   planIndexes,
   duplicateValues,
   uniqueIndexes,
+  partialFilterFor,
 } = require("../index_plan");
 
 const args = parseArgs(process.argv);
@@ -152,14 +153,24 @@ const readExistingIndexes = async (db, desired) => {
 const findUniqueBlockers = async (db, create) => {
   const blockers = [];
   for (const index of uniqueIndexes(create)) {
-    const [field] = Object.keys(index.key);
+    // Every field of the key, and the filter's field too so a partial index
+    // can tell which documents it actually covers.
+    const fields = Object.keys(index.key);
+    const filterFields = Object.keys(index.options?.partialFilterExpression ?? {});
+    const projection = Object.fromEntries(
+      [...fields, ...filterFields].map((field) => [field, 1])
+    );
     const documents = await db
       .collection(index.collection)
-      .find({}, { projection: { [field]: 1 } })
+      .find({}, { projection })
       .toArray();
-    const duplicates = duplicateValues(documents, field);
+    const duplicates = duplicateValues(
+      documents,
+      fields,
+      partialFilterFor(index.options)
+    );
     if (duplicates.length > 0) {
-      blockers.push({ collection: index.collection, field, duplicates });
+      blockers.push({ collection: index.collection, field: fields.join(" + "), duplicates });
     }
   }
   return blockers;
