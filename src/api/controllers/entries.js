@@ -112,6 +112,46 @@ const getUserEntries = ([uid, col, limit]) => toPromise(
     .mapErr(responses.fromError)
 )
 
+/**
+ * The name an entry is filed under, or `null` when it has none.
+ *
+ * A show's seasons are several entries on one work document, told apart by a
+ * title override — `Succession: Season 1` beside `Succession: Season 2`. So the
+ * pair that identifies an entry is the work *and* this, and an absent, null or
+ * blank override are one value between them: all three render as the work's own
+ * title, so all three are the same row to the person looking at the list.
+ * @type {(entry: any) => string | null}
+ */
+const filedAs = (entry) => {
+  const name = entry?.overrides?.englishTranslatedTitle
+  return typeof name === 'string' && name.trim() !== '' ? name.trim() : null
+}
+
+/**
+ * Whether this user already has this work under this name.
+ *
+ * Only a `workRef` is checked: entries without one are written deliberately —
+ * a work the databases do not have — and several of those are not duplicates
+ * of each other, they are simply all unlinked.
+ *
+ * The read runs in the caller's transaction, which is as far as this can go on
+ * its own. Two saves racing each other both read nothing and both write, since
+ * neither touches a document the other wrote; only a unique index refuses that,
+ * and the data cannot carry one yet. See the issue this references.
+ * @type {(collection: ValidCollection, userId: string, entry: any, session: any) => Promise<boolean>}
+ */
+const alreadyListed = async (collection, userId, entry, session) => {
+  if (typeof entry?.workRef !== 'string' || entry.workRef === '') return false
+
+  const existing = await orThrow(db.findMany_(
+    collection,
+    { userId, workRef: entry.workRef },
+    { session },
+  ))
+
+  const name = filedAs(entry)
+  return existing.some((other) => filedAs(other) === name)
+}
 /** @type {([userId, body, collection]: [string, any, ValidCollection]) => Promise<Response>} */
 const createEntry = async ([userId, body, collection]) => {
   const { review, ...entryWithoutReview } = body
@@ -123,6 +163,15 @@ const createEntry = async ([userId, body, collection]) => {
     // an entry no note could ever be attached to — reported to the user as a
     // failure that had nonetheless half happened.
     const entry = await db.withTransaction(async (session) => {
+      // Inside the transaction, so the check and the write cannot be separated
+      // by this request's own second half failing and rolling back.
+      if (await alreadyListed(collection, userId, entryWithoutReview, session)) {
+        throwIt(errors.conflict(
+          `duplicate entry for work ${entryWithoutReview.workRef}`,
+          'That is already on your list. To track another season or volume '
+          + 'separately, give this one its own title.',
+        ))
+      }
       const created = await orThrow(db.create_(collection, {
         ...entryWithoutReview,
         userId,

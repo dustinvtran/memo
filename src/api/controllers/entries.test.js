@@ -228,6 +228,101 @@ const form = (extra) => ({
 
 ///////////////////////////////////////////////////////////////////////////////
 
+///////////////////////////////////////////////////////////////////////////////
+// #342. A work already on the list is refused, unless it is filed under a
+// different name — which is how a second season is stored.
+
+/** An entry already saved for work `w1`, filed under `name`. */
+const seedListed = (name) => {
+  seed()
+  store.filmEntries = [{
+    _id: 'e1',
+    userId: 'u1',
+    workRef: 'w1',
+    status: 'Completed',
+    score: 8,
+    ...(name === undefined ? {} : { overrides: { englishTranslatedTitle: name } }),
+  }]
+}
+
+test('a work already on the list under the same name is refused', options, async () => {
+  seedListed('Stalker')
+
+  const { statusCode, body } = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: form({ review: 'a second copy' }),
+  })
+
+  assert.equal(statusCode, 409)
+  assert.equal(body.error, 'Conflict')
+
+  // Neither half is written, and the entry that was already there is untouched.
+  assert.equal(store.filmEntries.length, 1)
+  assert.equal(store.filmEntries[0]._id, 'e1')
+  assert.equal(store.filmReviews.length, 0)
+})
+
+test('the same work under a different name is a different entry, and is created', options, async () => {
+  seedListed('Stalker: Season 1')
+
+  const { statusCode } = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: form({ overrides: { englishTranslatedTitle: 'Stalker: Season 2' } }),
+  })
+
+  assert.equal(statusCode, 200)
+  assert.equal(store.filmEntries.length, 2)
+})
+
+/**
+ * Absent, null and blank are one name between them, because all three render
+ * as the work's own title — so a second unnamed entry is the duplicate the
+ * user sees, whichever of the three the form happened to send.
+ */
+test('an unnamed entry collides with one whose name is blank or missing', options, async () => {
+  for (const stored of [undefined, null, '', '   ']) {
+    seedListed(stored)
+
+    const { statusCode } = await call(entries, 'POST', 'entries/films', {
+      as: 'u1',
+      body: form({ overrides: { englishTranslatedTitle: null } }),
+    })
+
+    assert.equal(statusCode, 409, `stored name ${JSON.stringify(stored)}`)
+    assert.equal(store.filmEntries.length, 1)
+  }
+})
+
+/**
+ * An entry with no `workRef` is written deliberately — a work the databases do
+ * not have — and two of those are not copies of each other, they are both
+ * simply unlinked. Checking them would refuse the second one for ever.
+ */
+test('entries with no workRef are never treated as duplicates', options, async () => {
+  seed()
+  store.filmEntries = [{ _id: 'e1', userId: 'u1', workRef: null, status: 'Completed' }]
+
+  const { statusCode } = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: form({ workRef: null }),
+  })
+
+  assert.equal(statusCode, 200)
+  assert.equal(store.filmEntries.length, 2)
+})
+
+test('another user listing the same work is not a duplicate', options, async () => {
+  seedListed('Stalker')
+
+  const { statusCode } = await call(entries, 'POST', 'entries/films', {
+    as: 'u2',
+    body: form(),
+  })
+
+  assert.equal(statusCode, 200)
+  assert.equal(store.filmEntries.length, 2)
+})
+
 test('creating an entry answers with the entry, not with its note', options, async () => {
   seed()
 

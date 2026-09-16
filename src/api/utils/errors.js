@@ -40,4 +40,12 @@ const unauthorized = error('UnauthorizedError')
 const notFound = error('NotFound')
 const internal = error('InternalError')
 
-export { db, req, unauthorized, notFound, internal }
+/**
+ * The request was well formed and refused anyway, because of what is already
+ * stored rather than anything wrong with the request itself. A 400 would say
+ * the client sent something invalid, and it did not — the same body would
+ * have been accepted a moment before the row it collides with existed.
+ */
+const conflict = error('Conflict')
+
+export { db, req, unauthorized, notFound, internal, conflict }
