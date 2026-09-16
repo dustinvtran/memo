@@ -1510,12 +1510,36 @@ Repeat the drill whenever the snapshot format changes — a new field in the
 manifest, a different file layout — since that is when a restore silently
 stops understanding what it is reading.
 
-**Last drill: never run.** When it is, replace this line with the date, the
-snapshot used, which collections were restored and spot-checked, and anything
-that surprised you. For example: `2026-09-15, snapshot-2026-09-14T…Z into a
-local mongod: all 14 collections restored, counts equal to the manifest,
-three bookReviews notes compared character for character, --only=bookReviews
-put back 12 deleted documents and touched nothing else.`
+**Last drill: still never run. But the script has now been used in anger,
+which is worth recording separately because it answers a different question.**
+
+2026-09-16, recovering from a bad `--apply` rather than rehearsing one. A
+one-off dedupe deleted 24 entries, ten of which it should not have: they were
+separate seasons filed under one show document and told apart by a title
+override, and the script's survivor rule read `status`, `score` and dates
+without ever looking at `overrides`. `restore_backup.js
+--from=snapshot-2026-09-16T04-24-53-886Z --only=tvShowEntries,tvShowReviews`
+put them back.
+
+What it proves: the `--only` path works on production data, the dry run's
+counts were exactly right (`14 to restore, 0 to overwrite, 535 unchanged, 0 in
+the database but not in the snapshot`), the safety snapshot was taken before
+writing, and `tvShowEntries` and `tvShowReviews` came back to 549 and 182 —
+their pre-change counts — with no orphaned review and no dangling `workRef`
+afterwards. The audit that caught the mistake was re-run and came back clean.
+
+What it does not prove, and why the drill above is still owed: this restored
+two collections out of fourteen, into the deployment the snapshot came from,
+against documents that had been deleted rather than overwritten or corrupted.
+A full restore into an empty deployment is a different code path and the one
+an actual disaster would use.
+
+The wider lesson is not about the restore. A script that deletes rows should
+diff what it is about to delete against what it is keeping, across *every*
+field, and refuse when the doomed row holds something the survivor does not —
+rather than scoring rows on the fields whoever wrote it happened to think of.
+That check existed here only as an audit run afterwards, which is how the
+mistake was found rather than prevented.
 
 ## Tests
 
