@@ -88,6 +88,28 @@
        fetched. #}
 
     <link rel="icon" href="/img/favicon.ico" type="image/x-icon"/>
+    {#
+      Where the data is, said in the one place a machine reads without being
+      told to: the head. `rel="alternate"` with a type is the standard way a
+      document points at another representation of itself, and it is what a
+      crawler, a feed reader or an agent inspecting the HTML will look at.
+
+      Until #334 the only pointer on this site was prose inside `<noscript>`,
+      which is a sentence a reader has to understand rather than a link a
+      parser can follow. Every page of this site is the same empty
+      `<div id="site">`, so this is very nearly the only thing in the markup
+      worth reading — and unlike the `<noscript>` text it survives being
+      rendered, since a browser keeps `<link>` in the DOM either way.
+
+      `site.owner` rather than a literal: the `<noscript>` block below spelled
+      `nil` into its example urls, and the sitemap now needs the same name. One
+      copy, in `_data/site.js`.
+    #}
+    <link rel="alternate" type="application/json" href="/api/export/{{ site.owner }}" title="{{ site.owner }}'s lists as JSON"/>
+    <link rel="alternate" type="text/markdown" href="/api/export/{{ site.owner }}?format=md" title="{{ site.owner }}'s lists as Markdown"/>
+    {%- for type in ["films", "tv", "games", "books"] %}
+    <link rel="alternate" type="application/json" href="/api/export/{{ type }}/{{ site.owner }}" title="{{ site.owner }}'s {{ type }} as JSON"/>
+    {%- endfor %}
     {# `_includes/css/main.css`, emitted at this url by `css/main.njk`. #126
        dropped a <link> here because nothing emitted the file and every page
        load spent a request on a 404; emitting it is the other half of that, so

@@ -29,8 +29,26 @@
  */
 const url = process.env.URL || "https://nil.moe";
 
+/**
+ * Whose lists this deployment is publishing.
+ *
+ * The build knows no usernames — they come out of the `users` collection at
+ * request time — and #302 declined to reach the database from `_data` to
+ * enumerate them, which still stands. This is not that: it is the one name
+ * this site is *about*, and `layouts/base.njk` has hardcoded it in the
+ * `<noscript>` block since that block was written. Naming it here rather than
+ * in the markup is what lets `sitemap.njk` and the `<link rel="alternate">`
+ * tags use it too, instead of a third and fourth copy of the same literal.
+ *
+ * A deployment for somebody else changes this line. A site with several
+ * users' lists to advertise would need the enumeration #302 turned down, and
+ * that is a different problem than this one.
+ */
+const owner = process.env.MEMO_OWNER || "nil";
+
 module.exports = {
   url,
+  owner,
   title: "Memo",
   description:
     "A personal catalogue of films, TV shows, video games and books, with " +

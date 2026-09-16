@@ -447,3 +447,90 @@ test('a 404 is not cached, whatever the lists are', options, async () => {
   assert.ok(!('cache-control' in headers))
   assert.ok(!('netlify-cdn-cache-control' in headers))
 })
+
+///////////////////////////////////////////////////////////////////////////////
+// The CORS preflight — #334. `asText` has sent `access-control-allow-origin:
+// *` since this route was written, with a comment saying that reading it from
+// a page or a notebook should not need a proxy. `router.js` matches on verb,
+// nothing matched OPTIONS, and `.otherwise` answered 404 — so the browser
+// never sent the GET the header was there to permit.
+
+const optionsExport = async (path) => {
+  const response = await exportRoute.handler(
+    {
+      httpMethod: 'OPTIONS',
+      path: `/.netlify/functions/export${path}`,
+      rawUrl: `https://nil.moe/api/export${path}`,
+      headers: {
+        origin: 'https://example.org',
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'x-something',
+      },
+      queryStringParameters: null,
+      body: null,
+    },
+    {}
+  )
+  return { statusCode: response.statusCode, headers: response.headers, body: response.body }
+}
+
+test('a preflight is answered rather than 404ed', options, async () => {
+  seed()
+
+  for (const path of ['/reader', '/films/reader']) {
+    const { statusCode } = await optionsExport(path)
+    assert.equal(statusCode, 204, `OPTIONS ${path}`)
+  }
+})
+
+test('the preflight permits the GET the route actually serves', options, async () => {
+  seed()
+
+  const { headers } = await optionsExport('/films/reader')
+
+  assert.equal(headers['access-control-allow-origin'], '*')
+  assert.match(headers['access-control-allow-methods'], /GET/)
+  assert.equal(headers['access-control-allow-headers'], '*')
+  assert.equal(headers['access-control-max-age'], '86400')
+})
+
+test('a preflight carries no body and no credentials grant', options, async () => {
+  // 204 means there is nothing to read, and a wildcard origin alongside
+  // `allow-credentials` is invalid per the spec — the browser would reject the
+  // whole preflight rather than fall back.
+  seed()
+
+  const { body, headers } = await optionsExport('/reader')
+
+  assert.equal(body, undefined)
+  assert.ok(!('access-control-allow-credentials' in headers))
+})
+
+test('the preflight carries the site-wide security headers like every other response', options, async () => {
+  seed()
+
+  const { headers } = await optionsExport('/reader')
+
+  assert.equal(headers['x-content-type-options'], 'nosniff')
+  assert.equal(headers['referrer-policy'], 'strict-origin-when-cross-origin')
+})
+
+test('a verb the route really does not serve is still a 404', options, async () => {
+  // The control. Answering OPTIONS must not turn `.otherwise` into a
+  // catch-all that accepts writes to a public read-only export.
+  seed()
+
+  const response = await exportRoute.handler(
+    {
+      httpMethod: 'DELETE',
+      path: '/.netlify/functions/export/films/reader',
+      rawUrl: 'https://nil.moe/api/export/films/reader',
+      headers: {},
+      queryStringParameters: null,
+      body: null,
+    },
+    {}
+  )
+
+  assert.equal(response.statusCode, 404)
+})

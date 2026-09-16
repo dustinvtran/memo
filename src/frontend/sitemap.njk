@@ -22,14 +22,37 @@ eleventyExcludeFromCollections: true
    and a date that always says "just now" is one a crawler learns to ignore. -#}
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  The homepage is the only url this build can name. The lists live at
-  /:type/:username and the profiles at /profile/:username, and the usernames
-  are not known until a request is served. What is worth fetching instead is
-  in /robots.txt: the export endpoint at /api/export serves any list as JSON
-  or Markdown, which is the same data the pages draw.
+  The homepage plus the export urls for the name this deployment publishes.
+
+  The homepage used to be the whole file, on the reasoning that the build knows
+  no usernames and every other url names one. That reasoning is still right
+  about /:type/:username and /profile/:username, which is why they are still
+  not here. It was wrong about the consequence: it left a site whose every page
+  is drawn in the browser advertising nothing but a document with an empty
+  <div id="site"> in it, and a `site:` search for this domain returns nothing
+  at all. Nothing indexed means nothing for a search-grounded reader — Gemini
+  among them — to retrieve, which is one of the ways #334 can look like a
+  fetch that was blocked.
+
+  The export urls are the fix because they are the opposite of the pages: they
+  carry the data in the response, they need no JavaScript, and they are the
+  same lists the pages draw. `site.owner` is the one name this deployment is
+  about; see the note in _data/site.js for why naming it is not the database
+  read #302 declined.
+
+  <lastmod> is still left off. It would be the build's timestamp, which changes
+  on every deploy whether or not anything a reader can see did.
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>{{ site.url }}/</loc>
   </url>
+  <url>
+    <loc>{{ site.url }}/api/export/{{ site.owner }}</loc>
+  </url>
+{%- for type in ["films", "tv", "games", "books"] %}
+  <url>
+    <loc>{{ site.url }}/api/export/{{ type }}/{{ site.owner }}</loc>
+  </url>
+{%- endfor %}
 </urlset>
