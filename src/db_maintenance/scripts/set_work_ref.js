@@ -28,6 +28,14 @@
  * refusal in a batch skips that pair and the rest carry on, because one bad id
  * in a list of a hundred should not cost the other ninety-nine.
  *
+ * A pair may also carry `"retitleWorkTo"`, which is the answer to the case the
+ * guard cannot judge: a right id under a name of your own. `Doom mod: Sigil`
+ * is IGDB's `Sigil` and `Portal 2: Coop` is `Portal 2`, and both look exactly
+ * like a wrong id from here. Naming the API's own title says you read it, and
+ * is checked against the retrieve rather than taken on trust — see
+ * ../work_ref_repair.js. The work is renamed to it as the ref goes on, because
+ * a title is fill-only and no refresh would ever correct it.
+ *
  * Flags:
  *   --list          print the works with no identity ref and exit
  *   --only=a,b      restrict to these collections
@@ -46,10 +54,13 @@ const {
   findApiRef,
   displayTitle,
   parseApiRef,
+  titlesAgree,
+  comparableTitle,
   sleep,
 } = require("../work_collections");
 const { loadAdapter, describeError } = require("../load_adapter");
 const { refusalReason, refUpdate } = require("../work_ref_repair");
+const { filedAs } = require("../../api/utils/entry_state");
 
 const main = async () => {
   const args = parseArgs(process.argv);
@@ -85,10 +96,7 @@ const main = async () => {
     let done = 0;
     let refused = 0;
 
-    for (const [index, pair] of pairs.entries()) {
-      // One call per pair, spaced by the collection's own pause: this walks
-      // the same APIs the crawl does and has no more right to their quota.
-      if (index > 0) await sleep(200);
+    for (const pair of pairs) {
       (await repairOne(db, pair, apply)) ? done++ : refused++;
     }
 
@@ -125,11 +133,16 @@ const listUnrefreshable = async (db, collections) => {
 };
 
 /** @returns {Promise<boolean>} whether this pair was written (or would be). */
-const repairOne = async (db, { work: workId, ref }, apply) => {
+const repairOne = async (db, { work: workId, ref, retitleWorkTo }, apply) => {
   const parsed = parseApiRef(ref);
+  // The work's own collection decides the type, and the ref's prefix is only
+  // the fallback for a work that is not there at all. The other way round,
+  // `find` answers `tmdb__` with films every time — both films and tv are
+  // retrieved by it — so every tv repair looked itself up in the wrong
+  // collection and was refused as a work that does not exist.
   const collection =
-    COLLECTIONS.find((c) => c.retrievePrefix === parsed?.name) ??
-    (await collectionHolding(db, workId));
+    (await collectionHolding(db, workId)) ??
+    COLLECTIONS.find((c) => c.retrievePrefix === parsed?.name);
 
   if (!collection) {
     console.log(`  ! ${workId} -> ${ref}: refused — no collection holds that work, and "${ref}" names no type`);
@@ -146,12 +159,18 @@ const repairOne = async (db, { work: workId, ref }, apply) => {
   let retrieved;
   let retrieveError;
   if (!cheapRefusal) {
+    // The collection's own pause, which is the one thing that keeps this
+    // inside the API's budget: an IGDB retrieve is three of the four requests
+    // a second it allows, and a flat 200ms spent half a batch on 429s.
+    await sleep(collection.defaultDelayMs);
     const result = await loadAdapter(collection).retrieve(parsed.ref);
     if (result.isErr()) retrieveError = describeError(result.error);
     else retrieved = result.value;
   }
 
-  const refusal = cheapRefusal ?? refusalReason({ collection, work, ref, otherHolders, retrieved, retrieveError });
+  const refusal =
+    cheapRefusal ??
+    refusalReason({ collection, work, ref, retitleWorkTo, otherHolders, retrieved, retrieveError });
   const label = work ? `"${displayTitle(work)}"` : workId;
 
   if (refusal) {
@@ -159,11 +178,59 @@ const repairOne = async (db, { work: workId, ref }, apply) => {
     return false;
   }
 
-  const { set, unset } = refUpdate(work, ref);
+  // Renamed only when the guard was got past, so a `retitleWorkTo` supplied
+  // for a work whose title already agreed is a no-op rather than a rewrite.
+  const retitleTo =
+    retitleWorkTo && titlesAgree(work, retrieved) === false ? displayTitle(retrieved) : undefined;
+  const { set, unset } = refUpdate(work, ref, retitleTo);
+
   console.log(`  ~ ${label} -> ${ref}  (${collection.type}; the API answers "${displayTitle(retrieved)}")`);
   console.log(`      apiRefs ${JSON.stringify(work.apiRefs ?? [])} -> ${JSON.stringify(set.apiRefs)}, metadataUpdatedDate cleared`);
+  if (retitleTo) {
+    console.log(`      englishTranslatedTitle "${displayTitle(work)}" -> "${retitleTo}"`);
+    await warnIfNameVanishes(db, collection, work, retitleTo);
+  }
   if (apply) await db.collection(collection.works).updateOne({ _id: workId }, { $set: set, $unset: unset });
   return true;
+};
+
+/**
+ * A retitle is how `Portal 2: Coop` gets IGDB's `Portal 2`, and it is also how
+ * the word `Coop` stops being written down anywhere. The name was the owner's,
+ * it said something the API's title does not, and after this it survives only
+ * if an entry carries it as an override.
+ *
+ * **Only when the stored title is the API's title plus something**, which is
+ * what separates a name from a misspelling. `Portal 2: Coop` contains `Portal
+ * 2` and the extra word is the whole point of the row; `McCabe & Mrs. McMiller`
+ * contains nothing of `McCabe & Mrs. Miller` and losing it is the repair. On
+ * the 49-row batch this is the difference between eight warnings worth reading
+ * and twenty-six that train you to skip them.
+ *
+ * Pointed at rather than prevented, and pointed at rather than fixed: writing
+ * an override would be this script inventing text on an entry, which is the
+ * line the folder does not cross. scripts/link_entry.js takes an `entryTitle`
+ * from a person and writes it, and the two run in that order for this reason.
+ * @type {(db: any, collection: any, work: any, retitleTo: string) => Promise<void>}
+ */
+const warnIfNameVanishes = async (db, collection, work, retitleTo) => {
+  const was = comparableTitle(displayTitle(work));
+  const now = comparableTitle(retitleTo);
+  if (!was || !now || !was.includes(now)) return;
+
+  const entries = await db
+    .collection(collection.entries)
+    .find({ workRef: String(work._id) })
+    .toArray();
+  const unnamed = entries.filter((entry) => filedAs(entry) === null);
+  if (unnamed.length === 0) return;
+
+  console.log(
+    `      ! "${displayTitle(work)}" is not written down anywhere else — ` +
+      `${unnamed.length} entr${unnamed.length === 1 ? "y" : "ies"} on this work ` +
+      `will read "${retitleTo}". Give it back with link_entry.js's entryTitle if it mattered.`
+  );
+  for (const entry of unnamed) console.log(`          entry ${entry._id}`);
 };
 
 /** For a `--work` whose `--ref` did not name a type: find the work by id. */

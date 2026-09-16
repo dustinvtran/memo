@@ -30,11 +30,11 @@ const { parseApiRef, findApiRef, titlesAgree, displayTitle } = require("./work_c
  * make unnecessary.
  *
  * @type {(args: {
- *   collection: any, work: any, ref: string,
+ *   collection: any, work: any, ref: string, retitleWorkTo?: string,
  *   retrieved?: any, retrieveError?: string, otherHolders?: any[],
  * }) => string | undefined}
  */
-const refusalReason = ({ collection, work, ref, retrieved, retrieveError, otherHolders }) => {
+const refusalReason = ({ collection, work, ref, retitleWorkTo, retrieved, retrieveError, otherHolders }) => {
   if (!work) return "no work with that id";
 
   const parsed = parseApiRef(ref);
@@ -62,8 +62,22 @@ const refusalReason = ({ collection, work, ref, retrieved, retrieveError, otherH
 
   // The whole point. #290 is a human typing an id in good faith that named
   // something else, and this is the one check that would have caught it.
+  //
+  // `retitleWorkTo` is the way past it, and it is deliberately not a `--force`.
+  // The guard cannot tell a wrong id from a right id under a name of your own
+  // — `Doom mod: Sigil` against IGDB's `Sigil`, `Portal 2: Coop` against
+  // `Portal 2` — so it refuses both, and this is how a person says which one
+  // they are looking at. What makes it evidence rather than a switch is that
+  // it is checked against the answer the API just gave: naming the API's own
+  // title is something you can only do having read it, and a guess is refused
+  // exactly as a wrong id is.
   if (titlesAgree(work, retrieved) === false) {
-    return `stored title "${displayTitle(work)}" but ${ref} names "${displayTitle(retrieved)}" — one of them is not this work`;
+    if (!retitleWorkTo) {
+      return `stored title "${displayTitle(work)}" but ${ref} names "${displayTitle(retrieved)}" — one of them is not this work`;
+    }
+    if (titlesAgree({ englishTranslatedTitle: retitleWorkTo }, retrieved) === false) {
+      return `retitleWorkTo "${retitleWorkTo}" is not what ${ref} names ("${displayTitle(retrieved)}") — give the API's own title, which is how this says you read it`;
+    }
   }
   return undefined;
 };
@@ -76,10 +90,19 @@ const refusalReason = ({ collection, work, ref, retrieved, retrieveError, otherH
  * which is the entire reason for giving it one. The ref is appended rather
  * than replacing `apiRefs`, because the placeholders and legacy ids a work
  * carries are a record of where it has been and cost nothing to keep.
- * @type {(work: any, ref: string) => { set: object, unset: object }}
+ * @type {(work: any, ref: string, retitleTo?: string) => { set: object, unset: object }}
  */
-const refUpdate = (work, ref) => ({
-  set: { apiRefs: [...(Array.isArray(work.apiRefs) ? work.apiRefs : []), ref] },
+const refUpdate = (work, ref, retitleTo) => ({
+  set: {
+    apiRefs: [...(Array.isArray(work.apiRefs) ? work.apiRefs : []), ref],
+    // Only when `refusalReason` has passed a `retitleWorkTo`, and set to what
+    // the API answered rather than to what was typed: the two agree by then,
+    // and the API's spelling is the one every later refresh will compare
+    // against. `originalTitle` is left alone on purpose - it is fill-only for
+    // the same reason, and overwriting a work's Japanese title with a romaji
+    // one to get a playtime is a trade this folder has already made once.
+    ...(retitleTo ? { englishTranslatedTitle: retitleTo } : {}),
+  },
   unset: { metadataUpdatedDate: "" },
 });
 

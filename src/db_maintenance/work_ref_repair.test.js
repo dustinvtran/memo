@@ -103,3 +103,70 @@ test("the write appends the ref and forces a refresh", () => {
 test("the write keeps what was already there rather than replacing it", () => {
   assert.deepEqual(refUpdate({ apiRefs: undefined }, "igdb__9").set.apiRefs, ["igdb__9"]);
 });
+
+test("a title disagreement is refused when nobody has said they checked", () => {
+  assert.match(
+    why({ work: work("Portal 2: Coop"), ref: "igdb__72", retrieved: { englishTranslatedTitle: "Portal 2" } }),
+    /one of them is not this work/
+  );
+});
+
+/**
+ * The reason `retitleWorkTo` is not a `--force`: it has to be the title the
+ * API just gave, so it can only be filled in by somebody who read the answer.
+ */
+test("naming the API's own title is what gets past the guard", () => {
+  assert.equal(
+    why({
+      work: work("Portal 2: Coop"),
+      ref: "igdb__72",
+      retitleWorkTo: "Portal 2",
+      retrieved: { englishTranslatedTitle: "Portal 2" },
+    }),
+    undefined
+  );
+});
+
+test("a retitle that is not what the ref names is refused like a wrong id", () => {
+  assert.match(
+    why({
+      work: work("Portal 2: Coop"),
+      ref: "igdb__72",
+      retitleWorkTo: "Portal",
+      retrieved: { englishTranslatedTitle: "Portal 2" },
+    }),
+    /is not what igdb__72 names/
+  );
+});
+
+/** `titlesAgree` forgives an article and a trailing parenthetical, so this does. */
+test("the retitle is compared the way every other title here is", () => {
+  assert.equal(
+    why({
+      work: work("Ultimate Doom: Episode 4 Only"),
+      ref: "igdb__10192",
+      retitleWorkTo: "Ultimate Doom",
+      retrieved: { englishTranslatedTitle: "The Ultimate Doom" },
+    }),
+    undefined
+  );
+});
+
+/** It is ignored when there was nothing to get past, rather than applied. */
+test("a retitle on a work whose title already agrees changes nothing", () => {
+  assert.equal(
+    why({ work: work("Nioh"), ref: "igdb__12571", retitleWorkTo: "Nioh", retrieved: { englishTranslatedTitle: "Nioh" } }),
+    undefined
+  );
+  assert.deepEqual(refUpdate(work("Nioh"), "igdb__12571"), {
+    set: { apiRefs: ["igdb__12571"] },
+    unset: { metadataUpdatedDate: "" },
+  });
+});
+
+test("the retitle is written from the API's spelling, not from what was typed", () => {
+  assert.deepEqual(refUpdate(work("Ultimate Doom: Episode 4 Only"), "igdb__10192", "The Ultimate Doom"), {
+    set: { apiRefs: ["igdb__10192"], englishTranslatedTitle: "The Ultimate Doom" },
+    unset: { metadataUpdatedDate: "" },
+  });
+});
