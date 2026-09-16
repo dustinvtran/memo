@@ -309,6 +309,18 @@ Tests that do need the dependencies skip themselves when they aren't there.
   IGDB's `/game_time_to_beats`; absent means it predates the field and came
   from HowLongToBeat. Never write one without writing the duration it
   describes. See `docs/API_choices.md`.
+- **Correcting a work's identity ref must clear its `duration` and
+  `durationSource` too.** A stored playtime is only replaced by the source
+  that wrote it — `work_metadata_merge.js` refuses to overwrite an IGDB number
+  with a HowLongToBeat one or the reverse, because the two are medians over
+  very different sample sizes and swapping them moves numbers people have
+  already read. That rule assumes the stored duration is about the same work.
+  After a repoint it is not: it describes whatever the old ref named. Two
+  games were repointed in 2026-09 — `Super Mario Odyssey` off a fan game's id,
+  `Hitman 3` off the Cloud Version's — and both kept playtimes from the wrong
+  game through the next refresh, which reported `kept the stored duration 780
+  (source unrecorded); igdb offered 1115` and said nothing else about it.
+  Clearing both fields lets the next run fill them and record where from.
 - **IGDB replaced `external_games.category`** with
   `external_games.external_game_source` (`1` = Steam). Querying the old field
   returns zero rows silently instead of erroring.
