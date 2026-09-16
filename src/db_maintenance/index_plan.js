@@ -120,6 +120,35 @@ const DESIRED_INDEXES = [
     key: { workRef: 1 },
     why: "no query — the $lookup that named these joins on works._id, and dedupe_works.js repoints by _id; see the comment above and #180",
   })),
+  // #342, and the only constraint in this file that exists to refuse a write
+  // rather than to serve a read.
+  //
+  // **The name is in the key on purpose.** A show's seasons are several
+  // entries on one work document, told apart by a title override —
+  // `Succession: Season 1` beside `Season 2` — so `(userId, workRef)` is
+  // deliberately not unique and a constraint on that pair would refuse the
+  // most routine write this database takes. The pair that identifies an entry
+  // is the work *and* the name it is filed under.
+  //
+  // MongoDB indexes a missing field as null, so absent, null and a blank
+  // override collapse to one key between them. That is the behaviour wanted:
+  // a second unnamed entry on one work is the duplicate a person actually
+  // sees, whichever of the three the form happened to send, and it is what
+  // `alreadyListed` in ../api/controllers/entries.js already decides in
+  // application code. The two must agree, and this is the half that also
+  // holds when a maintenance script writes.
+  //
+  // **Partial on `workRef`, without which this refuses correct data.** Entries
+  // with no `workRef` are written deliberately — a work the databases do not
+  // have — and there are 23 of them. They are not duplicates of each other;
+  // they are all unlinked. Without the filter they would collide on a single
+  // null key and only the second one would ever be saved.
+  ...ENTRY_COLLECTIONS.map((collection) => ({
+    collection,
+    key: { userId: 1, workRef: 1, "overrides.englishTranslatedTitle": 1 },
+    options: { unique: true, partialFilterExpression: { workRef: { $type: "string" } } },
+    why: "refuses a second entry for one work under one name — #342, #356, #360",
+  })),
   ...REVIEW_COLLECTIONS.map((collection) => ({
     collection,
     key: { entryRef: 1 },
@@ -176,12 +205,24 @@ const indexName = (key) =>
     .join("_");
 
 /**
- * The only option any index here sets. Comparing a normalised pair of these
- * rather than the whole option object keeps a server-supplied default (`v`,
- * `ns`) from reading as a difference.
- * @type {(options?: { unique?: boolean }) => { unique: boolean }}
+ * The options an index here may set. Comparing a normalised object rather than
+ * the whole one keeps a server-supplied default (`v`, `ns`) from reading as a
+ * difference.
+ *
+ * `partialFilterExpression` has to be in here rather than ignored: a partial
+ * index and a full one over the same key are different indexes, and a unique
+ * one built over the wrong set of documents is the kind of mistake that shows
+ * up as a refused write months later. Serialised through `JSON.stringify` on
+ * sorted keys, because the server returns the filter it stored and key order
+ * is not guaranteed to survive the round trip.
+ * @type {(options?: { unique?: boolean, partialFilterExpression?: object }) => object}
  */
-const comparableOptions = (options) => ({ unique: options?.unique === true });
+const comparableOptions = (options) => ({
+  unique: options?.unique === true,
+  partial: options?.partialFilterExpression
+    ? JSON.stringify(Object.entries(options.partialFilterExpression).sort())
+    : null,
+});
 
 const sameKey = (a, b) =>
   JSON.stringify(Object.entries(a ?? {})) ===
@@ -242,18 +283,50 @@ const planIndexes = (desired, existingByCollection) => {
  * it: two users with no username at all collide on a unique index exactly as
  * two users named "nil" do.
  *
- * @type {(documents: object[], field: string) => { value: unknown, ids: unknown[] }[]}
+ * `fields` is every field in the index key, not just the first. A compound
+ * unique index is unique over the *combination*, so checking one column of it
+ * answers a question nobody asked: `userId` alone repeats on every entry a
+ * person owns, and reporting that as a blocker would refuse an index that is
+ * perfectly buildable. Dotted paths are read as paths, since the entry index
+ * keys on `overrides.englishTranslatedTitle`.
+ *
+ * @type {(documents: object[], fields: string | string[], filter?: (doc: object) => boolean) => { value: unknown, ids: unknown[] }[]}
  */
-const duplicateValues = (documents, field) => {
+const duplicateValues = (documents, fields, filter) => {
+  const path = (document, field) =>
+    field.split(".").reduce((value, part) => value?.[part], document);
+  const keys = Array.isArray(fields) ? fields : [fields];
   const groups = new Map();
   for (const document of documents) {
-    const raw = document?.[field];
-    const value = raw === undefined ? null : raw;
+    if (filter && !filter(document)) continue;
+    const value = keys.map((field) => {
+      const raw = path(document, field);
+      return raw === undefined ? null : raw;
+    });
     const key = JSON.stringify(value);
-    if (!groups.has(key)) groups.set(key, { value, ids: [] });
+    if (!groups.has(key)) groups.set(key, { value: keys.length === 1 ? value[0] : value, ids: [] });
     groups.get(key).ids.push(document?._id);
   }
   return [...groups.values()].filter(({ ids }) => ids.length > 1);
+};
+
+/**
+ * Whether a document is one the index covers, for a `partialFilterExpression`.
+ *
+ * Only the one operator any index here uses. A partial index constrains only
+ * the documents its filter matches, so a duplicate outside the filter is not a
+ * blocker — the 23 entries deliberately stored without a `workRef` all share a
+ * null key and none of them is in this index.
+ * @type {(options?: { partialFilterExpression?: object }) => ((doc: object) => boolean) | undefined}
+ */
+const partialFilterFor = (options) => {
+  const filter = options?.partialFilterExpression;
+  if (!filter) return undefined;
+  const checks = Object.entries(filter).map(([field, condition]) => {
+    if (condition?.$type === "string") return (doc) => typeof doc?.[field] === "string";
+    throw new Error(`unsupported partialFilterExpression on ${field}: ${JSON.stringify(condition)}`);
+  });
+  return (doc) => checks.every((check) => check(doc));
 };
 
 /** The indexes whose creation a duplicate check has to clear first. */
@@ -269,6 +342,7 @@ module.exports = {
   indexName,
   planIndexes,
   duplicateValues,
+  partialFilterFor,
   uniqueIndexes,
 };
 
