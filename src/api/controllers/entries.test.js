@@ -404,6 +404,70 @@ test('an update that clears the offending field in the same save goes through', 
   assert.equal(store.filmEntries[0].completedDate, null)
 })
 
+///////////////////////////////////////////////////////////////////////////////
+// The update half of #342's rule. #356 checked the create path; a PATCH may
+// change `workRef` and the title override, so it can reach the same state.
+
+test('an update cannot move an entry onto a work the user already has', options, async () => {
+  seed()
+  store.filmEntries = [
+    { _id: 'e1', userId: 'u1', workRef: 'w1', status: 'Completed', score: 8, completedDate: 1700000000000 },
+    { _id: 'e2', userId: 'u1', workRef: 'w2', status: 'Completed', score: 4, completedDate: 1700000000000 },
+  ]
+
+  const { statusCode, body } = await call(entries, 'PATCH', 'entries/films/e2', {
+    as: 'u1',
+    body: { workRef: 'w1' },
+  })
+
+  assert.equal(statusCode, 409)
+  assert.equal(body.error, 'Conflict')
+  assert.equal(store.filmEntries.find((e) => e._id === 'e2').workRef, 'w2')
+})
+
+test('an update cannot rename an entry onto a sibling name', options, async () => {
+  seed()
+  store.filmEntries = [
+    { _id: 'e1', userId: 'u1', workRef: 'w1', status: 'Completed', completedDate: 1, overrides: { englishTranslatedTitle: 'Season 1' } },
+    { _id: 'e2', userId: 'u1', workRef: 'w1', status: 'Completed', completedDate: 1, overrides: { englishTranslatedTitle: 'Season 2' } },
+  ]
+
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e2', {
+    as: 'u1',
+    body: { overrides: { englishTranslatedTitle: 'Season 1' } },
+  })
+
+  assert.equal(statusCode, 409)
+})
+
+/** The entry being edited is on the list already and is not its own duplicate. */
+test('an ordinary update of an entry does not collide with itself', options, async () => {
+  seedSavedEntry()
+
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e1', {
+    as: 'u1',
+    body: { score: 9 },
+  })
+
+  assert.equal(statusCode, 200)
+  assert.equal(store.filmEntries[0].score, 9)
+})
+
+test('another user may still hold the same work', options, async () => {
+  seed()
+  store.filmEntries = [
+    { _id: 'e1', userId: 'u2', workRef: 'w1', status: 'Completed', completedDate: 1 },
+    { _id: 'e2', userId: 'u1', workRef: 'w2', status: 'Completed', completedDate: 1 },
+  ]
+
+  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e2', {
+    as: 'u1',
+    body: { workRef: 'w1' },
+  })
+
+  assert.equal(statusCode, 200)
+})
+
 test('creating an entry answers with the entry, not with its note', options, async () => {
   seed()
 
