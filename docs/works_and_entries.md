@@ -31,6 +31,36 @@ TMDB's `Ozark`, refreshing forever, and your list still reads
 work's identity and nothing on an entry touches it. Renaming a row on your
 list does not re-point it at a different film.
 
+## One entry per name, and where a second viewing goes
+
+A person may have **one entry per work per name**. `alreadyListed` in
+`src/api/controllers/entries.js` refuses a save when the same user already
+has an entry on the same `workRef` under the same `filedAs` — the override
+if there is one, the work's own title if not — and #360 closed the update
+path as well as the create path, so a rename onto a sibling's name is
+refused too.
+
+That rule is what makes seasons work. `Castlevania: Season 1` and
+`Castlevania: Season 2` are two entries on one work, told apart by the name
+on each, and neither is a duplicate of the other.
+
+**It also means a re-viewing cannot be a second entry under the same name.**
+Watching a season again, or replaying a game, has two homes and the choice
+is the owner's:
+
+- **In the existing entry's note**, which is where it usually goes. One row,
+  one score — the latest opinion — and the prose carries the history. A
+  `Castlevania: Season 1` entry whose note ends "In July 2021, I ended up
+  rewatching the whole season and not recognizing that I had already watched
+  the season!" is exactly this, and there is no second row for that viewing.
+- **As its own entry under a distinct name**, when the two viewings deserve
+  separate dates and scores. The name has to differ or the save is refused.
+
+Do not read a second entry on a work as a duplicate to be merged, and do not
+read a note mentioning a rewatch as evidence that some other row *is* that
+rewatch. A rewatch recorded in prose has no row at all, and a maintenance
+script that assumes otherwise will delete a real one. That has happened.
+
 ## What enforces it
 
 Four things hold it up, and `src/api/controllers/work_is_read_only.test.js`
