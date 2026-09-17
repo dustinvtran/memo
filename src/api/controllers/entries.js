@@ -14,6 +14,7 @@ import * as updateParsers from '../utils/parsers/updates.js'
 import { recordRevision, discardDraft, discardHistory } from './revisions.js'
 import { toSnapshot } from '../utils/revision_history.js'
 import { impossibleStateReason, filedAs } from '../utils/entry_state.js'
+import * as workTypes from '../utils/work_types.js'
 /**
  * GET /api/entries/:type/:username/:limit?
  *
@@ -114,6 +115,30 @@ const getUserEntries = ([uid, col, limit]) => toPromise(
 )
 
 /**
+ * The work an entry points at: the document, `null` if the `workRef` names
+ * nothing, and `undefined` if there is no `workRef` to look up.
+ *
+ * Read so that `impossibleStateReason` can compare a date against a release
+ * year, and so that a save can refuse to leave a dangling reference behind.
+ * One lookup by `_id`, and only when there is a ref to look up — an entry
+ * written before the databases had the thing has none, which is a deliberate
+ * shape rather than a fault.
+ *
+ * The three-way answer is what the rule reads: `null` and `undefined` mean
+ * different things to it, and collapsing them would tell every caller without
+ * a work in hand that its entry is broken.
+ * @type {(collection: ValidCollection, entry: any) => Promise<any | null | undefined>}
+ */
+const workFor = async (collection, entry) => {
+  if (typeof entry?.workRef !== 'string' || entry.workRef === '') return undefined
+
+  const works = workTypes.byEntryCollection(collection)?.works
+  if (!works) return undefined
+
+  return (await orThrow(db.findOneByRef_(works, entry.workRef))) ?? null
+}
+
+/**
  * Whether this user already has this work under this name.
  *
  * Only a `workRef` is checked: entries without one are written deliberately —
@@ -168,7 +193,10 @@ const createEntry = async ([userId, body, collection]) => {
       // Refused rather than tidied away: see entry_state.js. Whatever the
       // user typed stays on the form, so the message has something to point
       // at and they are the one who deletes it.
-      const impossible = impossibleStateReason(entryWithoutReview)
+      const impossible = impossibleStateReason(
+        entryWithoutReview,
+        await workFor(collection, entryWithoutReview),
+      )
       if (impossible) throwIt(errors.req(impossible, `This entry cannot be saved: ${impossible}.`))
       const created = await orThrow(db.create_(collection, {
         ...entryWithoutReview,
@@ -243,7 +271,7 @@ const updateEntry_ = async (uid, body, col, entry) => {
   // the stored one is what the rule is about.
   const merged = { ...entry, ...entryWithoutReview }
 
-  const impossible = impossibleStateReason(merged)
+  const impossible = impossibleStateReason(merged, await workFor(col, merged))
   if (impossible) {
     return responses.fromError(errors.req(impossible, `This entry cannot be saved: ${impossible}.`))
   }

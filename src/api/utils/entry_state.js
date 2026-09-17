@@ -26,6 +26,9 @@ const isSet = (value) => value !== null && value !== undefined
 const FORBIDDEN = {
   Planned: ['startedDate', 'completedDate', 'progress'],
   Dropped: ['completedDate'],
+  // Not finished, so there is no day it was finished on. One entry in
+  // production is in this state and it predates the rule, like the other 42.
+  InProgress: ['completedDate'],
 }
 
 const LABEL = {
@@ -61,14 +64,21 @@ const list = (parts) => parts.length < 2
  * One reason at a time, most-specific first, because the message goes in front
  * of a person and a list of four complaints about one form is worse than one.
  *
- * @type {(entry: any) => string | undefined}
+ * `work` is the document the entry points at, and only the last two rules need
+ * it. **Three values, not two**: the work itself, `null` for a caller that
+ * looked the `workRef` up and found nothing, and `undefined` for one that did
+ * not look. A caller that did not look skips both rules rather than guessing —
+ * an entry written before the databases had the thing is a deliberate shape,
+ * not a fault, and has no release year to be before.
+ *
+ * @type {(entry: any, work?: any) => string | undefined}
  */
-const impossibleStateReason = (entry) => {
+const impossibleStateReason = (entry, work) => {
   const { status, startedDate: started, completedDate: completed } = entry ?? {}
 
   const forbidden = (FORBIDDEN[status] ?? []).filter((field) => isSet(entry[field]))
   if (forbidden.length > 0) {
-    return `a ${status} entry cannot have ${list(forbidden.map((field) => LABEL[field]))}`
+    return `${article(status)} ${status} entry cannot have ${list(forbidden.map((field) => LABEL[field]))}`
   }
   if (status === 'Completed' && !isSet(completed)) {
     return 'a Completed entry needs a completed date'
@@ -76,7 +86,52 @@ const impossibleStateReason = (entry) => {
   if (isSet(started) && isSet(completed) && completed < started) {
     return 'the completed date is before the started date'
   }
+
+  // A `workRef` naming nothing is the dangling reference the audit counts, and
+  // the cheapest moment to refuse one is the save that would create it.
+  //
+  // `null` is the whole signal: a caller that looked and found nothing passes
+  // it, and one that did not look passes `undefined`. Without the distinction
+  // every caller without a work in hand would be told its entry is broken.
+  if (work === null && isSet(entry?.workRef) && entry.workRef !== '') {
+    return `it points at a work (${entry.workRef}) that does not exist`
+  }
+
+  const year = releaseYear(entry, work)
+  if (year) {
+    for (const [field, when] of [['startedDate', started], ['completedDate', completed]]) {
+      if (!isSet(when)) continue
+      const on = new Date(when).getUTCFullYear()
+      if (on < year) {
+        return `${LABEL[field]} of ${on} is before ${displayName(entry, work)} came out in ${year}`
+          + ' — move the date, or override the release year if that is what is wrong'
+      }
+    }
+  }
+
   return undefined
+}
+
+/**
+ * The release year to measure a date against: the entry's own override first,
+ * then the work's.
+ *
+ * The override is the point. A game in early access is playable years before
+ * the release the databases record — Slay the Spire is 2017 against IGDB's
+ * 2019 — and overriding the year is how its owner says so. Measuring against
+ * the work anyway would refuse the very correction that fixes it, which is
+ * what turns this from a rule into a wall. #361.
+ */
+const releaseYear = (entry, work) =>
+  Number(entry?.overrides?.releaseYear) || Number(work?.releaseYear) || undefined
+
+/** `an InProgress entry`, `a Planned entry`. */
+const article = (status) => (/^[AEIOU]/i.test(String(status ?? '')) ? 'an' : 'a')
+
+/** What to call the work in a message, without ever saying "undefined". */
+const displayName = (entry, work) => {
+  const name = entry?.overrides?.englishTranslatedTitle ?? work?.englishTranslatedTitle
+  return typeof name === 'string' && name.trim() !== '' ? `"${name.trim()}"` : 'the work'
 }
 
 /**

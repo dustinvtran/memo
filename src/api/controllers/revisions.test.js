@@ -147,6 +147,9 @@ const call = async (route, method, url, { as, body } = {}) => {
 }
 
 const seed = () => {
+  // The work `e1` points at. Without it the save path refuses the entry as a
+  // dangling reference, which is a shape production has none of.
+  store.films = [{ _id: 'w1', englishTranslatedTitle: 'A Film', releaseYear: 1970 }]
   store.filmEntries = [
     {
       _id: 'e1',
