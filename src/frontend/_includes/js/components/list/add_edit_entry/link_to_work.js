@@ -80,7 +80,7 @@ const LinkToWork = (type, data) => initComponent({
       font-weight: bold;
       font-size: 13px;
     }
-    .link-to-work-summary {
+    .link-to-work-choice {
       display: flex;
       flex-wrap: wrap;
       align-items: baseline;
@@ -92,6 +92,24 @@ const LinkToWork = (type, data) => initComponent({
     .link-to-work-label {
       font-weight: bold;
       min-width: 110px;
+    }
+    .link-to-work-value {
+      max-width: 340px;
+      overflow-wrap: anywhere;
+    }
+    .link-to-work-mine {
+      color: #e0480e;
+    }
+    .link-to-work-who {
+      text-transform: uppercase;
+      font-size: 9px;
+      letter-spacing: 0.06em;
+      color: #888;
+      margin-right: 3px;
+    }
+    .link-to-work-choice label {
+      cursor: pointer;
+      margin-right: 12px;
     }
   `,
 })
@@ -141,25 +159,15 @@ const Results = (type, data, parentId, results) =>
   })
 
 /**
- * What linking will do, and a button to do it.
+ * Both values for every field the two disagree on, and a choice for each.
  *
- * **Nothing typed is lost and nothing is asked twice.** An empty field has
- * nothing to preserve, so it takes the work's value; a field with something in
- * it keeps what is there and becomes an override, marked in red under the
- * field with the database's value beside it and a button to take that instead.
- * That is the same hint every other override on this form already carries, so
- * a linked entry reads the way an edited one does rather than through a
- * comparison table that exists for one screen and then disappears.
- *
- * It is also the only reading of "link" that cannot lose data. Defaulting a
- * filled field to the database overwrites what somebody typed, on a screen
- * they opened to attach a work rather than to replace their own text — the
- * silent clearing #359 refused, arriving somewhere new.
+ * The radios default to the database, because a person who has just picked a
+ * work out of a list is saying they want what it knows. What keeps that from
+ * being a silent overwrite is that every one of them is on screen with the
+ * typed value beside it: the default is visible, and changing it is one click.
  */
 const Comparison = (type, data, parentId, work) => {
   const differences = differencesFrom(work, type)
-  const blank = differences.filter(({ mine }) => mine.trim() === '')
-  const kept = differences.filter(({ mine }) => mine.trim() !== '')
 
   return initComponent({
     content: ({ id }) => html`
@@ -170,17 +178,25 @@ const Comparison = (type, data, parentId, work) => {
         ${differences.length === 0
           ? html`<p>Everything you typed already matches. Linking changes nothing else.</p>`
           : html`
-            ${blank.length > 0 ? html`
-              <div class="link-to-work-summary">
-                <span class="link-to-work-label">Filled in</span>
-                <span>${blank.map(({ label }) => label).join(', ')}</span>
-              </div>` : ''}
-            ${kept.length > 0 ? html`
-              <div class="link-to-work-summary">
-                <span class="link-to-work-label">Kept as yours</span>
-                <span>${kept.map(({ label }) => label).join(', ')} — marked in red
-                  below, each with the database's value and a button to take it</span>
-              </div>` : ''}
+            <p>
+              These disagree. Anything you keep is stored as an override on this
+              entry, which is how a season or a DLC keeps its own name.
+            </p>
+            ${differences.map(({ id: fieldId, label, mine, theirs }) => html`
+              <div class="link-to-work-choice">
+                <span class="link-to-work-label">${label}</span>
+                <label>
+                  <input type="radio" name="${id}-${fieldId}" value="theirs" checked>
+                  <span class="link-to-work-who">database</span>
+                  <span class="link-to-work-value">${theirs || '(empty)'}</span>
+                </label>
+                <label>
+                  <input type="radio" name="${id}-${fieldId}" value="mine">
+                  <span class="link-to-work-who">yours</span>
+                  <span class="link-to-work-value link-to-work-mine">${mine || '(empty)'}</span>
+                </label>
+              </div>
+            `)}
           `}
         <div id="${id}-confirm" style="margin-top: 10px"></div>
       </div>
@@ -189,10 +205,16 @@ const Comparison = (type, data, parentId, work) => {
       setContent(`#${id}-confirm`, Button({
         label: "Link this entry",
         onClick: () => {
-          // Only the fields that were empty. The rest keep what is in them, and
-          // `getOverrides` turns that into an override when the form is read —
-          // nothing here writes one.
-          takeFromWork(work, type, blank.map(({ id: fieldId }) => fieldId))
+          // Only the fields whose radio still says "theirs". The rest keep what
+          // is in them, and `getOverrides` turns that into an override when the
+          // form is read — nothing here writes one.
+          takeFromWork(
+            work,
+            type,
+            differences
+              .filter(({ id: fieldId }) => chosen(`${id}-${fieldId}`) !== 'mine')
+              .map(({ id: fieldId }) => fieldId)
+          )
 
           // The row the submit button reads when it is pressed. `commonMetadata`
           // carries the `workRef`; `originalData` is the baseline the overrides
@@ -211,7 +233,6 @@ const Comparison = (type, data, parentId, work) => {
     },
   })
 }
-
 
 /** What the box says once a work has been chosen and nothing saved yet. */
 const Linked = (work) => initComponent({
@@ -245,3 +266,6 @@ const refreshOverrideHints = (type, data) => {
 /** What the form would store as overrides if it were saved as it stands. */
 const readOverrides = (type, data) => EntryFormIO.readForm(data, type).overrides
 
+/** Which radio of a group is selected, or `undefined` if none is. */
+const chosen = (name) =>
+  el(`input[name="${name}"]:checked`)?.value
