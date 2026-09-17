@@ -21,12 +21,23 @@
  *   node scripts/set_work_ref.js --work=<id> --ref=igdb__1234
  *   node scripts/set_work_ref.js --work=<id> --ref=igdb__1234 --apply
  *   node scripts/set_work_ref.js --from=refs.json --apply
+ *   node scripts/set_work_ref.js --work=<id> --unlink=tmdb__62128 --apply
  *
  * `--from` takes `[{ "work": "<id>", "ref": "igdb__1234" }, ...]`, which is
  * what makes a backfill of 168 tractable: assemble the pairs however you like,
  * and every one still gets asked the same question before it is written. A
  * refusal in a batch skips that pair and the rest carry on, because one bad id
  * in a list of a hundred should not cost the other ninety-nine.
+ *
+ * A pair carrying `"unlink"` does the third thing that can be wrong with a
+ * ref, after missing and wrong: the id was real and the API has since dropped
+ * it. #378 unlinked eight that way, and they were believed only after being
+ * asked twice, because #375 had just established that one empty answer proves
+ * nothing. The guard is the inverse of the one below — a ref that still
+ * answers is not dead, so it is refused, and the refusal says which of the
+ * other two repairs was wanted instead. `"becauseItNames"` is the way past
+ * that for a ref that answers with something else and has no replacement to
+ * point at, and it is checked against the retrieve like every other claim here.
  *
  * A pair may also carry `"replacesRef"`, for the other half of the population:
  * a work whose stored id is not missing but wrong. #378 found twenty of them —
@@ -53,6 +64,9 @@
  *   --work=<id>     the work to repair
  *   --ref=<ref>     the ref to give it, as <prefix>__<id>
  *   --replacesRef=<ref>  the wrong ref to take off, for a work that has one
+ *   --unlink=<ref>  take this ref off and give none, for an id the API dropped
+ *   --becauseItNames=<title>  what a still-answering ref answers with, which
+ *                   is how an unlink of one says it was read rather than guessed
  *   --from=<file>   a JSON array of { work, ref } pairs
  *   --apply         actually write (without it, nothing is written)
  */
@@ -71,7 +85,7 @@ const {
   sleep,
 } = require("../work_collections");
 const { loadAdapter, describeError } = require("../load_adapter");
-const { refusalReason, refUpdate } = require("../work_ref_repair");
+const { refusalReason, refUpdate, unlinkRefusalReason, unlinkUpdate } = require("../work_ref_repair");
 const { filedAs } = require("../../api/utils/entry_state");
 
 const main = async () => {
@@ -102,14 +116,21 @@ const main = async () => {
 
     const pairs = args.from
       ? JSON.parse(fs.readFileSync(String(args.from), "utf8"))
-      : [{ work: String(args.work), ref: String(args.ref ?? ""), replacesRef: args.replacesRef }];
+      : [{
+          work: String(args.work),
+          ref: String(args.ref ?? ""),
+          replacesRef: args.replacesRef,
+          unlink: args.unlink,
+          becauseItNames: args.becauseItNames,
+        }];
 
     console.log(`${apply ? "APPLY" : "DRY RUN"}: ${pairs.length} work(s)\n`);
     let done = 0;
     let refused = 0;
 
     for (const pair of pairs) {
-      (await repairOne(db, pair, apply)) ? done++ : refused++;
+      const ran = pair.unlink ? await unlinkOne(db, pair, apply) : await repairOne(db, pair, apply);
+      ran ? done++ : refused++;
     }
 
     console.log(`\n${apply ? "written" : "would write"}: ${done}, refused: ${refused}`);
@@ -203,6 +224,55 @@ const repairOne = async (db, { work: workId, ref, retitleWorkTo, replacesRef }, 
     await warnIfNameVanishes(db, collection, work, retitleTo);
   }
   if (apply) await db.collection(collection.works).updateOne({ _id: workId }, { $set: set, $unset: unset });
+  return true;
+};
+
+/**
+ * Takes a ref off, having asked the API whether it is really gone.
+ *
+ * The retrieve is not skippable the way a cheap refusal skips one above: an
+ * answer is the whole verdict here, so there is nothing to decide before it.
+ * @type {(db: any, pair: object, apply: boolean) => Promise<boolean>}
+ */
+const unlinkOne = async (db, { work: workId, unlink: unlinkRef, becauseItNames }, apply) => {
+  const parsed = parseApiRef(unlinkRef);
+  const collection =
+    (await collectionHolding(db, workId)) ??
+    COLLECTIONS.find((c) => c.retrievePrefix === parsed?.name);
+
+  if (!collection) {
+    console.log(`  ! ${workId} -/- ${unlinkRef}: refused — no collection holds that work, and "${unlinkRef}" names no type`);
+    return false;
+  }
+
+  const work = await db.collection(collection.works).findOne({ _id: workId });
+  const label = work ? `"${displayTitle(work)}"` : workId;
+
+  let retrieved;
+  let retrieveError;
+  if (parsed && work) {
+    await sleep(collection.defaultDelayMs);
+    const result = await loadAdapter(collection).retrieve(parsed.ref);
+    if (result.isErr()) retrieveError = describeError(result.error);
+    else retrieved = result.value;
+  }
+
+  const refusal = unlinkRefusalReason({ collection, work, unlinkRef, becauseItNames, retrieved, retrieveError });
+  if (refusal) {
+    console.log(`  ! ${label} -/- ${unlinkRef}: refused — ${refusal}`);
+    return false;
+  }
+
+  const { set } = unlinkUpdate(work, unlinkRef);
+  console.log(
+    `  ~ ${label} -/- ${unlinkRef}  (${collection.type}; ` +
+      (retrieveError ? `the API would not answer: ${retrieveError}` : `the API answers "${displayTitle(retrieved)}"`) + `)`
+  );
+  console.log(`      apiRefs ${JSON.stringify(work.apiRefs ?? [])} -> ${JSON.stringify(set.apiRefs)}`);
+  if (!findApiRef(set.apiRefs, collection.retrievePrefix)) {
+    console.log(`      no ${collection.retrievePrefix}__ ref left — nothing can refresh this work until one is given`);
+  }
+  if (apply) await db.collection(collection.works).updateOne({ _id: workId }, { $set: set });
   return true;
 };
 
