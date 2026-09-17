@@ -38,7 +38,18 @@ const readForm = (data, type) => ({
   // stored whatever it was sent, so what it actually said was "set this entry's
   // commonMetadata to null" — 3267 entries carry the field for that reason.
   // The create path never did, because `_create` parses and zod drops it. #171.
-  workRef: data?.commonMetadata?.internalRef,
+  //
+  // `_id` as well as `internalRef`, because the two paths hand over different
+  // shapes and only one of them has the second. `/works/retrieve` adds
+  // `internalRef`, so the add flow had it; the list endpoint returns
+  // `commonMetadata: work` — the document — so an edit computed `undefined`
+  // here on every save. That was survivable only because `JSON.stringify`
+  // drops an undefined value, so the PATCH omitted the field and the stored
+  // `workRef` was left alone. It worked by omission, and any change that put a
+  // value in that slot — a default, a `?? null`, a serialiser that keeps
+  // undefined — would have unlinked every entry it saved. #371 fixed the same
+  // asymmetry in the link panel; this is the other half of it.
+  workRef: workRefOf(data),
   overrides: getOverrides(baselineMetadata(data), type),
   status: valueOf('status'),
   score: parseInt(valueOf('score')) || null,
@@ -218,6 +229,20 @@ const setDate = (id, timestamp) => {
     id,
     timestamp ? new Date(timestamp).toISOString().substring(0, 10) : ''
   )
+}
+
+/**
+ * The work this entry is on, whichever shape the caller was handed.
+ *
+ * `undefined` when there is none, which is an entry written for something the
+ * databases did not have — a deliberate shape, and one the API leaves alone
+ * because the key never reaches the body.
+ * @type {(data: any) => string | undefined}
+ */
+const workRefOf = (data) => {
+  const work = data?.commonMetadata
+  const ref = work?.internalRef ?? work?._id
+  return typeof ref === 'string' && ref !== '' ? ref : undefined
 }
 
 /**

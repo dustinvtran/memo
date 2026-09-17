@@ -481,3 +481,54 @@ test("a game's duration taken from the work survives the round trip", () => {
 
   assert.ok(!("duration" in entry.overrides), "480 minutes shown as 8 hours and read back as 480");
 });
+
+///////////////////////////////////////////////////////////////////////////////
+// Which `workRef` a save carries, from either of the two shapes a caller has.
+
+/**
+ * The list endpoint returns `commonMetadata: work` — the document itself,
+ * whose id is `_id`. Only `/works/retrieve` adds `internalRef`. Reading the
+ * second alone made every edit compute `undefined`, which survived only
+ * because `JSON.stringify` drops the key.
+ */
+test("a row from the list carries its work's id", () => {
+  const { readForm } = formWith({ title: "Dune", status: "Completed", "completed-date": "2024-06-01", score: "8", review: "" });
+  const work = { _id: "w1", englishTranslatedTitle: "Dune" };
+
+  assert.equal(readForm({ commonMetadata: work, originalData: work }, "films").workRef, "w1");
+});
+
+test("a work from a retrieve carries its internalRef", () => {
+  const { readForm } = formWith({ title: "Dune", status: "Completed", "completed-date": "2024-06-01", score: "8", review: "" });
+  const work = { _id: "w1", internalRef: "w1", englishTranslatedTitle: "Dune" };
+
+  assert.equal(readForm({ commonMetadata: work }, "films").workRef, "w1");
+});
+
+test("internalRef wins, since only the retrieve sets it deliberately", () => {
+  const { readForm } = formWith({ title: "Dune", status: "Completed", "completed-date": "2024-06-01", score: "8", review: "" });
+  const work = { _id: "stale", internalRef: "w1" };
+
+  assert.equal(readForm({ commonMetadata: work }, "films").workRef, "w1");
+});
+
+/**
+ * An entry with no work is written that way on purpose. The key has to stay
+ * absent rather than become null: `JSON.stringify` drops undefined, so the
+ * PATCH says nothing about `workRef` and the API leaves it alone.
+ */
+test("an entry with no work sends no workRef at all", () => {
+  const { readForm } = formWith({ title: "The Odyssey", status: "Planned", score: "Unrated", review: "" });
+
+  const entry = readForm({ originalData: undefined, commonMetadata: { englishTranslatedTitle: "The Odyssey" } }, "films");
+  assert.equal(entry.workRef, undefined);
+  assert.ok(!("workRef" in JSON.parse(JSON.stringify(entry))), "the key must not reach the body");
+});
+
+test("a blank id is no id", () => {
+  const { readForm } = formWith({ title: "x", status: "Planned", score: "Unrated", review: "" });
+
+  assert.equal(readForm({ commonMetadata: { _id: "" } }, "films").workRef, undefined);
+  assert.equal(readForm({ commonMetadata: {} }, "films").workRef, undefined);
+  assert.equal(readForm({}, "films").workRef, undefined);
+});
