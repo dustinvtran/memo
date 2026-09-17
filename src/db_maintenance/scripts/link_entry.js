@@ -78,6 +78,16 @@ const {
 // sure of that is to run it through the thing the site runs it through.
 const parsers = require("../../api/utils/parsers");
 
+/**
+ * The works this run has created, by the ref they were created for, so that a
+ * second operation naming the same ref lands on the first one's work rather
+ * than making another. Only a dry run needs it — an apply has already written
+ * the document and finds it by query — but it is kept for both so the two
+ * agree about what the run does.
+ * @type {Map<string, any>}
+ */
+const createdThisRun = new Map();
+
 const main = async () => {
   const args = parseArgs(process.argv);
   const apply = args.apply === true;
@@ -131,7 +141,19 @@ const runOne = async (db, op, apply) => {
   // from what the API answers, which is the only way an entry that predates
   // the databases can ever start refreshing.
   const holders = op.ref
-    ? await db.collection(collection.works).find({ apiRefs: op.ref }).toArray()
+    ? [
+        ...(await db.collection(collection.works).find({ apiRefs: op.ref }).toArray()),
+        // Works this run has already created. On an `--apply` they are in the
+        // database by now and the query above finds them; on a dry run nothing
+        // was inserted, so without this each of two seasons of one show would
+        // report a work being created and the run would predict two works
+        // under one id — the #290 collision, invented by the dry run and never
+        // produced by the apply. A dry run that does not describe the apply is
+        // worse than no dry run.
+        ...(createdThisRun.has(op.ref) && !(await db.collection(collection.works).findOne({ apiRefs: op.ref }))
+          ? [createdThisRun.get(op.ref)]
+          : []),
+      ]
     : undefined;
   const target = op.toWork
     ? await db.collection(collection.works).findOne({ _id: op.toWork })
@@ -160,6 +182,7 @@ const runOne = async (db, op, apply) => {
 
   const work = target ?? (await createWorkFrom(db, collection, op, apply));
   if (!work) return false;
+  if (!target && op.ref) createdThisRun.set(op.ref, work);
 
   // Not a refusal: the target was named, so the choice was made by a person.
   // Worth one line, because the other holder is a collision nobody has
