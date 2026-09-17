@@ -31,6 +31,29 @@ what. End with:
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ```
 
+**Stage each commit's files by explicit path.** `git commit` takes everything
+staged, so a blanket `git add -A` or `-u` sweeps whatever else is in the tree
+into a message that describes none of it. Concurrent work on this repo is
+normal and the tree is rarely clean.
+
+**Review and branch against a freshly fetched `main`, not the checked-out
+tree.** Local branches sit around here and the working copy is often weeks
+behind, so being stale is the normal state rather than the exception — a review
+written against a stale tree reports findings that are already fixed. `git
+fetch` first, then read with `git show <remote>/main:<path>` rather than
+switching branches. Check `git remote -v` before assuming the remote is called
+`origin`: a working copy cloned from another local copy has an `origin` that is
+that copy, and it lags whatever is on GitHub.
+
+**A pull request that conflicts with `main` does not trigger CI at all**, and
+nothing says so — no queued run, no failed run, no red check.
+`gh api repos/.../actions/runs?head_sha=<sha>` answers `total_count: 0` and
+`gh pr checks` shows only the Netlify checks, which do run. `pull_request`
+workflows build a merge commit, and GitHub cannot build one for a conflicted
+PR. So an all-green PR with no `build`/`test` rows is not passing, it is
+unmergeable. Check `mergeable` before concluding CI is broken; the other cause
+of no run at all is a GitHub Actions outage, and rebasing fixes only the first.
+
 ## npm and Google Drive
 
 **`node_modules` in the Drive-synced working copy is unusable.** Drive's
@@ -60,6 +83,21 @@ Same trick for regenerating `package-lock.json`: run
 `npm install --package-lock-only` on the local copy and copy the lockfile
 back.
 
+**Drive corrupts git's writes too, not just npm's.** A `git reset --hard`
+there can report success and leave a tree that is not what was asked for —
+files the newest commit adds missing from disk, others holding their
+pre-commit content. A later `git add -A` then records that as deletions and
+modifications of files the task never touched, and the commit reads fine in
+`git show`. Check `git diff --name-status <remote>/main` before committing
+from a Drive checkout, and prefer working in a copy on local disk.
+
+**The checkout is CRLF while git stores LF** — `core.autocrlf=true` and no
+`.gitattributes`. A scripted edit matching a literal newline therefore finds
+nothing, and the failure reads as "the string isn't in the file" rather than
+as a line-ending problem. Detect it by counting carriage returns rather than
+by eye, and have any script that rewrites a file keep the endings it found
+rather than emitting its own.
+
 ## Looking at the frontend without netlify dev
 
 `npx netlify dev` needs an interactive `netlify login` and points
@@ -73,8 +111,9 @@ node scripts/preview_with_fixtures.js 8099
 ```
 
 `http://localhost:8099/films/nil` — the url is type first and name last, and
-anything that is not a real file is rewritten to `index.html`, because the
-site is a client-routed SPA.
+anything that is not a real file is rewritten to `index.html`, because every
+url is served the same document and the page is drawn client-side. That is
+not the same as a client-side router; see below.
 
 **The fixtures are the whole value, and a wrong one is worse than none.**
 Three bugs shipped past a stub that invented shapes the API does not return:
@@ -91,6 +130,38 @@ the UI: `fetch('/.netlify/functions/__stub?fail=' + encodeURIComponent(msg))`
 makes the next non-GET answer 400 with that message. It has to be the *next*
 one — the draft autosave fires 2.5s after a form opens and will eat a flag
 set before it.
+
+## The frontend is one document per navigation, and one bundle of globals
+
+**There is no client-side router.** `_redirects` serves one `index.html` for
+every url and the page is drawn in the browser, so the site reads like an SPA
+and is described as one in places. `components/router.js` picks a page
+component from `window.location.pathname` **once**, while the bundle is being
+evaluated; links are plain `<a href>`, `components/common.js` navigates with
+`window.location.href = url`, and saving an entry ends in `location.reload()`.
+
+So every navigation is a fresh document, and any module-level cache — a `Map`
+of loaded scripts, `Rows.byRef`, `window.hasUnsavedChange` — lives exactly as
+long as one page view. "Navigate away and come back" is not a way to keep
+state, and a bug that needs two pages to reproduce cannot be one.
+
+**A hash-only navigation is the exception, and it looks like a broken
+feature.** Going from `/films/nil` to `/films/nil#entry-films-10` is a
+same-document navigation: no document load, so nothing re-runs.
+`components/list/index.js` reads `window.location.hash` in an initializer that
+runs once per page load, which is right — every *real* navigation here is a
+full load. When testing anchor behaviour in a browser tool, go somewhere else
+first, or the feature you just wrote will appear to do nothing.
+
+**The bundle is plain globals concatenated**, in the order `asset_plan.js`
+gives, so a library is used two ways: `R.equals(…)` and `const { identity } =
+R` at the top of a file. Grepping for `R\.` finds the first and misses the
+second, and the second runs while the file is being *read* — a missing global
+is a `ReferenceError` at load time, one IIFE throws, the bundle stops, and
+**every page is blank**. `npm test` passes, since each test loads one file
+into a vm; `node --check` passes; CI passes. Only loading the built site in a
+browser finds it, which is what the preview above is for. When removing a
+global, grep for the destructured form too.
 
 ## ES modules, the functions runtime, and why the API is bundled
 
@@ -230,6 +301,12 @@ values, and never copy the file anywhere — if something can't see it from
 where it is, point it at the file with `MEMO_ENV_FILE` rather than moving
 the file to it.
 
+It is gitignored, so it exists **only in the main checkout**. A worktree or a
+fresh clone does not have one, and pointing `MEMO_ENV_FILE` at a path that
+lacks it fails as `TypeError: Cannot read properties of undefined (reading
+'startsWith')` from `mongodb-connection-string-url` — an unset `MONGODB_URL`,
+not a bad one. Point it at the main checkout's copy.
+
 Loading it is `src/db_maintenance/env.js`'s job, and every script's first
 line is `require("../env")`. Don't call `dotenv` directly in a new script:
 a bare `config()` resolves against the working directory, which is how the
@@ -318,6 +395,16 @@ tests sit at the top, the scripts in `scripts/`. See
 
 Tests that do need the dependencies skip themselves when they aren't there.
 
+**An array returned from a frontend test's `vm` context fails
+`deepStrictEqual`.** `columns.test.js`, `tables.test.js` and
+`table_model.test.js` run a bundle file inside `vm.createContext`, so an array
+the module builds carries that context's `Array.prototype`. `deepStrictEqual`
+compares prototypes and refuses it against a host literal with "Values have
+same structure but are not reference-equal" — printed about two empty arrays,
+which reads as a bug in the assertion library. Copy the value over first:
+`assert.deepEqual([...returned], [...])`. Only object and array returns are
+affected; strings and numbers cross realms fine.
+
 ## Data traps
 
 - **`apiRefs` are flat strings** (`igdb__1234`), with a few legacy
@@ -390,6 +477,52 @@ Tests that do need the dependencies skip themselves when they aren't there.
   repoint rule fires; the work it describes changed anyway. The test is whether
   the stored title *contained* the new one, which is the same test
   `set_work_ref.js` warns on.
+- **A books `apiRef` is prefixed and a check's is not.** Documents carry
+  `ISBN__9782709637411` and `google__9782709637411`; an identity check's
+  `apiRef` for books is the bare number. Films, tv and games use the prefixed
+  form either way, so the mismatch is books-only and silent — an analysis that
+  groups works by that string finds zero partners for every book and reports
+  all their values as unshared. #313's split came out 162/114 that way when the
+  real answer was 220/56, and the whole gap was books. Resolve a group by
+  looking each member's id up in the works array, the way `planSharedRefRepair`
+  does, never by matching an apiRef string.
+- **Refusals cluster at the head of a backfill queue.** `selectForRefresh`
+  sorts longest-unchecked first, and a work that never merged successfully is a
+  work with no `metadataUpdatedDate` — so the two populations are nearly the
+  same set and the refusal rate is wildly front-loaded. Measured on books: 144
+  of the first 150 refused, the next 178 produced three. A 96% refusal rate in
+  the first progress line is expected, not a broken guard; wait for the queue
+  to pass the never-checked block before judging.
+- **Google Books does not fail cleanly at its cap.** It allows roughly 1,000
+  calls a day and starts answering 429 partway through a long crawl. A refused
+  page comes back *empty*, which is indistinguishable from a page that found
+  nothing, so a bulk search must count failures per item and report "not
+  searched" separately or it invents findings out of unanswered questions. The
+  same shape bit `q=isbn:` lookups, which answer 200 with no `items` for both a
+  missing book and a transient miss — #375 made that raise `EMPTY_LOOKUP` so
+  `retrying` can see it.
+- **Google Books search carries the subtitle and retrieve does not.**
+  `google_search.js`'s `titleOf` joins title and subtitle as `"Title:
+  Subtitle"`; `google.js`'s retrieve maps `englishTranslatedTitle:
+  volumeInfo.title` alone. So a book stored under its full subtitled name
+  matches a search candidate and then fails `titlesAgree` when the same ISBN is
+  retrieved — `The Idea Factory: Bell Labs and the Great Age of American
+  Innovation` retrieves as `The Idea Factory`. Repointing such a book at a
+  "better" ISBN does not help; the write refuses either way.
+- **Entries with no `workRef` are deliberate, and are not the dangling-ref
+  count.** The audit prints them on the line above, and only the second is an
+  integrity violation. The no-`workRef` ones are what `readForm` writes when
+  somebody types a title instead of picking a search result — unreleased
+  sequels, mods, tabletop games, short stories no API has — and their metadata
+  lives in `entry.overrides`, so they render correctly. Do not repoint or
+  delete them. Read `entriesWithDanglingWorkRef` in the audit's `--json` before
+  treating a no-`workRef` count as breakage.
+- **Production is effectively a single-user site.** Six accounts, two with any
+  entries, and one of those two holds all but a few dozen. Nothing else in the
+  repo records it, and it is the deciding fact for any feature whose value
+  scales with other users — discussion, profile comments, likes, a global feed,
+  "trending this week" all multiply by a number that is currently 1. Features
+  useful at N=1 are a different question and stand on their own merits.
 - **IGDB replaced `external_games.category`** with
   `external_games.external_game_source` (`1` = Steam). Querying the old field
   returns zero rows silently instead of erroring.
