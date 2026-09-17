@@ -28,6 +28,17 @@
  * refusal in a batch skips that pair and the rest carry on, because one bad id
  * in a list of a hundred should not cost the other ninety-nine.
  *
+ * A pair may also carry `"replacesRef"`, for the other half of the population:
+ * a work whose stored id is not missing but wrong. #378 found twenty of them —
+ * `Her Story` under `The Sych Story: Ded's Story`, `Until Dawn` under
+ * `Dawn of War II` — ids that retrieve perfectly and name something else, so
+ * nothing here would touch them and the next refresh would overwrite the work
+ * with the other thing's metadata. Naming the ref you are taking off is the
+ * same evidence `retitleWorkTo` asks for: you can only write it having looked
+ * at the work, and it is checked against what the work actually carries, so a
+ * stale worklist refuses rather than writing. The wrong ref is dropped rather
+ * than kept beside the new one — see `refUpdate`.
+ *
  * A pair may also carry `"retitleWorkTo"`, which is the answer to the case the
  * guard cannot judge: a right id under a name of your own. `Doom mod: Sigil`
  * is IGDB's `Sigil` and `Portal 2: Coop` is `Portal 2`, and both look exactly
@@ -41,6 +52,7 @@
  *   --only=a,b      restrict to these collections
  *   --work=<id>     the work to repair
  *   --ref=<ref>     the ref to give it, as <prefix>__<id>
+ *   --replacesRef=<ref>  the wrong ref to take off, for a work that has one
  *   --from=<file>   a JSON array of { work, ref } pairs
  *   --apply         actually write (without it, nothing is written)
  */
@@ -90,7 +102,7 @@ const main = async () => {
 
     const pairs = args.from
       ? JSON.parse(fs.readFileSync(String(args.from), "utf8"))
-      : [{ work: String(args.work), ref: String(args.ref ?? "") }];
+      : [{ work: String(args.work), ref: String(args.ref ?? ""), replacesRef: args.replacesRef }];
 
     console.log(`${apply ? "APPLY" : "DRY RUN"}: ${pairs.length} work(s)\n`);
     let done = 0;
@@ -133,7 +145,7 @@ const listUnrefreshable = async (db, collections) => {
 };
 
 /** @returns {Promise<boolean>} whether this pair was written (or would be). */
-const repairOne = async (db, { work: workId, ref, retitleWorkTo }, apply) => {
+const repairOne = async (db, { work: workId, ref, retitleWorkTo, replacesRef }, apply) => {
   const parsed = parseApiRef(ref);
   // The work's own collection decides the type, and the ref's prefix is only
   // the fallback for a work that is not there at all. The other way round,
@@ -155,7 +167,7 @@ const repairOne = async (db, { work: workId, ref, retitleWorkTo }, apply) => {
     : [];
 
   // Retrieved only once the free checks have passed, so a typo costs nothing.
-  const cheapRefusal = refusalReason({ collection, work, ref, otherHolders, retrieved: {} });
+  const cheapRefusal = refusalReason({ collection, work, ref, replacesRef, otherHolders, retrieved: {} });
   let retrieved;
   let retrieveError;
   if (!cheapRefusal) {
@@ -170,7 +182,7 @@ const repairOne = async (db, { work: workId, ref, retitleWorkTo }, apply) => {
 
   const refusal =
     cheapRefusal ??
-    refusalReason({ collection, work, ref, retitleWorkTo, otherHolders, retrieved, retrieveError });
+    refusalReason({ collection, work, ref, retitleWorkTo, replacesRef, otherHolders, retrieved, retrieveError });
   const label = work ? `"${displayTitle(work)}"` : workId;
 
   if (refusal) {
@@ -182,7 +194,7 @@ const repairOne = async (db, { work: workId, ref, retitleWorkTo }, apply) => {
   // for a work whose title already agreed is a no-op rather than a rewrite.
   const retitleTo =
     retitleWorkTo && titlesAgree(work, retrieved) === false ? displayTitle(retrieved) : undefined;
-  const { set, unset } = refUpdate(work, ref, retitleTo);
+  const { set, unset } = refUpdate(work, ref, retitleTo, replacesRef);
 
   console.log(`  ~ ${label} -> ${ref}  (${collection.type}; the API answers "${displayTitle(retrieved)}")`);
   console.log(`      apiRefs ${JSON.stringify(work.apiRefs ?? [])} -> ${JSON.stringify(set.apiRefs)}, metadataUpdatedDate cleared`);

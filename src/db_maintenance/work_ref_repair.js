@@ -31,10 +31,11 @@ const { parseApiRef, findApiRef, titlesAgree, displayTitle } = require("./work_c
  *
  * @type {(args: {
  *   collection: any, work: any, ref: string, retitleWorkTo?: string,
- *   retrieved?: any, retrieveError?: string, otherHolders?: any[],
+ *   replacesRef?: string, retrieved?: any, retrieveError?: string,
+ *   otherHolders?: any[],
  * }) => string | undefined}
  */
-const refusalReason = ({ collection, work, ref, retitleWorkTo, retrieved, retrieveError, otherHolders }) => {
+const refusalReason = ({ collection, work, ref, retitleWorkTo, replacesRef, retrieved, retrieveError, otherHolders }) => {
   if (!work) return "no work with that id";
 
   const parsed = parseApiRef(ref);
@@ -51,11 +52,27 @@ const refusalReason = ({ collection, work, ref, retitleWorkTo, retrieved, retrie
     return `${ref} already names ${otherHolders.map(displayTitle).join(", ")} — give that work the entries instead, or pick a different id`;
   }
 
-  // Refusing rather than replacing: a work that already answers is not the
-  // population this is for, and overwriting one is how a good ref becomes a
-  // bad one with no record that it changed.
+  // A work that already answers is not the population this fills, and
+  // overwriting one silently is how a good ref becomes a bad one with no
+  // record that it changed. `replacesRef` is the way past that, and it is the
+  // same kind of evidence as `retitleWorkTo` below rather than a `--force`:
+  // naming the id you are taking off is something you can only do having read
+  // it, so a typo, a stale worklist or the wrong row refuses instead of
+  // writing. #378 is the population it exists for — works whose stored id
+  // retrieves cleanly and names something else entirely, where there is no
+  // missing ref to fill and the only repair is to take the wrong one off.
   const existing = findApiRef(work.apiRefs, collection.retrievePrefix);
-  if (existing) return `already has ${collection.retrievePrefix}__${existing}; this only fills a work that has none`;
+  const held = existing ? `${collection.retrievePrefix}__${existing}` : undefined;
+  if (existing && !replacesRef) {
+    return `already has ${held}; this fills a work that has none, or replaces the ref you name with replacesRef`;
+  }
+  if (replacesRef && !existing) {
+    return `replacesRef "${replacesRef}" but this work carries no ${collection.retrievePrefix}__ ref to replace`;
+  }
+  if (replacesRef && replacesRef !== held) {
+    return `replacesRef "${replacesRef}" is not the ref this work carries (${held}) — name the one you are taking off`;
+  }
+  if (replacesRef && replacesRef === ref) return `${ref} is already this work's ref; there is nothing to replace`;
 
   if (retrieveError) return `the API would not answer for ${ref}: ${retrieveError}`;
   if (!retrieved) return `${ref} names nothing`;
@@ -90,11 +107,20 @@ const refusalReason = ({ collection, work, ref, retitleWorkTo, retrieved, retrie
  * which is the entire reason for giving it one. The ref is appended rather
  * than replacing `apiRefs`, because the placeholders and legacy ids a work
  * carries are a record of where it has been and cost nothing to keep.
- * @type {(work: any, ref: string, retitleTo?: string) => { set: object, unset: object }}
+ *
+ * **A `replacesRef` is the exception, and it is dropped rather than kept.** A
+ * placeholder identifies nothing and is harmless beside a real id; a wrong id
+ * is a working id for another work, and `findApiRef` takes the first of its
+ * prefix it finds. Leaving it in would let the next refresh retrieve the thing
+ * this repair exists to stop pointing at.
+ * @type {(work: any, ref: string, retitleTo?: string, replacesRef?: string) => { set: object, unset: object }}
  */
-const refUpdate = (work, ref, retitleTo) => ({
+const refUpdate = (work, ref, retitleTo, replacesRef) => ({
   set: {
-    apiRefs: [...(Array.isArray(work.apiRefs) ? work.apiRefs : []), ref],
+    apiRefs: [
+      ...(Array.isArray(work.apiRefs) ? work.apiRefs : []).filter((r) => r !== replacesRef),
+      ref,
+    ],
     // Only when `refusalReason` has passed a `retitleWorkTo`, and set to what
     // the API answered rather than to what was typed: the two agree by then,
     // and the API's spelling is the one every later refresh will compare
