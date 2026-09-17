@@ -345,6 +345,15 @@ Tests that do need the dependencies skip themselves when they aren't there.
   `episodes` count and none of them has a meaningful zero. A field where zero
   is a real answer would need this decided again, in `isEmptyValue`, not
   worked around at the call site.
+- **The audit's `missingFields` count is not a list of work to do.** It
+  reports a gap in our copy and cannot tell one the API would fill from one
+  nobody has the data for. Of 497 across films, tv and games, a
+  `--missing-only` pass wrote to **eleven**: 377 came back "already current"
+  because TMDB holds no cast for that film and IGDB no publisher for that
+  game, and the rest were works the title guard had frozen. An issue was
+  filed against the 497 as though they were fillable, and running it is what
+  showed otherwise — so measure with a dry run before treating the number as
+  a backlog. #381.
 - **A book's ISBN names an edition, not the book.** Google Books answers
   about the printing, so a *refresh* of `releaseYear` moves a public-domain
   work forward to whatever reprint the ISBN belongs to — of seven year changes
