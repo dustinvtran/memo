@@ -60,6 +60,38 @@ Same trick for regenerating `package-lock.json`: run
 `npm install --package-lock-only` on the local copy and copy the lockfile
 back.
 
+## Looking at the frontend without netlify dev
+
+`npx netlify dev` needs an interactive `netlify login` and points
+`MONGODB_URL` at production Atlas, so it is not the thing to reach for when
+you want to see a change draw. Build, then serve `dist/` with the API
+answered from fixtures:
+
+```
+npx cross-env ELEVENTY_ENV=dev eleventy
+node scripts/preview_with_fixtures.js 8099
+```
+
+`http://localhost:8099/films/nil` — the url is type first and name last, and
+anything that is not a real file is rewritten to `index.html`, because the
+site is a client-routed SPA.
+
+**The fixtures are the whole value, and a wrong one is worse than none.**
+Three bugs shipped past a stub that invented shapes the API does not return:
+`internalRef` on a list row, which only a *retrieve* sets (#371); no entry
+overriding a field of a real work, which is the only case that renders the
+override hint (#372); and no `Planned` film, the one status whose completed
+date field is hidden and so the one that could carry a date nobody could see.
+Each fixture in that file says which case it is for. Add rows rather than
+editing them, and check a shape against `src/api/controllers/entries.js`
+rather than against memory.
+
+It also has a control route, which is the only way to watch an error reach
+the UI: `fetch('/.netlify/functions/__stub?fail=' + encodeURIComponent(msg))`
+makes the next non-GET answer 400 with that message. It has to be the *next*
+one — the draft autosave fires 2.5s after a form opens and will eat a flag
+set before it.
+
 ## ES modules, the functions runtime, and why the API is bundled
 
 **`src/api` is ES modules** — `src/api/package.json` sets `"type": "module"`
