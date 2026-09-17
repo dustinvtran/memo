@@ -170,3 +170,90 @@ test("the retitle is written from the API's spelling, not from what was typed", 
     unset: { metadataUpdatedDate: "" },
   });
 });
+
+/**
+ * #378's population: the ref is not missing, it is wrong. `Her Story` carried
+ * `The Sych Story: Ded's Story`'s id and `Until Dawn` carried `Dawn of War
+ * II`'s — both retrieve cleanly, so nothing above this line would have looked
+ * at them, and the refusal for a work that already answers is exactly what
+ * kept them broken.
+ */
+test("naming the wrong ref you are taking off is what allows a replacement", () => {
+  assert.equal(
+    why({
+      work: work("Her Story", ["igdb__170227"]),
+      ref: "igdb__11346",
+      replacesRef: "igdb__170227",
+      retrieved: { englishTranslatedTitle: "Her Story" },
+    }),
+    undefined
+  );
+});
+
+test("a replacesRef that is not the ref the work carries is refused", () => {
+  assert.match(
+    why({
+      work: work("Her Story", ["igdb__170227"]),
+      ref: "igdb__11346",
+      replacesRef: "igdb__999",
+      retrieved: { englishTranslatedTitle: "Her Story" },
+    }),
+    /not the ref this work carries \(igdb__170227\)/
+  );
+});
+
+test("a replacesRef on a work with nothing to replace is refused", () => {
+  assert.match(
+    why({ work: work("A"), ref: "igdb__2", replacesRef: "igdb__1", retrieved: { englishTranslatedTitle: "A" } }),
+    /carries no igdb__ ref to replace/
+  );
+});
+
+test("replacing a ref with itself is refused rather than written", () => {
+  assert.match(
+    why({ work: work("A", ["igdb__1"]), ref: "igdb__1", replacesRef: "igdb__1", retrieved: { englishTranslatedTitle: "A" } }),
+    /nothing to replace/
+  );
+});
+
+/** A replacement is not a way around the check the tool exists for. */
+test("a replacement is still refused when the new ref names something else", () => {
+  assert.match(
+    why({
+      work: work("Until Dawn", ["igdb__466"]),
+      ref: "igdb__7609",
+      replacesRef: "igdb__466",
+      retrieved: { englishTranslatedTitle: "Warhammer 40,000: Dawn of War II" },
+    }),
+    /not this work/
+  );
+});
+
+test("a replacement cannot put two works under one id either", () => {
+  assert.match(
+    why({
+      work: work("Kingdom: Season 1", ["tmdb__63333"]),
+      ref: "igdb__7",
+      replacesRef: "tmdb__63333",
+      otherHolders: [{ englishTranslatedTitle: "Kingdom: Season 2" }],
+      retrieved: { englishTranslatedTitle: "Kingdom" },
+    }),
+    /already names Kingdom: Season 2/
+  );
+});
+
+/**
+ * The reason a replaced ref cannot be kept the way a placeholder is:
+ * `findApiRef` takes the first of its prefix, so a wrong id left in the array
+ * is a live id the next refresh can retrieve.
+ */
+test("the replaced ref is dropped, and everything else is kept", () => {
+  const { set } = refUpdate(work("A", ["hltb__5", "igdb__170227"]), "igdb__11346", undefined, "igdb__170227");
+  assert.deepEqual(set.apiRefs, ["hltb__5", "igdb__11346"]);
+});
+
+test("without a replacesRef the write still only appends", () => {
+  const { set } = refUpdate(work("A", ["hltb__5"]), "igdb__11346", undefined, undefined);
+  assert.deepEqual(set.apiRefs, ["hltb__5", "igdb__11346"]);
+});
+
