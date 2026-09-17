@@ -13,6 +13,7 @@ const {
   runsRemaining,
   isPermanentFailure,
   summarizeProgress,
+  frozenWorks,
 } = require("./metadata_refresh_plan");
 
 const games = COLLECTIONS.find((c) => c.type === "games");
@@ -340,3 +341,45 @@ test("each collection carries its own nightly slice size", () => {
     2
   );
 });
+
+// --- works that could not be refreshed at all ---
+
+/**
+ * A refusal is not a failure and not a success, and until #381 it was neither:
+ * the run printed a line and exited 0, so a work whose stored title disagrees
+ * with its id could be refused every night for years with nothing to notice.
+ * 93 of them had been. `frozenWorks` is what lets a run fail on that.
+ */
+test("every refusal is reported, with the collection it came from", () => {
+  assert.deepEqual(
+    frozenWorks({
+      films: { refusals: [{ title: "Ghostrider", refused: "names another work" }], unchanged: 3 },
+      tvShows: { refusals: [{ title: "Ozark: Season 4", refused: "names another work" }] },
+      games: { refusals: [], unchanged: 9 },
+    }),
+    [
+      { collection: "films", title: "Ghostrider", refused: "names another work" },
+      { collection: "tvShows", title: "Ozark: Season 4", refused: "names another work" },
+    ]
+  );
+});
+
+/** A clean run is the case this has to get right, since it gates an exit code. */
+test("a run that refused nothing reports nothing", () => {
+  assert.deepEqual(frozenWorks({ films: { unchanged: 12, changes: [], refusals: [] } }), []);
+  assert.deepEqual(frozenWorks({}), []);
+  assert.deepEqual(frozenWorks(undefined), []);
+});
+
+/**
+ * A failure is a different thing and must not be counted here: a spent quota
+ * is already `summarizeProgress`'s business, and folding it in would make a
+ * bad night look like a misfiled work.
+ */
+test("a failed call is not a frozen work", () => {
+  assert.deepEqual(
+    frozenWorks({ books: { failures: [{ title: "A", error: "429" }], deadRefs: [{ title: "B" }] } }),
+    []
+  );
+});
+

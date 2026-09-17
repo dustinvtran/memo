@@ -33,8 +33,10 @@ list does not re-point it at a different film.
 
 ## What enforces it
 
-Not much, and that is worth knowing rather than assuming. The current code
-cannot produce a user-named work, but nothing asserts that it never will.
+Four things hold it up, and `src/api/controllers/work_is_read_only.test.js`
+asserts each of them against the real handlers rather than by reading the
+source — a test that greps for `updateOne` passes happily while a fifth code
+path writes a work some other way.
 
 - **`/api/works` is GET-only.** `src/api/routes/works.js` routes exactly
   two things, `search` and `retrieve`. There is no route that writes a
@@ -108,15 +110,30 @@ my own name for it" from a genuinely misfiled id. The misfiled ones are the
 other population wearing the same refusal, and they want `replacesRef`
 (#379) instead — a different repair, because there the id is what is wrong.
 
-## The gap
+## Catching a row that breaks the rule
 
-This is a convention, not an invariant. Nothing in the code says "a work's
-title must be what its id answers with", and when it is not, the symptom is
-silence: no error, no report, just a document that stops changing.
+The tests above stop the *code* from breaking the rule. They cannot stop a
+*document* from being in a state that breaks it, and that state is the one
+whose symptom is silence — no error, no report, just a work that stops
+changing.
 
-`audit_database.js --verify-titles` is the closest thing to a check. It
-asks each work's id what it names and splits the disagreements —
-`titleRefDifferent` for a likely misfiling, `titleRefAlternate` and
-`titleRefSpelling` for a name the API also holds (#380). A row that breaks
-the rule above will show up there, which is how the 93 were found at all.
-Making it an assertion rather than a report is unbuilt.
+Two things look for it.
+
+`backfill_work_metadata.js --fail-on-refusal` exits non-zero when any work
+in the slice could not be refreshed. Without the flag a refusal is printed
+and the run still exits 0, which is exactly how 93 of them accumulated: the
+nightly job was green every night for years. It is off by default because a
+refusal is a fact about the data rather than a fault in the run, and this
+script is also how somebody looks at a slice.
+
+`audit_database.js --verify-titles` asks each work's id what it names and
+splits the disagreements: `titleRefDifferent` for a likely misfiling,
+`titleRefAlternate` and `titleRefSpelling` for a name the API also holds
+(#380). It costs a call per work, which is why it is a flag and not the
+default.
+
+**The nightly refresh does not pass `--fail-on-refusal` yet.** Films, tv and
+games are at zero refusals; books are not, so turning it on in
+`.github/workflows/refresh_metadata.yml` would make the job red on its next
+firing for a population nobody has triaged. Turning it on is the last step,
+and it wants those books looked at first.

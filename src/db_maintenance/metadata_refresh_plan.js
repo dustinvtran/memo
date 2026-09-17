@@ -234,8 +234,28 @@ const summarizeProgress = (report) => {
   return { ...totals, stalled: totals.failed > 0 && totals.answered === 0 };
 };
 
+/**
+ * Every work this run could not refresh because its stored title disagreed
+ * with the one its id answers with.
+ *
+ * A refusal is not a failure — the API answered, the ref is fine, and the
+ * #290 title guard declined to merge. But it is not a success either, and
+ * until now it was neither: the run printed a line and exited 0, so a work
+ * could be refused every night for years and nothing said so. #381 found 93
+ * of them, and `docs/works_and_entries.md` is why they are all one bug.
+ *
+ * Counted rather than judged here, so the caller decides whether a refusal is
+ * a condition to fail on.
+ * @type {(report: object) => Array<{ collection: string, refused: string, title?: string }>}
+ */
+const frozenWorks = (report) =>
+  Object.entries(report ?? {}).flatMap(([collection, result]) =>
+    (result?.refusals ?? []).map((refusal) => ({ collection, ...refusal }))
+  );
+
 module.exports = {
   DEFAULT_MAX_AGE_DAYS,
+  frozenWorks,
   DAY_MS,
   lastCheckedAt,
   isDue,

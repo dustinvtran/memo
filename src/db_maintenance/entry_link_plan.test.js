@@ -323,3 +323,39 @@ test("the write takes the API's spelling and unfreezes the work", () => {
   assert.equal("originalTitle" in set, false);
 });
 
+// --- the rule itself, asserted on the writes these functions produce ---
+
+/**
+ * `docs/works_and_entries.md`. A work is the database's copy of what an API
+ * says; what a person types lives on their entry. The two functions in this
+ * module are the only ones here that write, so between them they are where
+ * that rule is either kept or lost.
+ */
+test("linking an entry writes nothing that belongs to a work", () => {
+  const { set, unset } = linkUpdate({
+    entry: { _id: "e1", overrides: { englishTranslatedTitle: "Ozark: Season 4" } },
+    workId: "w1",
+    entryTitle: "Ozark: Season 4",
+  });
+  // A work's identity above all: renaming a row must never be able to
+  // re-point it at something else.
+  for (const field of ["apiRefs", "englishTranslatedTitle", "releaseYear", "duration", "genres", "metadataUpdatedDate"]) {
+    assert.equal(field in set, false, `${field} is a work's, and must not be in an entry write`);
+    assert.equal(field in unset, false, `${field} is a work's, and must not be unset on an entry`);
+  }
+  assert.equal(set.workRef, "w1");
+  assert.equal(set["overrides.englishTranslatedTitle"], "Ozark: Season 4");
+});
+
+/** And the other direction: the work write touches nothing of the entry's. */
+test("renaming a work writes nothing that belongs to an entry", () => {
+  const { set, unset } = workTitleUpdate({ englishTranslatedTitle: "Ozark", releaseYear: 2017 });
+  for (const field of ["overrides", "status", "score", "startedDate", "completedDate", "workRef", "userId"]) {
+    assert.equal(field in set, false, `${field} is an entry's, and must not be in a work write`);
+    assert.equal(field in unset, false, `${field} is an entry's, and must not be unset on a work`);
+  }
+  // A work's identity is not the title's to change either: `workTitle` moves a
+  // work back to the API's name for the id it already has, never to a new id.
+  assert.equal("apiRefs" in set, false);
+});
+

@@ -49,6 +49,7 @@
  *                       collection's own `defaultLimit`, since the four APIs
  *                       and the four queues are not alike — #352)
  *   --delay-ms=N        override the per-type pause between API calls
+ *   --fail-on-refusal   exit non-zero if any work could not be refreshed
  *   --json=path         write a machine-readable report
  *   --backup-dir=path   where to put backups (default ../backups)
  *
@@ -99,6 +100,7 @@ const {
   runsRemaining,
   isPermanentFailure,
   summarizeProgress,
+  frozenWorks,
 } = require("../metadata_refresh_plan");
 const { loadAdapter, describeError } = require("../load_adapter");
 
@@ -187,6 +189,8 @@ const main = async () => {
  * that arithmetic is tested.
  */
 const reportProgress = (report) => {
+  reportFrozen(report);
+
   const { failed, stalled } = summarizeProgress(report);
   if (!stalled) return;
 
@@ -195,6 +199,37 @@ const reportProgress = (report) => {
       `no work advanced and the next run will re-read the same slice. This ` +
       `is what a spent daily quota, a revoked key or a dead API looks like — ` +
       `read the errors above rather than re-running.`
+  );
+  process.exitCode = 1;
+};
+
+/**
+ * The works this run could not refresh, and whether that should fail it.
+ *
+ * A refusal has always been printed and has never been anything else: the run
+ * exits 0, so a work whose stored title disagrees with its id can be refused
+ * every night for years with nothing to notice it. That is exactly how #381's
+ * 93 accumulated, and `docs/works_and_entries.md` is what they had in common —
+ * a person's name on a work rather than on their entry.
+ *
+ * Off by default, because a refusal is a fact about the data rather than a
+ * fault in the run, and this script is also how somebody looks at a slice.
+ * On, it turns a silence into a red build, which is the only thing that would
+ * have caught the 93 before they became 93.
+ * @type {(report: object) => void}
+ */
+const reportFrozen = (report) => {
+  const frozen = frozenWorks(report);
+  if (frozen.length === 0 || args["fail-on-refusal"] !== true) return;
+
+  console.error(
+    `
+${frozen.length} work(s) could not be refreshed, and this run was ` +
+      `asked to fail on that. Each one's stored title disagrees with the ` +
+      `title its id answers with, so the #290 guard refused the merge and ` +
+      `the work's metadata is frozen until somebody looks. See ` +
+      `docs/works_and_entries.md; the repair is link_entry.js's workTitle ` +
+      `when the id is right, and set_work_ref.js's replacesRef when it is not.`
   );
   process.exitCode = 1;
 };
