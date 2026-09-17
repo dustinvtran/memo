@@ -29,12 +29,33 @@ const search = (titleSearch) => ResultAsync.fromPromise(
   toError('searching for books')
 )
 
-/** @type BookRetrieveFunction */
+/**
+ * One volume, by ISBN.
+ *
+ * **An empty answer is retried rather than believed.** `q=isbn:` replies `200`
+ * with no `items` both for an ISBN Google does not hold and for one it will
+ * answer a second later, and the two are indistinguishable from here. Because
+ * a `200` is a success, `retrying` never saw the second kind: the adapter
+ * turned it straight into a 404 and the caller recorded a permanent miss.
+ *
+ * That was measured rather than guessed. Two identical runs of the same 64
+ * refs disagreed by five rows minutes apart, and all 35 refs chased afterwards
+ * resolved — every one of them on the first attempt. So roughly half of one
+ * backfill's refusals were this, and a work that could have been linked was
+ * written off instead.
+ *
+ * `EMPTY_LOOKUP` is in `RETRYABLE_CODES`, so an empty answer now costs three
+ * attempts before it is called a miss, and `throwNoSuchVolume` means what it
+ * says again.
+ * @type BookRetrieveFunction
+ */
 const retrieve = (ref) => ResultAsync.fromPromise(
   retrying(() => axios({
     method: 'get',
     url: `${BASE_URL}?q=isbn:${ref}${urlKey}`
-  }))
+  }).then((response) => volumesOf(response.data).length > 0
+    ? response
+    : throwEmptyLookup(ref)))
     .then(({ data }) => volumesOf(data).map(({ volumeInfo }) => ({
       entryType: 'Book',
       publishers: volumeInfo.publisher ? [volumeInfo.publisher] : undefined,
@@ -90,6 +111,19 @@ const searchPages = (urls) => Promise.all(
     ? pages.map((page) => page.volumes ?? [])
     : throwIt(pages[0].err)
 )
+
+/**
+ * An empty `200`, marked so `retrying` treats it as worth another attempt.
+ * It is deliberately not a status: nothing failed, and calling it a 503 would
+ * put a lie in every log line the retry prints.
+ * @type {(ref: string) => never}
+ */
+const throwEmptyLookup = (ref) => {
+  throw Object.assign(
+    new Error(`Google Books answered nothing for ISBN ${ref}.`),
+    { code: 'EMPTY_LOOKUP' },
+  )
+}
 
 /** @type {(ref: string) => never} */
 const throwNoSuchVolume = (ref) => {

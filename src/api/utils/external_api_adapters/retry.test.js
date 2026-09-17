@@ -193,3 +193,38 @@ test('a code that is not an errno is not passed on either', () => {
   assert.equal(publicFailure('tmdb', { code: 0, errorCode: 404 }), 'tmdb failed (HTTP 404)')
   assert.equal(publicFailure('tmdb', { code: 'auth failed for user nil' }), 'tmdb failed')
 })
+
+/**
+ * An answer that succeeded and held nothing. Google Books does that to an ISBN
+ * lookup it will answer a second later, and because a `200` is not a failure
+ * nothing here used to see it: books/google.js turned it straight into a 404
+ * and the caller recorded a permanent miss. Half of one 64-row backfill was
+ * refused that way, and every ref chased afterwards resolved on the first
+ * retry.
+ */
+test('an empty answer is transient, because it is a bad minute rather than a bad ref', () => {
+  assert.equal(isTransient({ code: 'EMPTY_LOOKUP' }), true)
+})
+
+test('an empty answer is still spent after its attempts', async () => {
+  let calls = 0
+  const always = () => {
+    calls++
+    throw Object.assign(new Error('nothing'), { code: 'EMPTY_LOOKUP' })
+  }
+
+  await assert.rejects(retrying(always, { sleep: async () => {} }))
+  assert.equal(calls, ATTEMPTS, 'tried, then given up on rather than retried for ever')
+})
+
+test('an empty answer that fills in on a later attempt is not a miss', async () => {
+  let calls = 0
+  const eventually = async () => {
+    calls++
+    if (calls < 3) throw Object.assign(new Error('nothing'), { code: 'EMPTY_LOOKUP' })
+    return 'the volume'
+  }
+
+  assert.equal(await retrying(eventually, { sleep: async () => {} }), 'the volume')
+  assert.equal(calls, 3)
+})
