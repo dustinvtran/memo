@@ -51,6 +51,7 @@ const tmdbClient = () =>
  * @property {(client: any, query: string) => Promise<any>} search
  * @property {(client: any, ref: string) => Promise<any>} details
  * @property {(client: any, ref: string) => Promise<any>} credits
+ * @property {(client: any, ref: string) => Promise<any>} alternativeTitles
  */
 
 /**
@@ -59,7 +60,7 @@ const tmdbClient = () =>
  * one is not worth returning.
  * @type {(config: Endpoints & { mapping: Mapping }) => Adapter}
  */
-const tmdbAdapter = ({ mapping, search, details, credits }) => {
+const tmdbAdapter = ({ mapping, search, details, credits, alternativeTitles }) => {
   const toError = tmdbError(mapping.notFoundMessage)
 
   return {
@@ -77,6 +78,20 @@ const tmdbAdapter = ({ mapping, search, details, credits }) => {
         .then(([{ data }, { data: castAndCrew }]) =>
           toWork(mapping, ref, data, castAndCrew)
         ),
+      toError,
+    ),
+
+    // Deliberately not part of `retrieve`. A work document is whatever a
+    // retrieve returns — `db.create_` stores the response as it stands — so
+    // widening that shape would put a list of foreign-language titles on every
+    // work the site creates, for the benefit of an audit that reads them once.
+    // This is a second call instead, made only about a work whose title
+    // already disagreed. #380.
+    alternativeTitles: (ref) => ResultAsync.fromPromise(
+      retrying(() => alternativeTitles(tmdbClient(), ref))
+        // `titles` for a film, `results` for a show: the two endpoints answer
+        // the same question under different keys.
+        .then(({ data }) => (data?.titles ?? data?.results ?? []).map((t) => t?.title).filter(Boolean)),
       toError,
     ),
   }

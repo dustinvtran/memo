@@ -9,6 +9,7 @@ const {
   titleMatchTargets,
   resolveTitleMatch,
   classifyTitleMatches,
+  reconsiderAgainstAlternates,
 } = require("./title_match_check");
 
 const films = COLLECTIONS.find((c) => c.type === "films");
@@ -200,6 +201,7 @@ test("the checks are split by verdict, and non-answers by why", () => {
     { verdict: "same" },
     { verdict: "spelling" },
     { verdict: "contained" },
+    { verdict: "alternate" },
     { verdict: "different" },
     { verdict: "different" },
     { error: "404 Not Found" },
@@ -214,6 +216,7 @@ test("the checks are split by verdict, and non-answers by why", () => {
       same: 1,
       spelling: 1,
       contained: 1,
+      alternate: 1,
       different: 2,
       unanswered: 1,
       uncompared: 1,
@@ -241,3 +244,93 @@ test("every bucket is a finding the summary knows how to label", () => {
     assert.ok(known.has(key), `${key} is printed but never summarised`);
   }
 });
+
+// Reading a difference against the API's other names for the same thing
+
+const differing = (title) => ({ title, verdict: "different", apiTitle: "whatever" });
+
+/**
+ * #380. An API answers with one name for a thing that has several, so a
+ * regional release title reads exactly like a misfiled id. `igdb__426` says
+ * "Final Fantasy III" — Final Fantasy VI's US name on the SNES — and holds
+ * "Final Fantasy VI" one field over.
+ */
+test("a difference the API also holds under another name is not a difference", () => {
+  const out = reconsiderAgainstAlternates(
+    differing("Final Fantasy VI"),
+    { englishTranslatedTitle: "Final Fantasy VI" },
+    ["FF6", "FFVI", "Final Fantasy 6", "Final Fantasy VI"]
+  );
+  assert.equal(out.verdict, "alternate");
+  assert.equal(out.matchedAlternativeTitle, "Final Fantasy VI");
+});
+
+test("the alternative name is compared the way every other title here is", () => {
+  // `Dragon Age 2` against IGDB's `Dragon Age II`, which holds `Dragon Age 2`.
+  const out = reconsiderAgainstAlternates(
+    differing("Dragon Age 2"),
+    { englishTranslatedTitle: "Dragon Age 2" },
+    ["DAII", "DA2", "Dragon Age 2"]
+  );
+  assert.equal(out.verdict, "alternate");
+});
+
+/**
+ * Weaker evidence goes to the bucket that already exists for weaker evidence.
+ * Containment is the shape a search-result mistake takes, so matching an
+ * alternative name only by containment is triage, not an all-clear.
+ */
+test("containing one of the other names is triage, not an all-clear", () => {
+  const out = reconsiderAgainstAlternates(
+    differing("Crash Bandicoot 3: Warped"),
+    { englishTranslatedTitle: "Crash Bandicoot 3: Warped" },
+    ["Crash Bandicoot 3", "Crash 3"]
+  );
+  assert.equal(out.verdict, "contained");
+  assert.equal(out.matchedAlternativeTitle, "Crash Bandicoot 3");
+});
+
+test("a name that matches nothing leaves the verdict alone", () => {
+  const out = reconsiderAgainstAlternates(
+    differing("Her Story"),
+    { englishTranslatedTitle: "Her Story" },
+    ["The Sych Story: Ded's Story"]
+  );
+  assert.equal(out.verdict, "different");
+  assert.equal("matchedAlternativeTitle" in out, false);
+});
+
+test("no alternative names at all leaves the verdict alone", () => {
+  for (const names of [[], undefined, [""]]) {
+    assert.equal(
+      reconsiderAgainstAlternates(differing("A"), { englishTranslatedTitle: "A" }, names).verdict,
+      "different"
+    );
+  }
+});
+
+/** Only a `different` is reconsidered: the others were never the complaint. */
+test("a verdict that was not a difference is never rewritten", () => {
+  for (const verdict of ["same", "spelling", "contained", undefined]) {
+    const check = { title: "A", verdict };
+    assert.equal(
+      reconsiderAgainstAlternates(check, { englishTranslatedTitle: "A" }, ["A"]).verdict,
+      verdict
+    );
+  }
+});
+
+/**
+ * The stored `originalTitle` counts too, the same as in the comparison that
+ * reached `different` — the two APIs disagree often enough about which
+ * spelling is the original that insisting on the field would miss matches.
+ */
+test("a work's original title is compared against the other names as well", () => {
+  const out = reconsiderAgainstAlternates(
+    differing("Spirited Away"),
+    { englishTranslatedTitle: "Spirited Away", originalTitle: "千と千尋の神隠し" },
+    ["Sen to Chihiro no Kamikakushi", "千と千尋の神隠し"]
+  );
+  assert.equal(out.verdict, "alternate");
+});
+

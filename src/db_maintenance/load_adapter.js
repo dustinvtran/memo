@@ -31,7 +31,7 @@
 const { sleep } = require("./work_collections");
 const { resolveIdentity, describeWork } = require("./shared_ref_check");
 const { resolveTitleYear } = require("./title_year_check");
-const { resolveTitleMatch } = require("./title_match_check");
+const { resolveTitleMatch, reconsiderAgainstAlternates } = require("./title_match_check");
 
 /**
  * Lazily required, so a films-only run never loads the other three. That used
@@ -224,12 +224,43 @@ const verifyWorkTitles = async (collection, targets, onProgress) => {
             ref: target.ref,
             error: describeError(result.error),
           }
-        : resolveTitleMatch(target, result.value)
+        : await reconsidered(adapter, collection, target, resolveTitleMatch(target, result.value))
     );
     onProgress?.(index + 1, targets.length);
   }
 
   return checks;
+};
+
+/**
+ * A second call, made only about a work whose title already disagreed.
+ *
+ * An API answers with one name for a thing that has several, so a regional
+ * release title reads exactly like a wrong id: `igdb__426` says "Final Fantasy
+ * III" because that is what Final Fantasy VI was called in the US, and holds
+ * "Final Fantasy VI" one field over. Reporting those costs a reader the same
+ * investigation a real misfiling does, and there were 32 of them against 22
+ * genuine findings. #380.
+ *
+ * The cost is bounded by the finding rather than by the population: a sweep
+ * asks every work once, and asks a second time only about the few that came
+ * back different. An adapter that cannot answer the question leaves the
+ * verdict exactly as it was, which is what makes this optional per type —
+ * books have none, since an ISBN names one edition and not a title with
+ * variants.
+ * @type {(adapter: any, collection: any, target: any, check: any) => Promise<any>}
+ */
+const reconsidered = async (adapter, collection, target, check) => {
+  if (check.verdict !== "different" || typeof adapter.alternativeTitles !== "function") {
+    return check;
+  }
+  await sleep(collection.defaultDelayMs);
+  const result = await adapter.alternativeTitles(target.ref);
+  // A failure here is not evidence of anything: the first call answered, so
+  // the work is not unreachable, and the verdict it produced still stands.
+  return result.isErr()
+    ? check
+    : reconsiderAgainstAlternates(check, target.work, result.value);
 };
 
 module.exports = {

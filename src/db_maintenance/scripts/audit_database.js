@@ -296,6 +296,7 @@ const auditCollection = async (db, collection) => {
     titleRefAgreed: titles.same.length,
     titleRefSpelling: titles.spelling,
     titleRefContained: titles.contained,
+    titleRefAlternate: titles.alternate,
     titleRefDifferent: titles.different,
     titleRefUnanswered: titles.unanswered,
     titleRefUncompared: titles.uncompared,
@@ -554,7 +555,14 @@ const printTitleMatches = (collection, result) => {
     for (const check of found) {
       console.log(
         `      - ${check.apiRef} names "${check.apiTitle}", stored as ` +
-          `"${check.title}" (${check.id})`
+          `"${check.title}" (${check.id})` +
+          // Without this the quieter verdict is unexplained, and a reader has
+          // no way to tell a row that was checked against the API's other
+          // names from one that was never a finding.
+          (check.matchedAlternativeTitle
+            ? `
+          and also holds "${check.matchedAlternativeTitle}"`
+            : "")
       );
     }
   }
