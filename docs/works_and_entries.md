@@ -61,6 +61,24 @@ read a note mentioning a rewatch as evidence that some other row *is* that
 rewatch. A rewatch recorded in prose has no row at all, and a maintenance
 script that assumes otherwise will delete a real one. That has happened.
 
+## Which edition an id should name
+
+When one title exists as several editions or ports, the work should carry the
+**mainstream release** — the flagship console or PC version, not the handheld
+or arcade port. IGDB in particular splits one game into an id per platform,
+and the id decides the cover, the platform list and the playtime the list page
+shows, so the choice is visible rather than bookkeeping.
+
+`Perfect Dark` and `Spider-Man` are the N64 releases rather than the Game Boy
+Color ones, `Crash Bandicoot` the PS1 rather than the handheld port, `Tetris`
+the SNES rather than mobile. The same reasoning picks the 2015 PS4 `Until
+Dawn` over the 2024 remake when the entry was played in 2020 — where a date
+settles it, the date wins.
+
+This is a default, not a rule: an explicitly named edition stands, and for
+books the question is different again, since an ISBN names one printing and
+the edition that matches what was read is the right one.
+
 ## What enforces it
 
 Four things hold it up, and `src/api/controllers/work_is_read_only.test.js`
