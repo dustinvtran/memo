@@ -129,6 +129,11 @@ const SearchPanel = (type, data, parentId) => initComponent({
       ${include(InputWithAction({
         label: `Search ${typeToTitle[type]}`,
         btnLabel: "Search",
+        // The title as it stands in the form, not as it was when the row was
+        // loaded: somebody who has just corrected a spelling wants to search
+        // the correction. Selected rather than left with a caret at the end,
+        // so replacing it outright takes no deleting.
+        defaultValue: el('#title')?.value ?? '',
         onSubmit: (query) => {
           searchWorks(type, query)
             .map((results) =>
@@ -140,6 +145,11 @@ const SearchPanel = (type, data, parentId) => initComponent({
     </div>
     <div id="${parentId}-results"></div>
   `,
+  initializer: () => {
+    const input = el(`#${parentId}-search input`)
+    input?.focus()
+    input?.select()
+  },
 })
 
 /**
