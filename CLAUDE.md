@@ -329,6 +329,11 @@ Tests that do need the dependencies skip themselves when they aren't there.
   apiRef groups here are distinct works: "Fargo - Season 1" and "Season 2"
   under one show id, five Haruhi Suzumiya volumes under one ISBN. Merging on
   an apiRef alone destroys data.
+- **A work is the API's copy and a person's name for it lives on their
+  entry.** `docs/works_and_entries.md` is the record: why the split exists,
+  what keeps user text out of a work today, and the failure when a row is
+  stored the other way round — the title guard refuses every refresh and the
+  work is frozen silently, which is where #381's 93 came from.
 - **A stored `duration` of `0` is not a duration.** It renders as `-` exactly
   as a missing one does, and since #318 `isEmptyValue` says so, so the audit
   reports it missing, `hasGaps` picks the work up and a `missingOnly` merge

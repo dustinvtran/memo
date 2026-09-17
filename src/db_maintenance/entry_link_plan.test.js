@@ -6,6 +6,8 @@ const {
   linkUpdate,
   nameAfter,
   overrideIsRedundant,
+  workTitleRefusalReason,
+  workTitleUpdate,
 } = require("./entry_link_plan");
 
 const games = { type: "games", retrievePrefix: "igdb" };
@@ -206,3 +208,154 @@ test("a season name is not redundant, which is the point of having it", () => {
 test("an entry with no override of its own has nothing to be redundant", () => {
   assert.equal(overrideIsRedundant({}, { englishTranslatedTitle: "Nioh" }), false);
 });
+
+// --- giving a work back the API's own title ---
+
+const why = (args) => workTitleRefusalReason(args);
+const named = (title, apiRefs = ["tmdb__1"]) => ({ _id: "w1", englishTranslatedTitle: title, apiRefs });
+
+/**
+ * #381. `Ozark: Season 4` under Ozark's id is not damaged — it is named by its
+ * owner rather than by TMDB — but the title guard freezes it, so it has not
+ * refreshed since it was stored. The repair is to let the work be the API's
+ * copy and put the owner's name on the entry.
+ */
+test("the API's own title is allowed when the entry keeps the owner's name", () => {
+  assert.equal(
+    why({
+      work: named("Ozark: Season 4"),
+      workTitle: "Ozark",
+      entryTitle: "Ozark: Season 4",
+      retrieved: { englishTranslatedTitle: "Ozark" },
+    }),
+    undefined
+  );
+});
+
+/** The dangerous half on its own: a refresh bought by losing the name. */
+test("renaming without giving the entry the name is refused", () => {
+  const reason = why({
+    work: named("Ozark: Season 4"),
+    workTitle: "Ozark",
+    retrieved: { englishTranslatedTitle: "Ozark" },
+  });
+  assert.match(reason, /written down nowhere/);
+  assert.match(reason, /entryTitle/);
+});
+
+/**
+ * The three-valued `entryTitle` again, and the distinction is the guard:
+ * absent means nobody considered the old name, empty means somebody did and
+ * said to drop it. `The Witcher` under The Witcher IV's id is the second —
+ * the id is right and the name is merely stale.
+ */
+test("an empty entryTitle is consent to drop the old name, not an oversight", () => {
+  assert.equal(
+    why({
+      work: named("The Witcher"),
+      workTitle: "The Witcher IV",
+      entryTitle: "",
+      retrieved: { englishTranslatedTitle: "The Witcher IV" },
+    }),
+    undefined
+  );
+});
+
+test("an absent entryTitle is refused, and says how to drop the name on purpose", () => {
+  const reason = why({
+    work: named("House M.D."),
+    workTitle: "House",
+    retrieved: { englishTranslatedTitle: "House" },
+  });
+  assert.match(reason, /written down nowhere/);
+  assert.match(reason, /pass "" to drop it/);
+});
+
+/** A work already called what the API calls it loses nothing by being told so. */
+test("a work whose title already matches needs no entryTitle", () => {
+  assert.equal(
+    why({
+      work: named("Ozark"),
+      workTitle: "Ozark",
+      retrieved: { englishTranslatedTitle: "Ozark" },
+    }),
+    undefined
+  );
+});
+
+/** The same evidence rule as retitleWorkTo: a guess is refused. */
+test("a workTitle that is not what the API answers with is refused", () => {
+  assert.match(
+    why({
+      work: named("Ozark: Season 4"),
+      workTitle: "Ozarks",
+      entryTitle: "Ozark: Season 4",
+      retrieved: { englishTranslatedTitle: "Ozark" },
+    }),
+    /is not what the API answers with/
+  );
+});
+
+test("an unchecked workTitle is refused rather than trusted", () => {
+  assert.match(
+    why({ work: named("A"), workTitle: "B", entryTitle: "A", retrieveError: "404" }),
+    /unchecked/
+  );
+  assert.match(why({ work: named("A"), workTitle: "B", entryTitle: "A" }), /unchecked/);
+});
+
+test("an empty workTitle is refused rather than blanking the work", () => {
+  assert.match(
+    why({ work: named("A"), workTitle: "  ", entryTitle: "A", retrieved: { englishTranslatedTitle: "B" } }),
+    /workTitle is empty/
+  );
+});
+
+/**
+ * The refresh is the entire point, so the work must stop looking checked.
+ * It has been frozen for as long as it has been named this way.
+ */
+test("the write takes the API's spelling and unfreezes the work", () => {
+  const { set, unset } = workTitleUpdate({ englishTranslatedTitle: "MINDHUNTER" });
+  assert.equal(set.englishTranslatedTitle, "MINDHUNTER");
+  assert.equal("metadataUpdatedDate" in unset, true);
+  // originalTitle is fill-only, and the refresh this unblocks is what fills it.
+  assert.equal("originalTitle" in set, false);
+});
+
+// --- the rule itself, asserted on the writes these functions produce ---
+
+/**
+ * `docs/works_and_entries.md`. A work is the database's copy of what an API
+ * says; what a person types lives on their entry. The two functions in this
+ * module are the only ones here that write, so between them they are where
+ * that rule is either kept or lost.
+ */
+test("linking an entry writes nothing that belongs to a work", () => {
+  const { set, unset } = linkUpdate({
+    entry: { _id: "e1", overrides: { englishTranslatedTitle: "Ozark: Season 4" } },
+    workId: "w1",
+    entryTitle: "Ozark: Season 4",
+  });
+  // A work's identity above all: renaming a row must never be able to
+  // re-point it at something else.
+  for (const field of ["apiRefs", "englishTranslatedTitle", "releaseYear", "duration", "genres", "metadataUpdatedDate"]) {
+    assert.equal(field in set, false, `${field} is a work's, and must not be in an entry write`);
+    assert.equal(field in unset, false, `${field} is a work's, and must not be unset on an entry`);
+  }
+  assert.equal(set.workRef, "w1");
+  assert.equal(set["overrides.englishTranslatedTitle"], "Ozark: Season 4");
+});
+
+/** And the other direction: the work write touches nothing of the entry's. */
+test("renaming a work writes nothing that belongs to an entry", () => {
+  const { set, unset } = workTitleUpdate({ englishTranslatedTitle: "Ozark", releaseYear: 2017 });
+  for (const field of ["overrides", "status", "score", "startedDate", "completedDate", "workRef", "userId"]) {
+    assert.equal(field in set, false, `${field} is an entry's, and must not be in a work write`);
+    assert.equal(field in unset, false, `${field} is an entry's, and must not be unset on a work`);
+  }
+  // A work's identity is not the title's to change either: `workTitle` moves a
+  // work back to the API's name for the id it already has, never to a new id.
+  assert.equal("apiRefs" in set, false);
+});
+
