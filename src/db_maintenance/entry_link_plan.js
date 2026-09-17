@@ -171,8 +171,74 @@ const overrideIsRedundant = (entry, work) => {
   return name !== null && titlesAgree({ englishTranslatedTitle: name }, work) !== false;
 };
 
+/**
+ * Why this work cannot be given the API's own title, or `undefined` if it can.
+ *
+ * **The rule this serves: a work is the database's copy of what an API says,
+ * and a person's own name for it belongs on their entry, where it overlays
+ * whatever the work later becomes.** Where that is not how a row is stored,
+ * the work is frozen — `mergeWork`'s title guard (#290) refuses a response
+ * whose title disagrees with the stored one, so a work called `Ozark: Season
+ * 4` under Ozark's id, or `House M.D.` under *House*'s, never refreshes again.
+ * 93 works are in that state and none of them is damaged; they are simply
+ * named by their owner rather than by TMDB. #381.
+ *
+ * Renaming the work is only half the repair and the dangerous half on its own,
+ * because the owner's name is then written down nowhere. So this never travels
+ * alone: the op carrying it also files the entry under `entryTitle`, and the
+ * two are one write.
+ *
+ * `workTitle` is checked against the retrieve for the same reason
+ * `retitleWorkTo` is in ../work_ref_repair.js — naming the API's own title is
+ * something you can only do having read it, and it is what tells "right id,
+ * my own name for it" from a genuinely misfiled id. A guess is refused.
+ *
+ * @type {(args: {
+ *   work: any, workTitle: string, entryTitle?: string,
+ *   retrieved?: any, retrieveError?: string,
+ * }) => string | undefined}
+ */
+const workTitleRefusalReason = ({ work, workTitle, entryTitle, retrieved, retrieveError }) => {
+  if (!work) return "no work to rename";
+  if (normalise(workTitle) === null) return "workTitle is empty — to leave the work's title alone, leave it out";
+
+  // The half-repair guard. Without a name on the entry the owner's title
+  // survives nowhere, and a refresh would be bought by losing it.
+  if (normalise(entryTitle) === null && displayTitle(work) !== workTitle) {
+    return `renaming this work to "${workTitle}" would leave "${displayTitle(work)}" written down nowhere — give the entry that name with entryTitle`;
+  }
+
+  if (retrieveError) return `the API would not answer, so "${workTitle}" is unchecked: ${retrieveError}`;
+  if (!retrieved) return `nothing answered, so "${workTitle}" is unchecked`;
+  if (titlesAgree({ englishTranslatedTitle: workTitle }, retrieved) === false) {
+    return `workTitle "${workTitle}" is not what the API answers with ("${displayTitle(retrieved)}") — give its own title, which is how this says you read it`;
+  }
+  return undefined;
+};
+
+/**
+ * What to write to the work, once `workTitleRefusalReason` has said nothing.
+ *
+ * `metadataUpdatedDate` is dropped so the next refresh treats the work as
+ * never checked — which is the whole point, since the work has been frozen by
+ * the title guard for as long as it has been named this way, and everything
+ * the API has learned about it since is still missing.
+ *
+ * The API's spelling rather than the one that was typed, exactly as
+ * `refUpdate` does it: the two agree by now, and the API's is what every later
+ * refresh compares against. `originalTitle` is left alone, because it is
+ * fill-only and the refresh this unblocks is what fills it.
+ * @type {(retrieved: any) => { set: object, unset: object }}
+ */
+const workTitleUpdate = (retrieved) => ({
+  set: { englishTranslatedTitle: displayTitle(retrieved) },
+  unset: { metadataUpdatedDate: "" },
+});
+
 module.exports = {
   linkRefusalReason,
+  workTitleRefusalReason,
+  workTitleUpdate,
   deleteRefusalReason,
   linkUpdate,
   nameAfter,

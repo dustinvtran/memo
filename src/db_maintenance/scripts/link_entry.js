@@ -46,6 +46,15 @@
  *       written down nowhere; that script says so and this is the answer.
  *       Run the two in that order — a work with no identity ref is refused.
  *
+ *   Any of the three above may also carry `"workTitle": "<the API's title>"`,
+ *   which renames the work to it and clears `metadataUpdatedDate` so that it
+ *   refreshes again. A work is the database's copy of what an API says and a
+ *   person's name for it belongs on their entry, overlaying whatever the work
+ *   later becomes; where a row is stored the other way round the title guard
+ *   freezes the work for good, which is 93 of them. It is refused without an
+ *   `entryTitle` to keep the owner's name, and checked against the retrieve
+ *   like every other claim here. #381.
+ *
  *   { "op": "delete", "type": "films", "entry": "<id>" | "work": "<id>" }
  *
  *       A duplicate row. The entry goes, its notes go with it, and the work
@@ -63,6 +72,7 @@ const {
   parseArgs,
   displayTitle,
   parseApiRef,
+  findApiRef,
   sleep,
 } = require("../work_collections");
 const { loadAdapter, describeError } = require("../load_adapter");
@@ -72,6 +82,8 @@ const {
   linkUpdate,
   nameAfter,
   overrideIsRedundant,
+  workTitleRefusalReason,
+  workTitleUpdate,
 } = require("../entry_link_plan");
 // The API's own parser for a work document. A work created here has to be
 // indistinguishable from one created through the site, and the only way to be
@@ -192,6 +204,11 @@ const runOne = async (db, op, apply) => {
     console.log(`      note: ${op.ref} also names ${others.map((other) => `${other._id} "${displayTitle(other)}"`).join(", ")}`);
   }
 
+  // Before the entry write, so a refused rename leaves the row exactly as it
+  // was rather than half-done.
+  const renamed = op.workTitle === undefined ? undefined : await adoptApiTitle(db, collection, work, op, apply);
+  if (renamed === false) return false;
+
   const { set, unset } = linkUpdate({ entry, workId: work._id, entryTitle: op.entryTitle });
   const filed = nameAfter(entry, op.entryTitle);
 
@@ -217,6 +234,58 @@ const runOne = async (db, op, apply) => {
   // would be a work with no entries and no id, which is what the audit calls
   // an orphan and what the last prune deleted 18 of.
   if (op.fromWork) await dropEmptyWork(db, collection, op.fromWork, entry._id, apply);
+  return true;
+};
+
+/**
+ * Gives the work the API's own title, so that it can refresh again.
+ *
+ * A work is the database's copy of what an API says, and a person's own name
+ * for it belongs on their entry, overlaying whatever the work later becomes.
+ * Where that is not how a row is stored, `mergeWork`'s title guard freezes the
+ * work for good: `Ozark: Season 4` under Ozark's id and `House M.D.` under
+ * *House*'s are not damaged, they are named by their owner, and neither has
+ * refreshed since. #381.
+ *
+ * Only ever alongside the `entryTitle` that keeps the owner's name — the plan
+ * module refuses the rename without it, because buying a refresh by losing the
+ * name somebody typed is not a repair.
+ *
+ * @type {(db: any, collection: any, work: any, op: object, apply: boolean) => Promise<boolean>}
+ */
+const adoptApiTitle = async (db, collection, work, op, apply) => {
+  const ref = findApiRef(work.apiRefs, collection.retrievePrefix);
+  let retrieved;
+  let retrieveError;
+  if (!ref) {
+    retrieveError = `it carries no ${collection.retrievePrefix}__ ref`;
+  } else {
+    await sleep(collection.defaultDelayMs);
+    const result = await loadAdapter(collection).retrieve(ref);
+    if (result.isErr()) retrieveError = describeError(result.error);
+    else retrieved = result.value;
+  }
+
+  const refusal = workTitleRefusalReason({
+    work,
+    workTitle: op.workTitle,
+    entryTitle: op.entryTitle,
+    retrieved,
+    retrieveError,
+  });
+  if (refusal) {
+    console.log(`  ! ${op.op} ${op.entry ?? op.fromWork}: refused — ${refusal}`);
+    return false;
+  }
+
+  const { set, unset } = workTitleUpdate(retrieved);
+  if (set.englishTranslatedTitle !== displayTitle(work)) {
+    console.log(`      work "${displayTitle(work)}" -> "${set.englishTranslatedTitle}", metadataUpdatedDate cleared so it refreshes`);
+    if (apply) await db.collection(collection.works).updateOne({ _id: work._id }, { $set: set, $unset: unset });
+    // So the lines below, and the entry's `filedAs`, describe the work as it
+    // will be rather than as it was.
+    work.englishTranslatedTitle = set.englishTranslatedTitle;
+  }
   return true;
 };
 
