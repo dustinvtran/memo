@@ -190,10 +190,35 @@ const retrieve = (ref) => ResultAsync.fromPromise(
   toError('retrieving a game')
 )
 
+/**
+ * Every name IGDB holds for a game, which `retrieve` already asks for and all
+ * but one of which it throws away: it keeps the one commented as the original
+ * title and drops the rest. Those are what tell a wrong id from a regional
+ * one — `igdb__426` answers "Final Fantasy III" because that is what Final
+ * Fantasy VI was called in the US, and `FF6` and `FFVI` are sitting right
+ * there in the record. #380.
+ *
+ * A separate call rather than a wider `retrieve`, because a work document is
+ * whatever a retrieve returns and this is read once by an audit.
+ * @type {(ref: string) => ResultAsync<string[], Error>}
+ */
+const alternativeTitles = (ref) => ResultAsync.fromPromise(
+  retrying(async () => {
+    const client = await igdbClient()
+    return client
+      .fields(['name', 'alternative_names.name'])
+      .where(`id = ${ref}`)
+      .request('/games')
+      .then(({ data }) => data[0])
+  }).then((game) => (game?.alternative_names ?? []).map((n) => n?.name).filter(Boolean)),
+  toError('reading the other names of a game')
+)
+
 /** @type Adapter */
 export {
   search,
-  retrieve
+  retrieve,
+  alternativeTitles
 }
 ///////////////////////////////////////////////////////////////////////////////
 

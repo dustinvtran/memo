@@ -21,11 +21,14 @@ const adapter = tmdbAdapter({
   search: (client, query) => client.search.movies({ query: { query } }),
   details: (client, movie_id) => client.movie.getDetails({ pathParameters: { movie_id } }),
   credits: (client, movie_id) => client.movie.getCredits({ pathParameters: { movie_id } }),
+  alternativeTitles: (client, movie_id) =>
+    client.movie.getAlternativeTitles({ pathParameters: { movie_id } }),
 })
 
-const { search, retrieve } = adapter
+const { search, retrieve, alternativeTitles } = adapter
 
 export {
   search,
-  retrieve
+  retrieve,
+  alternativeTitles
 }

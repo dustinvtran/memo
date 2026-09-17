@@ -52,6 +52,7 @@ const {
   findApiRef,
   displayTitle,
   titlesOf,
+  comparableTitle,
   comparableTitlesOf,
 } = require("./work_collections");
 const { describeWork } = require("./shared_ref_check");
@@ -80,6 +81,11 @@ const TITLE_MATCH_BUCKETS = [
     heading: "one title contains the other (either could be a different work)",
   },
   {
+    bucket: "alternate",
+    key: "titleRefAlternate",
+    heading: "a name the API also holds for it (a regional or alternative title)",
+  },
+  {
     bucket: "different",
     key: "titleRefDifferent",
     heading: "a different title entirely",
@@ -95,6 +101,9 @@ const TITLE_MATCH_BUCKETS = [
  *                   the set #327's normalisation recovered, which is why the
  *                   two spellings are compared rather than just the loose one.
  *   `"contained"` — one is a substring of the other.
+ *   `"alternate"` — not decided here. `reconsiderAgainstAlternates` below
+ *                   moves a `different` into it when the API turns out to hold
+ *                   the stored title under another of its names.
  *   `"different"` — neither.
  *   `undefined`   — one of the two carries no title, so nothing was compared.
  *                   Not a verdict, for the same reason `titlesAgree` answers
@@ -162,6 +171,7 @@ const resolveTitleMatch = ({ work, apiRef, ref }, fresh) => ({
  *   same: object[],
  *   spelling: object[],
  *   contained: object[],
+ *   alternate: object[],
  *   different: object[],
  *   unanswered: object[],
  *   uncompared: object[],
@@ -172,6 +182,7 @@ const classifyTitleMatches = (checks) => {
     same: [],
     spelling: [],
     contained: [],
+    alternate: [],
     different: [],
     unanswered: [],
     uncompared: [],
@@ -186,9 +197,67 @@ const classifyTitleMatches = (checks) => {
   return result;
 };
 
+/**
+ * A `different` verdict re-read against every other name the API holds.
+ *
+ * The comparison above has only the one title an API answers with, and an API
+ * answers with one name for a thing that has several. `igdb__426` says "Final
+ * Fantasy III", because that is what Final Fantasy VI was called in the US,
+ * and `FF6` and `FFVI` are in the same record; TMDB says "Harry Potter and the
+ * Philosopher's Stone" to a library that says "Sorcerer's Stone". Both read as
+ * a wrong id, and both cost a person the same investigation a real one does —
+ * which on 54 findings is the difference between a report that gets read and
+ * one that gets skimmed. #380.
+ *
+ * This is deliberately not `titlesAgree`, and so it does not loosen the guard
+ * in ./work_ref_repair.js. Quieting a report and permitting a write are
+ * different powers: `retitleWorkTo` exists so that a person says out loud
+ * which of "right id, my own name for it" and "wrong id" they are looking at,
+ * and matching an alternative name automatically would take that sentence
+ * away. Here it only moves a row to a quieter bucket.
+ *
+ * The work is passed alongside its check because a check carries one
+ * `displayTitle` and the comparison wants both of a work's titles, the same
+ * two `classifyTitleMatch` used to reach `different` in the first place.
+ *
+ * @type {(check: object, work: any, alternativeTitles: string[]) => object}
+ */
+const reconsiderAgainstAlternates = (check, work, alternativeTitles) => {
+  if (check?.verdict !== "different") return check;
+
+  const ours = comparableTitlesOf(work);
+  const names = (alternativeTitles ?? []).filter(
+    (title) => comparableTitle(title) !== ""
+  );
+  if (ours.length === 0 || names.length === 0) return check;
+
+  // An exact match under the same spelling rules the first comparison used.
+  // `igdb__426` answers "Final Fantasy III" and holds "Final Fantasy VI";
+  // `igdb__78` answers "Dragon Age II" and holds "Dragon Age 2".
+  const exact = names.find((title) => ours.includes(comparableTitle(title)));
+  if (exact !== undefined) {
+    return { ...check, verdict: "alternate", matchedAlternativeTitle: exact };
+  }
+
+  // Containment against one of the other names, which is weaker and lands in
+  // the bucket that already exists for weaker: `Crash Bandicoot 3: Warped`
+  // against IGDB's `Crash Bandicoot 3`, `Ratchet & Clank 2: Going Commando`
+  // against `Ratchet & Clank 2`. Both are the work, and neither is certain
+  // enough to quiet outright — containment is the shape a search-result
+  // mistake takes, which is why `classifyTitleMatch` keeps it as triage. The
+  // gain is only that the row stops claiming to be a different title entirely.
+  const near = names.find((title) =>
+    eitherContainsTheOther(ours, [comparableTitle(title)])
+  );
+  return near === undefined
+    ? check
+    : { ...check, verdict: "contained", matchedAlternativeTitle: near };
+};
+
 module.exports = {
   TITLE_MATCH_BUCKETS,
   classifyTitleMatch,
+  reconsiderAgainstAlternates,
   titleMatchTargets,
   resolveTitleMatch,
   classifyTitleMatches,

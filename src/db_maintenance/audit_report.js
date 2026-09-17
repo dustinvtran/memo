@@ -153,6 +153,18 @@ const FINDINGS = [
     label: (c) =>
       `${c.retrievePrefix}__ ref names the same title, spelled differently`,
   },
+  // A note for the same reason the line above is one, and it was a `problem`
+  // until #380: an API answers with one name for a thing that has several, so
+  // a regional release title read as a misfiled id. `igdb__426` answers
+  // "Final Fantasy III" — Final Fantasy VI's US name on the SNES — and holds
+  // "Final Fantasy VI" among its other names. Nothing is wrong with the work,
+  // and it refreshes.
+  {
+    key: "titleRefAlternate",
+    kind: "note",
+    label: (c) =>
+      `${c.retrievePrefix}__ ref names the work under another of its own names`,
+  },
   {
     key: "entriesWithoutWorkRef",
     kind: "note",
