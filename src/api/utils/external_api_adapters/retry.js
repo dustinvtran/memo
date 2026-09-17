@@ -29,6 +29,13 @@ const RETRYABLE_CODES = new Set([
   'EPIPE',
   'ETIMEDOUT',
   'ERR_NETWORK',
+  // Not a network failure: an answer that is `200` and holds nothing. Google
+  // Books does that to an ISBN lookup it will answer perfectly well a second
+  // later, and because it is a *successful* response nothing here used to see
+  // it — the adapter turned it straight into "no such volume". A 64-row
+  // backfill refused 37 rows that way, and all 35 chased afterwards resolved
+  // on the first retry. `EMPTY_LOOKUP` is how ./books/google.js says so.
+  'EMPTY_LOOKUP',
 ])
 
 /**
