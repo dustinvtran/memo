@@ -204,8 +204,15 @@ const workTitleRefusalReason = ({ work, workTitle, entryTitle, retrieved, retrie
 
   // The half-repair guard. Without a name on the entry the owner's title
   // survives nowhere, and a refresh would be bought by losing it.
-  if (normalise(entryTitle) === null && displayTitle(work) !== workTitle) {
-    return `renaming this work to "${workTitle}" would leave "${displayTitle(work)}" written down nowhere — give the entry that name with entryTitle`;
+  //
+  // `entryTitle` is three-valued here as everywhere else in this file, and the
+  // difference between two of those values is the whole guard: **absent** means
+  // nobody considered the old name, which is refused, while **empty** means
+  // somebody looked at it and said to drop it, which is theirs to say. A work
+  // filed as `The Witcher` under The Witcher IV's id is the case — the id is
+  // right, the name is simply stale, and there is nothing worth keeping.
+  if (entryTitle === undefined && displayTitle(work) !== workTitle) {
+    return `renaming this work to "${workTitle}" would leave "${displayTitle(work)}" written down nowhere — give the entry that name with entryTitle, or pass "" to drop it`;
   }
 
   if (retrieveError) return `the API would not answer, so "${workTitle}" is unchecked: ${retrieveError}`;

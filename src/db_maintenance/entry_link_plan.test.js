@@ -243,16 +243,32 @@ test("renaming without giving the entry the name is refused", () => {
   assert.match(reason, /entryTitle/);
 });
 
-test("an empty entryTitle is no entryTitle for this purpose", () => {
-  assert.match(
+/**
+ * The three-valued `entryTitle` again, and the distinction is the guard:
+ * absent means nobody considered the old name, empty means somebody did and
+ * said to drop it. `The Witcher` under The Witcher IV's id is the second —
+ * the id is right and the name is merely stale.
+ */
+test("an empty entryTitle is consent to drop the old name, not an oversight", () => {
+  assert.equal(
     why({
-      work: named("House M.D."),
-      workTitle: "House",
-      entryTitle: "   ",
-      retrieved: { englishTranslatedTitle: "House" },
+      work: named("The Witcher"),
+      workTitle: "The Witcher IV",
+      entryTitle: "",
+      retrieved: { englishTranslatedTitle: "The Witcher IV" },
     }),
-    /written down nowhere/
+    undefined
   );
+});
+
+test("an absent entryTitle is refused, and says how to drop the name on purpose", () => {
+  const reason = why({
+    work: named("House M.D."),
+    workTitle: "House",
+    retrieved: { englishTranslatedTitle: "House" },
+  });
+  assert.match(reason, /written down nowhere/);
+  assert.match(reason, /pass "" to drop it/);
 });
 
 /** A work already called what the API calls it loses nothing by being told so. */
