@@ -40,12 +40,12 @@ const formWith = (fields) => {
         : null,
   };
 
-  const { readForm, writeForm } = vm.runInContext(
+  const { readForm, writeForm, differencesFrom, takeFromWork } = vm.runInContext(
     `${source}\n;EntryFormIO`,
     vm.createContext({ document, Event: class {}, console })
   );
 
-  return { values, readForm, writeForm };
+  return { values, readForm, writeForm, differencesFrom, takeFromWork };
 };
 
 const filmForm = (overrides) =>
@@ -351,4 +351,133 @@ test("what a version is written into, the form reads back", () => {
   assert.equal(entry.completedDate, null);
   assert.equal(entry.progress, version.progress);
   assert.equal(entry.review, version.review);
+});
+
+/**
+ * The link panel's half of this file: an entry with no work carries its
+ * metadata in its own overrides, and attaching it to one means deciding which
+ * side to believe, field by field. #343.
+ *
+ * `plainly` is not decoration. Everything the script returns is built inside
+ * the vm context, so its arrays and objects have that realm's prototypes and
+ * `deepStrictEqual` refuses them however identical the contents — `actual:
+ * [ 'Scifi' ]`, `expected: [ 'Scifi' ]`, and a failing test.
+ */
+const plainly = (value) => JSON.parse(JSON.stringify(value));
+
+test("a field the work agrees with is not a difference", () => {
+  const { differencesFrom } = formWith({ title: "Dune", "release-year": "2021" });
+
+  assert.deepEqual(
+    plainly(differencesFrom({ englishTranslatedTitle: "Dune", releaseYear: 2021 }, "films")),
+    []
+  );
+});
+
+test("a field the work disagrees with carries both values", () => {
+  const { differencesFrom } = formWith({ title: "Dune Part 2", "release-year": "2024" });
+
+  assert.deepEqual(
+    plainly(differencesFrom({ englishTranslatedTitle: "Dune: Part Two", releaseYear: 2024 }, "films")),
+    [{ id: "title", key: "englishTranslatedTitle", label: "Title", mine: "Dune Part 2", theirs: "Dune: Part Two" }]
+  );
+});
+
+/** The same rule the rest of the file follows: a field not on this form is not a field. */
+test("a field this entry type does not have is never compared", () => {
+  const { differencesFrom } = formWith({ title: "Dune" });
+
+  const differences = differencesFrom(
+    { englishTranslatedTitle: "Dune", episodes: 10, platforms: ["PC"] },
+    "films"
+  );
+  assert.deepEqual(plainly(differences), []);
+});
+
+test("a list is compared as the text the form shows, not as an array", () => {
+  const { differencesFrom } = formWith({ genres: "Sci-Fi, Drama" });
+
+  assert.deepEqual(plainly(differencesFrom({ genres: ["Sci-Fi", "Drama"] }, "films")), []);
+  assert.equal(differencesFrom({ genres: ["Sci-Fi"] }, "films").length, 1);
+});
+
+/**
+ * The form shows a game's duration in hours and stores it in minutes. Comparing
+ * the two unconverted reports every game as disagreeing about its own playtime.
+ */
+test("a game's duration is compared in the hours the form shows", () => {
+  const { differencesFrom } = formWith({ duration: "8" });
+
+  assert.deepEqual(plainly(differencesFrom({ duration: 480 }, "games")), []);
+  assert.equal(differencesFrom({ duration: 480 }, "films").length, 1);
+});
+
+test("a value the work does not have shows as an empty one", () => {
+  const { differencesFrom } = formWith({ "original-title": "Дюна" });
+
+  assert.deepEqual(plainly(differencesFrom({}, "films")), [
+    { id: "original-title", key: "originalTitle", label: "Original title", mine: "Дюна", theirs: "" },
+  ]);
+});
+
+test("taking the work's value writes it into the named fields only", () => {
+  const { values, takeFromWork } = formWith({
+    title: "Dune Part 2",
+    "release-year": "2023",
+    genres: "Scifi",
+  });
+
+  takeFromWork(
+    { englishTranslatedTitle: "Dune: Part Two", releaseYear: 2024, genres: ["Sci-Fi", "Drama"] },
+    "films",
+    ["title", "genres"]
+  );
+
+  assert.equal(values.title, "Dune: Part Two");
+  assert.equal(values.genres, "Sci-Fi, Drama");
+  assert.equal(values["release-year"], "2023", "not named, so not touched");
+});
+
+/**
+ * The whole of "take the database's value": nothing deletes an override, the
+ * field simply stops being one because it now holds what the work holds.
+ */
+test("a field taken from the work stops being an override when the form is read", () => {
+  const { readForm, takeFromWork } = formWith({
+    title: "Dune Part 2",
+    genres: "Scifi",
+    status: "Completed",
+    "completed-date": "2024-03-01",
+    score: "9",
+    review: "",
+  });
+  const work = {
+    internalRef: "w1",
+    englishTranslatedTitle: "Dune: Part Two",
+    genres: ["Sci-Fi"],
+  };
+
+  takeFromWork(work, "films", ["title"]);
+  const entry = readForm({ commonMetadata: work, originalData: work }, "films");
+
+  assert.equal(entry.workRef, "w1");
+  assert.ok(!("englishTranslatedTitle" in entry.overrides), "taken from the work");
+  assert.deepEqual(plainly(entry.overrides.genres), ["Scifi"], "kept, so an override");
+});
+
+test("a game's duration taken from the work survives the round trip", () => {
+  const { readForm, takeFromWork } = formWith({
+    duration: "3",
+    status: "Completed",
+    "completed-date": "2024-03-01",
+    "started-date": "",
+    score: "9",
+    review: "",
+  });
+  const work = { internalRef: "w1", duration: 480 };
+
+  takeFromWork(work, "games", ["duration"]);
+  const entry = readForm({ commonMetadata: work, originalData: work }, "games");
+
+  assert.ok(!("duration" in entry.overrides), "480 minutes shown as 8 hours and read back as 480");
 });

@@ -7,21 +7,28 @@
  * back into it.
  */
 
-/** The user's overrides, by the id of the field that holds them. */
+/**
+ * The user's overrides, by the id of the field that holds them.
+ *
+ * `label` is for the link panel, which lists these fields outside the form
+ * they are drawn in. `ExternalFields` keeps its own labels because several of
+ * them say something this one cannot — a duration is in hours for a game and
+ * pages for a book, and the field says so.
+ */
 const OVERRIDE_FIELDS = [
-  { id: 'title', key: 'englishTranslatedTitle' },
-  { id: 'original-title', key: 'originalTitle' },
-  { id: 'release-year', key: 'releaseYear' },
-  { id: 'duration', key: 'duration' },
-  { id: 'image-url', key: 'imageUrl' },
-  { id: 'genres', key: 'genres', isList: true },
-  { id: 'directors', key: 'directors', isList: true },
-  { id: 'actors', key: 'actors', isList: true },
-  { id: 'authors', key: 'authors', isList: true },
-  { id: 'publishers', key: 'publishers', isList: true },
-  { id: 'platforms', key: 'platforms', isList: true },
-  { id: 'studios', key: 'studios', isList: true },
-  { id: 'episodes', key: 'episodes' },
+  { id: 'title', key: 'englishTranslatedTitle', label: 'Title' },
+  { id: 'original-title', key: 'originalTitle', label: 'Original title' },
+  { id: 'release-year', key: 'releaseYear', label: 'Release year' },
+  { id: 'duration', key: 'duration', label: 'Duration' },
+  { id: 'image-url', key: 'imageUrl', label: 'Image URL' },
+  { id: 'genres', key: 'genres', label: 'Genres', isList: true },
+  { id: 'directors', key: 'directors', label: 'Director(s)', isList: true },
+  { id: 'actors', key: 'actors', label: 'Actors', isList: true },
+  { id: 'authors', key: 'authors', label: 'Author(s)', isList: true },
+  { id: 'publishers', key: 'publishers', label: 'Publishers', isList: true },
+  { id: 'platforms', key: 'platforms', label: 'Platforms', isList: true },
+  { id: 'studios', key: 'studios', label: 'Studios', isList: true },
+  { id: 'episodes', key: 'episodes', label: 'Episodes' },
 ]
 
 /** @type {(data: any, type: string) => any} */
@@ -86,27 +93,89 @@ const writeForm = (snapshot, type, data) => {
     const fallback = data?.originalData?.[key] ?? data?.commonMetadata?.[key]
     const value = override ?? fallback
 
-    setValue(
-      id,
-      value == null
-        ? ''
-        : isList
-        ? [value].flat().join(', ')
-        : key === 'duration' && type === 'games'
-        ? String(value / 60)
-        : String(value)
-    )
+    setValue(id, asFieldText(value, { key, isList, type }))
   })
+}
+
+/**
+ * What this form holds that a work disagrees with, for the link panel.
+ *
+ * An entry with no work keeps its metadata in its own overrides, so linking it
+ * to one means deciding, field by field, which of the two to believe. That is
+ * a question rather than a merge: what was typed may be the better value — a
+ * season's name, a DLC's, an edition the database does not carry — or it may
+ * be the guess that is being replaced. Only the person who typed it knows.
+ *
+ * Compared as the text the form would show, because that is what the person is
+ * looking at: a game's duration is stored in minutes and shown in hours, and a
+ * list is stored as an array and shown comma-separated.
+ *
+ * @type {(work: any, type: string) => Array<{
+ *   id: string, key: string, label: string, mine: string, theirs: string,
+ * }>}
+ */
+const differencesFrom = (work, type) =>
+  OVERRIDE_FIELDS
+    .filter(({ id }) => document.getElementById(id))
+    .map(({ id, key, label, isList }) => ({
+      id,
+      key,
+      label,
+      mine: valueOf(id) ?? '',
+      theirs: asFieldText(work?.[key], { key, isList, type }),
+    }))
+    .filter(({ mine, theirs }) => mine.trim() !== theirs.trim())
+
+/**
+ * Writes the work's own values into the named fields, leaving every other
+ * field alone.
+ *
+ * This is the whole of "take the database's value". Nothing else has to
+ * happen, because an override is worked out by comparing the form against the
+ * work it is being saved against: a field holding the work's value stops being
+ * an override by arithmetic rather than by being deleted. `getOverrides` below
+ * is where that is decided, and it has not changed.
+ *
+ * @type {(work: any, type: string, ids: string[]) => void}
+ */
+const takeFromWork = (work, type, ids) => {
+  const wanted = new Set(ids)
+  OVERRIDE_FIELDS
+    .filter(({ id }) => wanted.has(id) && document.getElementById(id))
+    .forEach(({ id, key, isList }) => {
+      setValue(id, asFieldText(work?.[key], { key, isList, type }))
+    })
 }
 
 EntryFormIO = {
   readForm,
   writeForm,
+  differencesFrom,
+  takeFromWork,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 const { isArray } = Array
+
+/**
+ * A stored value as the form shows it: a list comma-separated, a game's
+ * duration in hours rather than the minutes it is stored in, and an absent
+ * value as an empty box.
+ *
+ * One function because two things need the same answer. `writeForm` puts a
+ * snapshot into the fields and `differencesFrom` asks whether a field already
+ * says what the work does, and a second copy of the hours conversion is how
+ * the panel would come to report a difference the form cannot show.
+ */
+const asFieldText = (value, { key, isList, type }) =>
+  value == null
+    ? ''
+    : isList
+    ? [value].flat().join(', ')
+    : key === 'duration' && type === 'games'
+    ? String(value / 60)
+    : String(value)
 
 /**
  * What a field holds, or `undefined` if this entry type has no such field — a

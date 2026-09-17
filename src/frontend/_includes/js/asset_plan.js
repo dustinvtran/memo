@@ -59,6 +59,10 @@ const BUNDLED_FILES = [
   "js/components/list/add_edit_entry/cover_column.js",
   "js/components/list/add_edit_entry/draft.js",
   "js/components/list/add_edit_entry/history.js",
+  // Above entry_form.js, which destructures `LinkToWork` when it loads.
+  // It reads `SearchResults` the other way round, at click time, because
+  // that file is below this one and the cycle has to break somewhere.
+  "js/components/list/add_edit_entry/link_to_work.js",
   "js/components/list/add_edit_entry/entry_form.js",
   "js/components/list/add_edit_entry/search_results.js",
   "js/components/list/add_edit_entry/add_entry_link.js",

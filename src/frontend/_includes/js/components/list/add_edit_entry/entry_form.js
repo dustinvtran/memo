@@ -5,20 +5,25 @@
 const { html, css, waitForEl } = Utils
 const { els, on } = Dom
 const { initComponent } = Components
-const { SubmitButton, DeleteButton, ExternalFields, PersonalFields, CoverColumn, DraftNotice, EntryHistory } = Components.List
+const { SubmitButton, DeleteButton, ExternalFields, PersonalFields, CoverColumn, DraftNotice, EntryHistory, LinkToWork } = Components.List
 
 const EntryForm = (type, data) => {
   const isEdit = data?.status ?? false
+  // An entry being edited that points at no work. Not a fault: an entry is
+  // written that way on purpose when the databases do not have the thing yet,
+  // and this is the offer to attach it once they do. #343.
+  const isUnlinked = isEdit && !data?.commonMetadata?.internalRef
   return initComponent({
     content: ({ include }) => html`
       ${isEdit ? include(DraftNotice(type, data)) : ''}
+      ${isUnlinked ? include(LinkToWork(type, data)) : ''}
       <div id="submit-button-add-entry-wrapper">
         ${include(SubmitButton(type, data, isEdit))}
         ${isEdit ? include(DeleteButton(type, data)) : ''}
       </div>
       <div id="add-entry-fields">
+        <div id="external-fields-slot">${include(ExternalFields(data ?? {}, type))}</div>
         ${include([
-          ExternalFields(data ?? {}, type),
           PersonalFields(data ?? {}, type),
           CoverColumn(data),
         ])}
