@@ -132,4 +132,78 @@ const refUpdate = (work, ref, retitleTo, replacesRef) => ({
   unset: { metadataUpdatedDate: "" },
 });
 
-module.exports = { refusalReason, refUpdate };
+/**
+ * Why this work's identity ref cannot be taken off, or `undefined` if it can.
+ *
+ * The third thing that can be wrong with a ref, after missing and wrong: the
+ * id was real and the API has since dropped it. #378 unlinked eight, and they
+ * were only believed after being asked twice — #375 is why, an empty answer
+ * there turned out to be a bad minute rather than a missing book.
+ *
+ * **The guard is the inverse of the one above: a ref that still answers is not
+ * dead, and stripping it loses a working link.** So a live ref is refused, and
+ * the refusal says which of the other two repairs it wanted. That covers the
+ * mistake this operation actually invites, which is unlinking the wrong row of
+ * a worklist and quietly cutting a good work loose.
+ *
+ * `becauseItNames` is the way past it, for the one case that is neither: a ref
+ * that answers, names something else, and has no replacement to point at. It
+ * is evidence in the same sense as `retitleWorkTo` — the API's own title for
+ * the thing it is not, which you can only write having read it.
+ *
+ * @type {(args: {
+ *   collection: any, work: any, unlinkRef: string, becauseItNames?: string,
+ *   retrieved?: any, retrieveError?: string,
+ * }) => string | undefined}
+ */
+const unlinkRefusalReason = ({ collection, work, unlinkRef, becauseItNames, retrieved, retrieveError }) => {
+  if (!work) return "no work with that id";
+
+  const parsed = parseApiRef(unlinkRef);
+  if (!parsed) {
+    return `"${unlinkRef}" is not a usable ref — it must read <prefix>__<id>`;
+  }
+  if (parsed.name !== collection.retrievePrefix) {
+    // Deliberately narrow. A work's `hltb__` and legacy refs are a record of
+    // where it has been and identify nothing that could go stale; this is for
+    // the one ref the collection retrieves by.
+    return `this takes off the ${collection.retrievePrefix}__ ref a ${collection.type} work is retrieved by, not ${parsed.name}__`;
+  }
+  if (!(Array.isArray(work.apiRefs) ? work.apiRefs : []).includes(unlinkRef)) {
+    return `this work does not carry ${unlinkRef}`;
+  }
+
+  // The dead case, and the only one that needs no argument: nothing answered.
+  if (retrieveError) return undefined;
+  if (!retrieved) return undefined;
+
+  if (titlesAgree(work, retrieved) !== false) {
+    return `${unlinkRef} still answers, and names "${displayTitle(retrieved)}" — that is this work, and unlinking it would throw away a working id`;
+  }
+  if (!becauseItNames) {
+    return (
+      `${unlinkRef} still answers, with "${displayTitle(retrieved)}" rather than "${displayTitle(work)}" — ` +
+      `that is a wrong id, not a dead one, so give the right one with replacesRef, or name what it answers with to strip it anyway`
+    );
+  }
+  if (titlesAgree({ englishTranslatedTitle: becauseItNames }, retrieved) === false) {
+    return `becauseItNames "${becauseItNames}" is not what ${unlinkRef} answers with ("${displayTitle(retrieved)}") — give the API's own title, which is how this says you read it`;
+  }
+  return undefined;
+};
+
+/**
+ * What to write, once `unlinkRefusalReason` has said nothing.
+ *
+ * `metadataUpdatedDate` is left exactly as it is, which is the opposite of
+ * `refUpdate` and for the same reason: it is dropped there so the next refresh
+ * fills what the new ref can answer, and there is nothing here for a refresh
+ * to ask. Clearing it would only make the backfill pick the work up and put it
+ * down again every time it runs.
+ * @type {(work: any, unlinkRef: string) => { set: object }}
+ */
+const unlinkUpdate = (work, unlinkRef) => ({
+  set: { apiRefs: (Array.isArray(work.apiRefs) ? work.apiRefs : []).filter((r) => r !== unlinkRef) },
+});
+
+module.exports = { refusalReason, refUpdate, unlinkRefusalReason, unlinkUpdate };

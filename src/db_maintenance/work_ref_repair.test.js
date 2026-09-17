@@ -6,7 +6,7 @@
  */
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { refusalReason, refUpdate } = require("./work_ref_repair");
+const { refusalReason, refUpdate, unlinkRefusalReason, unlinkUpdate } = require("./work_ref_repair");
 
 const games = { type: "games", retrievePrefix: "igdb" };
 const books = { type: "books", retrievePrefix: "ISBN" };
@@ -255,5 +255,97 @@ test("the replaced ref is dropped, and everything else is kept", () => {
 test("without a replacesRef the write still only appends", () => {
   const { set } = refUpdate(work("A", ["hltb__5"]), "igdb__11346", undefined, undefined);
   assert.deepEqual(set.apiRefs, ["hltb__5", "igdb__11346"]);
+});
+
+// --- taking a ref off ---
+
+const whyNot = (args) => unlinkRefusalReason({ collection: games, ...args });
+
+/**
+ * #378's eight: ids that were real and that the API has since dropped. They
+ * were asked twice before being believed, because #375 had just established
+ * that one empty answer proves nothing.
+ */
+test("a ref nothing will answer for can be taken off", () => {
+  assert.equal(
+    whyNot({ work: work("Metal Slug", ["igdb__100053", "hltb__5928"]), unlinkRef: "igdb__100053", retrieveError: "404 not found" }),
+    undefined
+  );
+});
+
+/** The mistake this operation invites: unlinking the wrong row of a worklist. */
+test("a ref that still names this work is refused", () => {
+  assert.match(
+    whyNot({
+      work: work("Her Story", ["igdb__11346"]),
+      unlinkRef: "igdb__11346",
+      retrieved: { englishTranslatedTitle: "Her Story" },
+    }),
+    /still answers.*that is this work/s
+  );
+});
+
+test("a ref that answers with something else is sent to replacesRef", () => {
+  const reason = whyNot({
+    work: work("Until Dawn", ["igdb__466"]),
+    unlinkRef: "igdb__466",
+    retrieved: { englishTranslatedTitle: "Warhammer 40,000: Dawn of War II" },
+  });
+  assert.match(reason, /wrong id, not a dead one/);
+  assert.match(reason, /replacesRef/);
+});
+
+/** For the one case that is neither dead nor replaceable: no right id exists. */
+test("naming what a live ref answers with strips it anyway", () => {
+  assert.equal(
+    whyNot({
+      work: work("Until Dawn", ["igdb__466"]),
+      unlinkRef: "igdb__466",
+      becauseItNames: "Warhammer 40,000: Dawn of War II",
+      retrieved: { englishTranslatedTitle: "Warhammer 40,000: Dawn of War II" },
+    }),
+    undefined
+  );
+});
+
+test("a becauseItNames that is not what the ref answers with is refused", () => {
+  assert.match(
+    whyNot({
+      work: work("Until Dawn", ["igdb__466"]),
+      unlinkRef: "igdb__466",
+      becauseItNames: "Something Else Entirely",
+      retrieved: { englishTranslatedTitle: "Warhammer 40,000: Dawn of War II" },
+    }),
+    /is not what igdb__466 answers with/
+  );
+});
+
+test("a ref the work does not carry is refused", () => {
+  assert.match(
+    whyNot({ work: work("A", ["igdb__1"]), unlinkRef: "igdb__2", retrieveError: "404" }),
+    /does not carry igdb__2/
+  );
+});
+
+/** Narrow on purpose: a placeholder identifies nothing and cannot go stale. */
+test("only the ref the collection retrieves by can be taken off", () => {
+  assert.match(
+    whyNot({ work: work("A", ["hltb__5"]), unlinkRef: "hltb__5", retrieveError: "404" }),
+    /not hltb__/
+  );
+});
+
+test("the write drops only that ref, and leaves the rest alone", () => {
+  const { set } = unlinkUpdate(work("A", ["igdb__100053", "hltb__5928"]), "igdb__100053");
+  assert.deepEqual(set.apiRefs, ["hltb__5928"]);
+});
+
+/**
+ * The opposite of `refUpdate`, which drops it so the next refresh fills what
+ * the new ref answers. There is nothing here for a refresh to ask.
+ */
+test("an unlink leaves metadataUpdatedDate alone", () => {
+  assert.equal("unset" in unlinkUpdate(work("A", ["igdb__1"]), "igdb__1"), false);
+  assert.equal("metadataUpdatedDate" in unlinkUpdate(work("A", ["igdb__1"]), "igdb__1").set, false);
 });
 
