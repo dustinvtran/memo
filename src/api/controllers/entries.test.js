@@ -192,6 +192,12 @@ const call = async (route, method, url, { as, body } = {}) => {
 const seed = () => {
   broken = null
   store.users = [{ _id: 'u1', userId: 'u1', username: 'nil' }]
+  // The works the entries below point at. These used to be missing, and every
+  // entry in here referenced a `w1` that did not exist — a shape production
+  // has none of, and one the save path now refuses, because a `workRef`
+  // naming nothing is a dangling reference. `releaseYear` is old enough to sit
+  // under every date these tests use.
+  store.films = [{ _id: 'w1', englishTranslatedTitle: 'A Film', releaseYear: 1970 }]
   store.filmEntries = []
   store.filmReviews = []
   store.entryRevisions = []
