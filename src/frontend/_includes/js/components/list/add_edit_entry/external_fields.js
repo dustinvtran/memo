@@ -3,7 +3,25 @@ const { initComponent } = Components
 const { TextInput } = Components.UI
 const { isArray } = Array
 
-const ExternalFields = ({ commonMetadata: data, overrides }, type) => {
+/**
+ * `baseline` is the work as the API gave it, and the whole reason the override
+ * hint works at all.
+ *
+ * `commonMetadata` on a list row has the overrides folded into it — `list.js`
+ * builds it that way so the table can render one value per column — so
+ * comparing an override against it compares it against itself, every field
+ * looks unchanged, and **the hint never appeared on the edit form at all.**
+ * `originalData` is the untouched copy that `list.js` keeps beside it.
+ *
+ * Asked with `in` rather than `??`, for the same reason `baselineMetadata` in
+ * utils/entry_form_io.js is: an entry with no work sets `originalData` to
+ * `undefined` while its `commonMetadata` is built out of its own overrides, so
+ * falling through would compare every override against itself and report a
+ * work that is not there. It is the #317 mistake in a second place.
+ */
+const ExternalFields = (row, type) => {
+  const { commonMetadata, overrides } = row ?? {}
+  const data = row && 'originalData' in row ? row.originalData : commonMetadata
   const Input = (label, id, prop, transformer, type) => {
     const propName = prop ?? id
     const joinIfArray = x => isArray(x) ? x.join(', ') : x
