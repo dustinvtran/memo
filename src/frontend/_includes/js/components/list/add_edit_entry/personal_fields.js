@@ -93,13 +93,7 @@ const PersonalFields = (data, type) => {
             data-toggle="datepicker"
             id="completed-date"
             autocomplete="off"
-            value=${
-              data.completedDate
-                ? timestampToString(data.completedDate)
-                : type === 'films'
-                ? today()
-                : ''
-            }
+            value=${completedDateValue(data, type)}
           >
         </div>
         ${include(
@@ -270,3 +264,31 @@ const today = () => {
 
 const timestampToString = (ts) =>
   (new Date(ts)).toISOString().substring(0, 10)
+
+/**
+ * What the completed date field starts with.
+ *
+ * A film is usually watched the day it is added, so the field is prefilled
+ * with today — **except on a Planned one**, which has not been watched at all.
+ * The container for a Planned film is hidden, so the date was invisible and
+ * the form submitted it anyway: `readForm` reads the field's value, not
+ * whether anybody can see it.
+ *
+ * That put a completed date on watchlist films for years, and once #359 began
+ * refusing the state it stopped being bad data and became a wall — a Planned
+ * film could not be saved at all, and the field to clear was not on screen.
+ *
+ * A new entry has no status yet and still gets today, which is the case the
+ * default was written for.
+ * @type {(data: any, type: string) => string}
+ */
+const completedDateValue = (data, type) =>
+  data?.completedDate
+    ? timestampToString(data.completedDate)
+    : type === 'films' && data?.status !== 'Planned'
+    ? today()
+    : ''
+
+// Down here rather than beside PersonalFields above: it is a `const`, and
+// the assignment up there would run before this file reaches the declaration.
+Components.List.completedDateValue = completedDateValue

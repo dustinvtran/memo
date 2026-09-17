@@ -177,3 +177,57 @@ test("a script that never arrives leaves the fields alone and settles", async ()
   assert.equal(state.constructed.length, 0);
   assert.equal(state.errors.length, 1);
 });
+
+/**
+ * The completed date field's starting value, which had a Planned film carrying
+ * today's date in a container nobody can see. `readForm` reads the value and
+ * not the visibility, so every watchlist film submitted one — and once #359
+ * started refusing that state, none of them could be saved at all.
+ */
+const completedDateValue = () => {
+  const context = vm.createContext({
+    Utils: { html: () => "", css: () => "" },
+    Dom: { el: () => {}, on: () => {}, show: () => {}, hide: () => {} },
+    Components: { initComponent: () => {}, WithRemoteData: () => {}, List: {} },
+    Tables: { statuses: [], filmStatuses: [] },
+    Conversions: { statusToTitle: () => "" },
+    ReviewTemplate: { initialReviewText: () => "" },
+    LoadScript: { loadLitepicker: () => new Promise(() => {}) },
+    console,
+    Date,
+  });
+  return vm.runInContext(`${source}
+;Components.List.completedDateValue`, context);
+};
+
+/** The same local date `today()` in the file builds, not the UTC one. */
+const todayString = () => {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+};
+
+test("a Planned film does not arrive carrying today's date", () => {
+  assert.equal(completedDateValue()({ status: "Planned" }, "films"), "");
+});
+
+test("a film that has been watched still defaults to today", () => {
+  assert.equal(completedDateValue()({ status: "Completed" }, "films"), todayString());
+  assert.equal(completedDateValue()({ status: "Dropped" }, "films"), todayString());
+});
+
+/** The add flow has no status yet, and is the case the default was written for. */
+test("a brand new film still defaults to today", () => {
+  assert.equal(completedDateValue()({}, "films"), todayString());
+  assert.equal(completedDateValue()(undefined, "films"), todayString());
+});
+
+test("only films default at all", () => {
+  assert.equal(completedDateValue()({ status: "Completed" }, "games"), "");
+  assert.equal(completedDateValue()({ status: "Planned" }, "tv"), "");
+});
+
+test("a date already on the entry wins over every default", () => {
+  const stored = Date.parse("2024-03-01");
+  assert.equal(completedDateValue()({ status: "Planned", completedDate: stored }, "films"), "2024-03-01");
+});
