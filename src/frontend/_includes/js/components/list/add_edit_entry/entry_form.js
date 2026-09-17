@@ -12,7 +12,13 @@ const EntryForm = (type, data) => {
   // An entry being edited that points at no work. Not a fault: an entry is
   // written that way on purpose when the databases do not have the thing yet,
   // and this is the offer to attach it once they do. #343.
-  const isUnlinked = isEdit && !data?.commonMetadata?.internalRef
+  //
+  // Asked of the **entry**, not of the work joined onto it. `internalRef` is
+  // set only by the works retrieve and create endpoints; the list endpoint
+  // returns `commonMetadata: work`, the work document itself, whose id is
+  // `_id`. Reading `internalRef` here therefore found nothing on every row and
+  // offered to link entries that were already linked.
+  const isUnlinked = isEdit && !data?.workRef
   return initComponent({
     content: ({ include }) => html`
       ${isEdit ? include(DraftNotice(type, data)) : ''}
