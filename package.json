@@ -32,7 +32,7 @@
     "ts-pattern": "^5.9.0",
     "uglify-js": "^3.19.3",
     "validator": "^13.15.35",
-    "zod": "^4.5.4"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "netlify-cli": "^27.5.1"
