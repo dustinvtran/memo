@@ -36,6 +36,13 @@ import { LIST_TYPES, toExportUrls, toExportList, toExportDocument, toExportIndex
  * What #334 changed instead is which response the advertised url gives: the
  * one that recomputed all four lists is now an index, so the body this
  * ceiling governs is only ever one a caller asked for by name.
+ *
+ * It is exported for one reader outside this file:
+ * `src/db_maintenance/scripts/check_export_size.js`, which weighs the bodies
+ * this governs against it on a schedule, so that the line is approached in a
+ * report rather than crossed in production. Exported rather than copied
+ * because a copy of a ceiling is a second ceiling, and the one that would
+ * drift is the one nobody enforces. #422.
  */
 const MAX_BODY_BYTES = 5 * 1024 * 1024
 
@@ -191,6 +198,7 @@ const preflight = () => ({
 })
 
 export {
+  MAX_BODY_BYTES,
   exportUserLists,
   preflight,
 }
