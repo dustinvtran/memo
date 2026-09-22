@@ -26,7 +26,13 @@
  * Pure and dependency-free: the retrieve lives in scripts/set_work_ref.js and
  * the verdict lives here, so the decision is covered by the no-install suite.
  */
-const { parseApiRef, findApiRef, titlesAgree, displayTitle } = require("./work_collections");
+const {
+  parseApiRef,
+  findApiRef,
+  titlesAgree,
+  displayTitle,
+  comparableTitle,
+} = require("./work_collections");
 
 /** A worklist field that was left blank is absent, not an empty claim. */
 const filledIn = (value) =>
@@ -206,7 +212,70 @@ const refusalReason = ({ collection, work, ref, retitleWorkTo, replacesRef, retr
  * this repair exists to stop pointing at.
  * @type {(work: any, ref: string, retitleTo?: string, replacesRef?: string) => { set: object, unset: object }}
  */
-const refUpdate = (work, ref, retitleTo, replacesRef) => ({
+/**
+ * The fields a refresh will **not** replace on its own, so that one left in
+ * place after a repoint keeps describing the work the old ref named.
+ *
+ * Two mechanisms, one consequence. A `fillOnlyFields` field is written when
+ * absent and never replaced — books carry `releaseYear` and `duration` there
+ * because an ISBN names an edition rather than a book (#333). And a games
+ * `duration` is only ever refreshed by the source that wrote it, since an IGDB
+ * median and a HowLongToBeat one are medians over very different samples; the
+ * `durationSource` that records which travels with it.
+ *
+ * Both rules assume the stored value is about the same work. After a repoint it
+ * is not, and ../../CLAUDE.md says so: two games repointed in 2026-09 kept
+ * playtimes from the wrong game through the next refresh, which reported
+ * `kept the stored duration 780 (source unrecorded); igdb offered 1115` and
+ * said nothing else about it.
+ *
+ * The title fields are deliberately **not** here even though they are
+ * fill-only. Clearing a title leaves the work untitled until a refresh lands,
+ * and a rename is what `retitleWorkTo` is for — evidence about the new id,
+ * given by a person who read it.
+ * @type {(collection: any) => string[]}
+ */
+const staleAfterRepoint = (collection) => [
+  ...new Set([
+    ...(collection?.fillOnlyFields ?? []),
+    ...(collection?.type === "games" ? ["duration", "durationSource"] : []),
+  ]),
+];
+
+/**
+ * Whether a retitle is widening the work rather than correcting its spelling.
+ *
+ * ../../CLAUDE.md: "Widening a work is the same event without a repoint." A
+ * work that had no identity ref, retitled from a part to the whole as one is
+ * given to it — `Resident Evil 4: Assignment Ada` becoming `Resident Evil 4`,
+ * `Spyro Reignited Trilogy: Spyro 2` becoming the trilogy — keeps a playtime
+ * measured for the part. One hour for Resident Evil 4, nine for a twenty-five
+ * hour trilogy. The ref never changed, so the repoint rule does not fire; the
+ * work it describes changed anyway.
+ *
+ * The test is containment, which is the same one `warnIfNameVanishes` uses in
+ * scripts/set_work_ref.js: the stored title being the new one plus something is
+ * a part becoming a whole, while `McCabe & Mrs. McMiller` against `McCabe &
+ * Mrs. Miller` contains nothing of it and is a misspelling being fixed.
+ * @type {(work: any, retitleTo?: string) => boolean}
+ */
+const isWidening = (work, retitleTo) => {
+  if (!retitleTo) return false;
+  const was = comparableTitle(displayTitle(work));
+  const now = comparableTitle(retitleTo);
+  return Boolean(was && now && was !== now && was.includes(now));
+};
+
+const refUpdate = (work, ref, retitleTo, replacesRef, collection) => {
+  // A field only needs clearing if it is there; listing an absent one would
+  // make a dry run claim to be dropping a value the work does not have.
+  const cleared =
+    replacesRef || isWidening(work, retitleTo)
+      ? staleAfterRepoint(collection).filter((f) => work?.[f] !== undefined)
+      : [];
+
+  return {
+  cleared,
   set: {
     apiRefs: [
       ...(Array.isArray(work.apiRefs) ? work.apiRefs : []).filter((r) => r !== replacesRef),
@@ -220,8 +289,12 @@ const refUpdate = (work, ref, retitleTo, replacesRef) => ({
     // one to get a playtime is a trade this folder has already made once.
     ...(retitleTo ? { englishTranslatedTitle: retitleTo } : {}),
   },
-  unset: { metadataUpdatedDate: "" },
-});
+  unset: {
+    metadataUpdatedDate: "",
+    ...Object.fromEntries(cleared.map((field) => [field, ""])),
+  },
+  };
+};
 
 /**
  * Why this work's identity ref cannot be taken off, or `undefined` if it can.
@@ -302,6 +375,8 @@ module.exports = {
   chooseRef,
   refusalReason,
   refUpdate,
+  staleAfterRepoint,
+  isWidening,
   unlinkRefusalReason,
   unlinkUpdate,
 };
