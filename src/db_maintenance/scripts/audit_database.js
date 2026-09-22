@@ -40,6 +40,14 @@
  * it is how anyone sees that the scheduled refresh (#3, #333) is still
  * running. ../metadata_refresh_plan.js, and `printFreshness` below.
  *
+ * The three `empty override list` lines are the one finding here that is about
+ * an *entry* rather than about a work or a process, and the only one that
+ * needs both collections to decide: an override of `[""]` beats the work it
+ * overlays, so the row renders empty while the database holds the answer.
+ * ../blank_override_check.js, and #395. Reporting is all this does with them
+ * — clearing the keys is a write to `*Entries`, which CLAUDE.md reserves, and
+ * this script never writes and takes no `--apply`.
+ *
  * Usage:
  *   node scripts/audit_database.js
  *   node scripts/audit_database.js --only=games,books
@@ -85,6 +93,7 @@ const {
   classifyTitleMatches,
 } = require("../title_match_check");
 const { implausibleDuration } = require("../duration_plausibility");
+const { classifyBlankOverrides } = require("../blank_override_check");
 const {
   DEFAULT_MAX_AGE_DAYS,
   DAY_MS,
@@ -262,6 +271,12 @@ const auditCollection = async (db, collection) => {
     .filter((e) => e.workRef && !workIds.has(e.workRef))
     .map((e) => ({ id: e._id, userId: e.userId, workRef: e.workRef }));
 
+  // The third way a row can render empty, and the one the two lines above
+  // cannot see: the entry points at a work that is right there and holds the
+  // answer, and an override of `[""]` wins over it. ../blank_override_check.js
+  // and #395.
+  const blankOverrides = classifyBlankOverrides(entries, works);
+
   // A review is only ever found by `entryRef`, so one whose entry is gone is
   // unreachable rather than deleted. The text is a user's private note and
   // stays out of the report; its length is enough to size what is left behind.
@@ -303,6 +318,11 @@ const auditCollection = async (db, collection) => {
     orphanWorks,
     entriesWithoutWorkRef,
     entriesWithDanglingWorkRef,
+    blankOverridesMasking: blankOverrides.masking,
+    blankOverridesHarmless: blankOverrides.harmless,
+    blankOverridesUndecided: blankOverrides.undecided,
+    blankOverridesByField: blankOverrides.byField,
+    blankOverridesBlocked: blankOverrides.blocked ?? null,
     orphanReviews,
     metadataFreshness: summarizeFreshness(works, {
       maxAgeMs: maxAgeDays * DAY_MS,
@@ -348,6 +368,7 @@ const printSummary = (collection, result) => {
   }
 
   printFreshness(result.metadataFreshness);
+  printBlankOverrides(result);
 
   for (const finding of result.implausibleDurations) {
     console.log(`  e.g. impossible duration: ${finding.title}: ${finding.reason}`);
@@ -394,6 +415,65 @@ const printFreshness = (freshness) => {
 };
 
 const asDate = (at) => (at === null ? "—" : new Date(at).toISOString().slice(0, 10));
+
+/**
+ * Which fields the empty override lists sit on, and a few of the rows they
+ * are hiding something behind.
+ *
+ * **By field, because a field is a column and a column is what looks wrong.**
+ * The three counts in the summary above are rows — 272 of them across the
+ * site on 2026-09-21 — and a row is what a reader sees; but `tv directors
+ * 161` is what says where to look, and it is the number that falls as the
+ * form's already-shipped fix catches up with the backlog: it was 538 when
+ * `asOverride` was corrected. The two disagree by design: an entry with an
+ * empty `genres` and an empty `directors` is one damaged row and two keys.
+ *
+ * `blocked` is printed first and loudly. Every count here is zero on a
+ * blocked run, and a zero in the masking line is exactly what a clean
+ * database looks like.
+ */
+const printBlankOverrides = (result) => {
+  if (result.blankOverridesBlocked) {
+    console.log(`  !! empty override check blocked: ${result.blankOverridesBlocked}`);
+    return;
+  }
+
+  const byField = Object.entries(result.blankOverridesByField ?? {}).sort(
+    ([, a], [, b]) => totalKeys(b) - totalKeys(a)
+  );
+  if (byField.length === 0) return;
+
+  console.log("  empty override lists, by field (keys, not rows):");
+  for (const [field, counts] of byField) {
+    const detail = [
+      ...(counts.masking === 0
+        ? []
+        : [`${counts.masking} hiding the work's value`]),
+      ...(counts.undecided === 0
+        ? []
+        : [`${counts.undecided} with no work to compare`]),
+    ];
+    console.log(
+      `    - ${field}: ${totalKeys(counts)}, ` +
+        (detail.length === 0 ? "none hiding a value" : detail.join(", "))
+    );
+  }
+
+  const examples = (result.blankOverridesMasking ?? []).slice(0, 5);
+  if (examples.length === 0) return;
+
+  console.log("  e.g. hidden by an empty override:");
+  for (const found of examples) {
+    for (const hidden of found.fields.filter((f) => f.masks)) {
+      console.log(
+        `    - ${found.id}: ${hidden.field} ${JSON.stringify(hidden.stored)} ` +
+          `over ${JSON.stringify(hidden.workValue)}`
+      );
+    }
+  }
+};
+
+const totalKeys = (counts) => counts.masking + counts.harmless + counts.undecided;
 
 /**
  * The collision groups in full, and what the API said about each — every one

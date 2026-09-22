@@ -51,6 +51,25 @@ const FINDINGS = [
     kind: "problem",
     label: () => "entries whose workRef names a work that is gone",
   },
+  // Second, because it is the other way a row renders empty while the
+  // database holds the answer — and the only one of the two nothing here
+  // could see until #395. Both counts are problems, and the difference
+  // between them is what a reader can act on: the first is damage on the
+  // public site today, the second is a stored blank that starts masking the
+  // moment the scheduled refresh fills the field on the work. Neither is a
+  // note: a note is something no script should be written to make go away,
+  // and #395's second half is exactly that script. See
+  // ../blank_override_check.js.
+  {
+    key: "blankOverridesMasking",
+    kind: "problem",
+    label: () => "entries whose empty override list hides the work's value",
+  },
+  {
+    key: "blankOverridesHarmless",
+    kind: "problem",
+    label: () => "entries whose empty override list hides nothing yet",
+  },
   {
     key: "noApiRef",
     kind: "problem",
@@ -169,6 +188,17 @@ const FINDINGS = [
     key: "entriesWithoutWorkRef",
     kind: "note",
     label: () => "entries with no linked work (user-authored, expected)",
+  },
+  // The third of the empty-override counts, and a note because it is the one
+  // question this database cannot answer: with no readable work there is
+  // nothing the blank could be hiding, and for a hand-typed entry the
+  // overrides are not a layer over the metadata, they are the metadata. It is
+  // reported rather than folded into the harmless count so that a works read
+  // that came back thin cannot pass as a clean bill of health.
+  {
+    key: "blankOverridesUndecided",
+    kind: "note",
+    label: () => "entries with an empty override list and no work to compare",
   },
   {
     key: "expectedSharedRefs",
