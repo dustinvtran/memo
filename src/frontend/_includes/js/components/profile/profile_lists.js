@@ -52,7 +52,7 @@ const ProfileTable = (type, data) => initComponent({
     <div id="summary-${type}"></div>
   `,
   initializer: () => {
-    initProfileTable(typeToCssId(type), data)
+    initProfileTable(typeToCssId(type), type, data)
   }
 })
 
@@ -70,8 +70,10 @@ const ProfileTable = (type, data) => initComponent({
  * Hiding the header is what takes the sort away too, since a header is the only
  * thing a reader can click to ask for one.
  */
-const initProfileTable = (selector, data) => initTable(selector, data, {
+const initProfileTable = (selector, type, data) => initTable(selector, data, {
   showHeader: false,
+  // The heading above it, which is the type's name (#400).
+  label: typeToTitle[type],
   columns: profileColumns(),
 })
 

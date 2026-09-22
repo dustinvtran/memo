@@ -309,6 +309,10 @@ const initFullTable = (selector, data, entryType, isOwner, status) => {
     onExpandRow: includeReviewIn,
     ...searchSettings(),
     onSearch: (text) => onSearched(table, text),
+    // What the scroll region is called once it is focusable (#400). The same
+    // string as the heading the table sits under, so the four sublists on a
+    // page are told apart by the name a reader can already see.
+    label: statusToTitle(entryType, status),
     showColumns: true,
     sortName: 'score',
     sortOrder: 'desc',
