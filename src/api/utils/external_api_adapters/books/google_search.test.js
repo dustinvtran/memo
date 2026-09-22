@@ -16,7 +16,10 @@ const theNovel = aVolume({
   authors: ['Blake Crouch'],
   publishedDate: '2019-06-11',
   industryIdentifiers: isbns('9781524759797', '1524759791'),
-  imageLinks: { thumbnail: 'https://books.google.com/recursion.jpg' },
+  // `http://`, which is what Google Books really answers with. It read
+  // `https://` until #394, and so the row below could not have caught the
+  // scheme going into the database unrewritten.
+  imageLinks: { thumbnail: 'http://books.google.com/recursion.jpg' },
 })
 
 const theTextbook = aVolume({
@@ -107,6 +110,16 @@ test('a row is title, authors, year and cover', () => {
     ref: '9781524759797',
     imageUrl: 'https://books.google.com/recursion.jpg',
   })
+})
+
+test("a row's cover is served over TLS, whatever scheme Google offered", () => {
+  // The CSP allows any host over `https:` and none over `http:`, so a row that
+  // carried Google's own scheme through would be blocked. #394.
+  assert.equal(
+    toSearchResult(theNovel.volumeInfo).imageUrl,
+    'https://books.google.com/recursion.jpg',
+  )
+  assert.equal(toSearchResult(theTextbook.volumeInfo).imageUrl, undefined)
 })
 
 test('a volume Google has no ISBN for is not offered', () => {
