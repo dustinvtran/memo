@@ -1429,10 +1429,9 @@ The population `clear_noop_overrides.js` printed and could not touch.
 empty Wikipedia anchor and the work's own directors, actors or studios never
 reach the page. `Gilmore Girls: Season 1` has
 `directors: ["Amy Sherman-Palladino"]` on its work and shows no director at
-all, and the three `link-name` violations axe reports on the books list are
-blank `genres` rendering as anchors with no text — the ones #423 named and
-left, since naming a decorative glyph is a different repair from putting a
-work's own value back on the row. #395, and
+all. These are also the anchors with no accessible name that axe reports as
+`link-name`, which #423 named and left, since naming a decorative glyph is a
+different repair from putting a work's own value back on a row. #395, and
 [Empty override lists](#empty-override-lists) above is the audit's half of it,
 which shipped in #409.
 
@@ -1456,6 +1455,27 @@ authorised separately, not because the ones it holds back are fine. They are
 not: the moment the scheduled refresh fills the field on the work, a held-back
 blank starts masking it with nothing having written to the entry, and the run
 says so where it lists them.
+
+**Which unnamed links a run actually reaches, since #395's own comment gets
+this wrong.** That comment attributes the books list's unnamed links to blank
+`genres`. `genres` is not a books column at all — the type's `columns` in
+`../frontend/_includes/js/utils/conversions.js` draws Authors and not Genres,
+and the genre column is `visible: false` wherever it does appear. The two
+unnamed links on that page are blank `authors`, and **both sit on entries with
+no work, so this script skips them and the books list keeps them.** The
+accessibility win is on the lists whose linked column is visible by default
+and whose rows have a work underneath — tv and films Director, games Studios:
+
+| column | blank keys | a run clears | left (no work) |
+| --- | --- | --- | --- |
+| tv `directors` | 164 | 164 | 0 |
+| games `studios` | 33 | 31 | 2 |
+| films `directors` | 6 | 3 | 3 |
+| books `authors` | 2 | 0 | 2 |
+
+A per-page count is smaller than these, because a list page shows one
+account's rows: 161 of the tv keys are the owner's and 3 are another
+account's.
 
 ### Why this one is allowed to write to `*Entries` as well
 

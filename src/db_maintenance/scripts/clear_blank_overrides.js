@@ -9,12 +9,27 @@
  * empty cell. It is the work's own directors, actors or studios held off the
  * page for ever, under an anchor with no text and no destination. `Gilmore
  * Girls: Season 1` has `directors: ["Amy Sherman-Palladino"]` on its work and
- * shows no director at all, and the three `link-name` violations axe reports
- * on the books list are blank `genres` rendering as empty Wikipedia anchors —
- * the ones #423 named and left, since naming a decorative glyph is a
- * different repair from putting a work's own value back on the row. This is
- * the write half of #395; ../blank_override_check.js and `audit_database.js`
- * are the read half, which shipped in #409.
+ * shows no director at all. These are also the anchors with no accessible
+ * name that axe reports as `link-name`, which #423 named and left — naming a
+ * decorative glyph is a different repair from putting a work's own value back
+ * on a row. This is the write half of #395; ../blank_override_check.js and
+ * `audit_database.js` are the read half, which shipped in #409.
+ *
+ * **Which of them a run actually reaches, since #395's own comment gets this
+ * wrong.** That comment attributes the books list's unnamed links to blank
+ * `genres`; `genres` is not a books column at all — see the type's `columns`
+ * in ../../frontend/_includes/js/utils/conversions.js, which draws Authors and
+ * not Genres, and `visible: false` on the genre column everywhere else. The
+ * two unnamed links on that page are blank `authors`, and **both sit on
+ * entries with no work, so this script skips them and the books list keeps
+ * them.** The accessibility win is on the lists whose linked column is
+ * visible by default and whose rows have a work underneath: tv and films
+ * Director, games Studios. Measured on 2026-09-21, blank keys in those three
+ * columns are 164 tv `directors`, 6 film `directors` and 33 game `studios`,
+ * of which a run clears 164, 3 and 31 — the remainder being entries with no
+ * work. Only one account's rows are on any one page, so a per-page count is
+ * smaller than these: 161 of the tv keys are the owner's and 3 another
+ * account's.
  *
  * **The code that wrote these is already fixed.** `asOverride` in
  * ../../frontend/_includes/js/utils/entry_form_io.js treats a list of blanks
