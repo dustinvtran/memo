@@ -153,6 +153,46 @@ test("a title an id resolves to differently is a problem, a spelling is not", ()
   assert.equal(countOf(notes, "titleRefSpelling"), 69);
 });
 
+/**
+ * #395. A blank override that hides a value is the same damage as a dangling
+ * workRef — a row that renders empty over a database that holds the answer —
+ * so the two sit together at the head of the problems. The one that hides
+ * nothing is a problem too, and a quieter one; only the third, where there is
+ * no work to compare against, is a note.
+ */
+test("the three empty-override counts are split, and only one is a note", () => {
+  const { problems, notes } = toSummary(
+    TV,
+    withCounts({
+      blankOverridesMasking: 165,
+      blankOverridesHarmless: 40,
+      blankOverridesUndecided: 3,
+    })
+  );
+
+  assert.equal(countOf(problems, "blankOverridesMasking"), 165);
+  assert.equal(countOf(problems, "blankOverridesHarmless"), 40);
+  assert.equal(countOf(notes, "blankOverridesUndecided"), 3);
+  assert.equal(countOf(notes, "blankOverridesMasking"), undefined);
+});
+
+test("the masked-row count is printed beside the other way a row renders empty", () => {
+  const { problems } = toSummary(FILMS, empty);
+
+  assert.deepEqual(
+    [...problems.slice(0, 3).map((line) => line.key)],
+    [
+      "entriesWithDanglingWorkRef",
+      "blankOverridesMasking",
+      "blankOverridesHarmless",
+    ]
+  );
+  // Three counts about entries and overrides, one line apart: the mistake
+  // #395's split exists to prevent is reading any two of them as one number.
+  const labels = new Set(problems.map((line) => line.label));
+  assert.equal(labels.size, problems.length);
+});
+
 test("every finding is one kind or the other, and no key repeats", () => {
   for (const finding of FINDINGS) {
     assert.ok(["problem", "note"].includes(finding.kind), finding.key);

@@ -12,7 +12,7 @@ The scripts, and the section below that explains each:
 
 | Script | What it does | Writes? |
 | --- | --- | --- |
-| `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, works filed under another work's id, dangling `workRef`s. Needs no API keys unless you pass `--verify-shared-refs`, `--verify-title-years` or `--verify-titles`. | never |
+| `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, works filed under another work's id, dangling `workRef`s, empty override lists. Needs no API keys unless you pass `--verify-shared-refs`, `--verify-title-years` or `--verify-titles`. | never |
 | `backup_database.js` | Takes a timestamped snapshot of every collection and prunes old ones to a retention policy. | to disk only |
 | `verify_backup.js` | Checks a snapshot against its own manifest — every file present, hashing to the `sha256` recorded for it, holding the documents claimed. `--live` also counts the database beside it. | never |
 | `propose_work_refs.js` | Searches each work with no identity ref, and each entry with no work, and writes a worklist of candidates to confirm. Its own file is what `set_work_ref.js --from` reads. | never |
@@ -184,7 +184,8 @@ reports every inconsistency it can find: works that can't be refreshed because
 they have no usable apiRef, missing or corrupt metadata fields, games whose
 playtime has nothing to link it to, duplicate works sharing an apiRef, works
 filed under an id that belongs to another work, entries whose `workRef` names a
-work that is gone, and reviews whose entry is gone.
+work that is gone, entries whose override holds an empty list, and reviews
+whose entry is gone.
 
 ```
 node scripts/audit_database.js
@@ -210,6 +211,51 @@ count:
 - **Works sharing a show id** are how tv works. TMDB has one id per show and
   the site tracks each season as its own entry, so nineteen of these exist,
   they are all correct, and the right number is not zero.
+
+### Empty override lists
+
+An override wins over the work it overlays — `get` in
+`../frontend/_includes/js/utils/columns.js` merges the two with `??`, and
+`[""]` is not nullish — so an override list with nothing readable in it is not
+an empty cell. It is the work's own directors, actors or studios held off the
+page for ever, under an anchor with no text and no destination. `Gilmore
+Girls: Season 1` has `directors: ["Amy Sherman-Palladino"]` on its work and
+shows no director at all. `../blank_override_check.js` is the decision and
+#395 is the measurement: 272 such rows on 2026-09-21.
+
+The audit prints three counts, and the split is the finding:
+
+- **Hiding the work's value** is damage on the public site today. Removing the
+  key puts the work's value back on the row, in every one of the 272.
+- **Hiding nothing yet** is a tidy-up, and is still a problem rather than a
+  note: the moment the scheduled refresh fills the field on the work, the
+  stored blank starts masking it without anything having written to the entry.
+  The 141 books carrying `genres: [""]` hide nothing only because Google Books
+  has told us no genres.
+- **No work to compare** is a note, because with no readable work there is
+  nothing the blank could be hiding — and for a hand-typed entry the overrides
+  are not a layer over the metadata, they *are* the metadata.
+
+Under them is a per-field breakdown, which counts **keys rather than rows**: an
+entry with an empty `genres` and an empty `directors` is one damaged row and
+two keys. Measured on 2026-09-21 it was films actors 51 / genres 7 / directors
+6, tv directors 161 / actors 40 / genres 4, games publishers 42 / studios 33 /
+genres 25 / platforms 21, books genres 141 / authors 2.
+
+Three things are left alone. A `null` is the form's deliberate "the work's
+value is wrong and there is no replacement" and removing it would un-clear a
+field somebody cleared. A list with any non-blank member is a real override
+whatever else is in it — `["", "Christopher Nolan"]` renders Nolan, and is
+`unusable_field_plan.js`'s shape rather than this one's. And an entry whose
+work cannot be read is reported undecided rather than guessed at.
+
+`clear_noop_overrides.js` will not clear these and should not: it removes
+overrides that are byte-identical copies of the work, and `[""]` against
+`["Amy Sherman-Palladino"]` is a different value, which is the whole reason
+`noop_override_plan.js`'s comparison is stricter than the form's. **There is no
+script for this yet, deliberately.** Unsetting the keys writes to `*Entries`,
+which the rule at the top of this file reserves, and adding another exception
+to that list is a human's call — see #395 for the bounds one would need.
 
 ### Works sharing an id
 
