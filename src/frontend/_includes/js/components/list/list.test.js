@@ -1,7 +1,8 @@
 /**
  * @file The frontend scripts are plain globals concatenated into a bundle
  * rather than modules, so this loads list.js into a vm context with the
- * globals it expects and pulls the comparator out of the script's scope.
+ * globals it expects and pulls the comparator and the page heading out of the
+ * script's scope.
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -9,28 +10,47 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const source = fs.readFileSync(path.join(__dirname, "list.js"), "utf8");
+const js = (...segments) =>
+  fs.readFileSync(path.join(__dirname, ...segments), "utf8");
 
-// None of these is exercised: list.js destructures them at load time and
-// assigns itself into `Components.List`, but every component that reads them
-// stays unrendered here. So they only have to exist, and the two that are
-// reached into have to be objects.
+const source = js("list.js");
+
+// `Utils` and `Icons` are the real thing, loaded the same way, because the
+// heading's escaping and the `aria-hidden` on the glyph are part of what the
+// markup below is being asked about, and a stand-in for either would be
+// testing the stand-in. `initComponent` hands back the spec it was given, the
+// way `components/home/index.test.js` does: that is what the real one does
+// with it, minus the id, the style and the DOM.
+//
+// The rest are stubs. list.js destructures them at load time and assigns
+// itself into `Components.List`, but every component that reads them stays
+// undrawn here, so they only have to exist.
 const context = vm.createContext({
-  Utils: {},
-  Icons: {},
+  URL,
+  console,
   Dom: {},
   Tables: {},
   TableView: {},
   Conversions: {},
-  Components: { UI: {}, List: {} },
+  Components: {
+    initComponent: (spec) => spec,
+    UI: {},
+    List: {},
+  },
 });
 
 // `wrapInIife` in `asset_plan.js` wraps each bundled file in its own IIFE,
 // which is what keeps two files' `const`s from colliding. Loading it the same
 // way here keeps that difference visible.
-const { byEnglishTitle } = vm.runInContext(
-  `(() => {\n${source}\n;return ({ byEnglishTitle })\n})()`,
-  context
+const load = (js, exports) =>
+  vm.runInContext(`(() => {\n${js}\n;return ${exports}\n})()`, context);
+
+load(js("..", "..", "utils", "general.js"), "undefined");
+load(js("..", "..", "utils", "icons.js"), "undefined");
+
+const { byEnglishTitle, ListPageHeader } = load(
+  source,
+  "({ byEnglishTitle, ListPageHeader })"
 );
 
 /** An entry as the sort sees it: overrides already merged into the metadata. */
@@ -70,4 +90,48 @@ test("an entry whose work is missing its title sorts first, not off a cliff", ()
 
 test("equal titles compare equal, so the sort stays stable across them", () => {
   assert.equal(byEnglishTitle(entry("Akira"), entry("Akira")), 0);
+});
+
+/**
+ * The heading as it reaches the page. `content` is markup rather than a
+ * string, so it is asked for one at the boundary `components/README.md`
+ * describes.
+ */
+const heading = (title, username) =>
+  String(ListPageHeader(title, username).content({ id: "x" }));
+
+test("the profile link in the heading has an accessible name", () => {
+  const rendered = heading("Films", "nil");
+
+  // `icon` marks every glyph `aria-hidden`, and the anchor holds nothing but
+  // the glyph — so the label is the whole of the link's name, and without it
+  // the link computes none at all and is announced as "link" (#421).
+  assert.ok(
+    rendered.includes(`<a href="/profile/nil" aria-label="nil's profile">`)
+  );
+  assert.ok(rendered.includes('aria-hidden="true"'));
+});
+
+test("the heading's link has no text of its own to fall back on", () => {
+  // Which is the reason the label above has to be there rather than a nicety:
+  // an anchor wrapping one hidden glyph and no text node.
+  const inside = /<a href="\/profile\/nil"[^>]*>(.*?)<\/a>/.exec(
+    heading("Films", "nil")
+  );
+
+  assert.ok(inside);
+  assert.equal(inside[1].replace(/<[^>]*>/g, "").trim(), "");
+});
+
+test("a username is escaped in the label as it is in the href", () => {
+  // Two readings of one stored name that have to agree: `encodeURIComponent`
+  // for the url, the tag function's escaping for the attribute.
+  const rendered = heading("Films", `a"b'c`);
+
+  // `encodeURIComponent` leaves an apostrophe alone, so the tag function is
+  // what turns it into an entity in the href. The one in "'s profile" is the
+  // template's own text and stays a literal, which an attribute delimited by
+  // double quotes is entitled to hold.
+  assert.ok(rendered.includes(`href="/profile/a%22b&#39;c"`));
+  assert.ok(rendered.includes(`aria-label="a&quot;b&#39;c's profile"`));
 });
