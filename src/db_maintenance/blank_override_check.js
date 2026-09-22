@@ -69,9 +69,12 @@
  * Pure and dependency-free, so the decision is unit tested
  * (./blank_override_check.test.js) in the no-install suite rather than
  * discovered against production. scripts/audit_database.js does the reads.
- * It is read-only in the strongest sense: the audit never writes, and the
- * `$unset` half of #395 writes to `*Entries`, which CLAUDE.md reserves and
- * whose exception is a human's call.
+ * It is read-only in the strongest sense: the audit never writes. The
+ * `$unset` half of #395 is ./blank_override_plan.js and
+ * scripts/clear_blank_overrides.js, which import `isBlankList` and
+ * `hasRealValue` from here rather than defining "blank" a second time — so the
+ * keys a run removes are the keys this reports, and
+ * ./blank_override_plan.test.js asserts that rather than assuming it.
  */
 
 /**
