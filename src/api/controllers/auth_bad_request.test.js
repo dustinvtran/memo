@@ -389,3 +389,55 @@ test('and the browser sending it back is a login readLoginCookie reads', options
   )
   assert.equal(login.route, '/films?sort=year')
 })
+
+///////////////////////////////////////////////////////////////////////////////
+// And the site-wide security headers, on the response every reader gets
+
+/* #403. `handleLogin`'s redirect builds its own header object, so the set
+   `utils/responses.js` has sent on everything it builds since #300 never
+   reached it — and this is the response every authenticating reader gets.
+   Netlify answered it with its own bare `max-age=31536000`, which under RFC
+   6797 §8.1 replaces a stored `includeSubDomains` rather than merging with
+   it, so following this redirect dropped every subdomain out of HSTS until a
+   page asserted it again. The other four hand-built responses are asserted in
+   `auth_token.test.js`; this one is only reachable with the stand-in above. */
+
+/**
+ * `_headers`' `/*` values, typed out rather than read from
+ * `responses.SECURITY_HEADERS`. Spread from the constant these would agree
+ * with whatever it holds, including holding nothing — which is the state they
+ * are here to rule out.
+ */
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
+}
+
+test('the login redirect carries them, alongside its own headers', options, async () => {
+  const response = await withLoader(auth0, () =>
+    handleLogin({ headers: { referer: 'https://nil.moe/films' } })
+  )
+
+  assert.equal(response.statusCode, 302)
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    assert.equal(response.headers[name], value)
+  }
+  /* The set is spread in ahead of these three, so the response's own win any
+     collision — which is the way round that keeps the login working. */
+  assert.equal(response.headers.Location, 'https://nil.eu.auth0.com/authorize')
+  assert.equal(response.headers['Cache-Control'], 'no-cache')
+  assert.match(response.headers['Set-Cookie'], /^auth0_login_cookie=/)
+})
+
+test('and so does the 400 it answers a request it cannot read', options, async () => {
+  // The control on the other half of the claim: the guard's answer goes
+  // through `utils/responses.js`, which has carried the set since #300. Both
+  // halves of this route send the same policy now.
+  const response = await handleLogin({})
+
+  assert.equal(response.statusCode, 400)
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    assert.equal(response.headers[name], value)
+  }
+})
