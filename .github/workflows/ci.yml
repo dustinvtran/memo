@@ -5,12 +5,12 @@ on:
     branches: [main]
   pull_request:
 
-# Nothing in this workflow writes anything: the two jobs below test, build,
-# and read two advisory feeds. The repository default is `write` (#301), and
-# this overrides it for this workflow whatever that setting happens to be —
-# which is the reason to say it here as well as in the settings, since the
-# file is the half that survives a settings change. A job that ever does need
-# more should raise it on itself rather than widening this.
+# Nothing in this workflow writes anything: the three jobs below test, read
+# the lockfile, build, and read two advisory feeds. The repository default is
+# `write` (#301), and this overrides it for this workflow whatever that
+# setting happens to be — which is the reason to say it here as well as in the
+# settings, since the file is the half that survives a settings change. A job
+# that ever does need more should raise it on itself rather than widening this.
 permissions:
   contents: read
 
@@ -54,6 +54,99 @@ jobs:
       - name: Syntax check every JS file
         run: git ls-files '*.js' | xargs -n1 -P4 node --check
 
+  # `npm ci` is the only reader of `package-lock.json` that checks it against
+  # `package.json` at all, and #396 is what happens when every reader in CI
+  # runs the npm that reads it leniently. `npm ci` against main failed outright
+  # on npm 10 — `EUSAGE`, `Missing: @netlify/blobs@10.7.13 from lock file` and
+  # 21 more — while this workflow and Netlify stayed green, because both are
+  # pinned to Node 24 and so to npm 11.
+  #
+  # Neither npm is wrong about the tree. The `unstorage` copy under
+  # `node_modules/ipx` declares a peer dependency on `@netlify/blobs`
+  # `^6.5.0 || ^7.0.0 || ^8.1.0 || ^9.0.0 || ^10.0.0`, which the hoisted
+  # `11.1.0` satisfies none of, so a nested `@netlify/blobs@10.7.13` and its 20
+  # transitive dependencies really are required. npm 10 pins that subtree in
+  # the lockfile; npm 11 omits all 21 entries and re-resolves them at install
+  # time. The npm 10 file is a strict superset, which is why npm 11 installs it
+  # without complaint and why this job can be a guard rather than a dilemma.
+  #
+  # It is a guard because the fix does not hold on its own: a plain `npm
+  # install` under npm 11 drops those 21 entries again, so the next dependabot
+  # bump that regenerates the lockfile can put #396 back with nothing in CI
+  # going red. This job is the reader that notices, and it is the only thing
+  # here on npm 10.
+  #
+  # `--dry-run` is what makes that cheap. The sync check runs while the ideal
+  # tree is built from the lockfile, before anything is fetched or written, so
+  # the whole job is an npm install and about a second — no packages, no
+  # scripts, no registry. `--omit=dev` would not dodge the failure either, for
+  # the same reason: the check reads the whole lockfile before the tree is
+  # pruned. Only `package.json` and `package-lock.json` are copied out so that
+  # nothing else in the checkout — `src/api/package.json`, a script in
+  # `package.json` — can take part in the answer.
+  #
+  # Pinning npm with `packageManager` was considered instead and rejected
+  # (#411): Netlify reads that field and can activate Corepack from it, so it
+  # risks changing which npm the deploy builds with, invisibly and outside the
+  # repo, which is the shape of bug #198 removed. And pinning everyone to npm
+  # 11 would hide this rather than fix it — the 21 packages would stay
+  # unpinned, with no reader left to say so.
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 like every other job here, which is not only tidiness:
+      # `scripts/check_function_dependencies.js` reads every `node-version:`
+      # in this file and fails if one of them differs from `netlify.toml`'s
+      # `NODE_VERSION`. So npm 10 is installed over the npm that ships with
+      # Node 24, rather than had for free by running this job on the Node 22
+      # that still bundles it. Which is the better shape anyway: the version
+      # this job turns on is then asked for by name rather than inherited.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: The lockfile must satisfy npm 10, which reads all of it
+        run: |
+          npm install -g npm@10
+          version=$(npm --version)
+          echo "npm $version"
+          # Asserted rather than assumed: on npm 11 every line below still
+          # passes, and this job would quietly become a slower copy of the
+          # install in `build` while reporting the same green tick.
+          case "$version" in
+            10.*) ;;
+            *)
+              echo "this step ran on npm $version, and it is only a check at" \
+                   "all on npm 10 — npm 11 is the reader that cannot see #396"
+              exit 1
+              ;;
+          esac
+
+          dir="$RUNNER_TEMP/lockfile-check"
+          mkdir -p "$dir"
+          cp package.json package-lock.json "$dir/"
+          cd "$dir"
+
+          status=0
+          npm ci --dry-run --no-audit --no-fund > "$dir/out.txt" || status=$?
+          # A dry run names every one of the 1351 packages it would add, which
+          # is the whole log and none of the answer. `--silent` is not the way
+          # to quiet that: it takes the EUSAGE error with it and leaves a red
+          # job saying nothing at all. So stdout is kept on disk and only its
+          # last lines printed, and the failure — which npm writes to stderr —
+          # passes straight through either way.
+          tail -3 "$dir/out.txt"
+          [ "$status" -eq 0 ] || {
+            echo "npm 10 refuses this lockfile, so npm ci fails for anyone" \
+                 "not on npm 11 — see the Missing: lines above and #396." \
+                 "Regenerating on the pinned toolchain does not fix it: run" \
+                 "npm install --package-lock-only under npm 10 (Node 22) and" \
+                 "commit the result, which npm 11 installs cleanly too (#411)."
+            exit "$status"
+          }
+
   # The job above checks the inputs; this one checks what ships. `node --check`
   # reads each tracked file on its own, and `bundle.test.js` reconstructs the
   # concatenation from the templates as text — both good proxies, neither the
@@ -65,7 +158,11 @@ jobs:
   # It needs an install, which is why it is separate rather than more steps on
   # the job above: keeping that one dependency-free is deliberate. The install
   # is also the only thing in CI that would notice a dependency removal that
-  # breaks the build, or a `package-lock.json` out of step with `package.json`.
+  # breaks the build. It used to be said here that it was the only thing that
+  # would notice a `package-lock.json` out of step with `package.json` too,
+  # which #396 disproved: `npm ci` on npm 11 re-resolves what the lockfile
+  # leaves out instead of failing, so the `lockfile` job above is what reads
+  # that, on the npm that still checks.
   build:
     runs-on: ubuntu-latest
     steps:
