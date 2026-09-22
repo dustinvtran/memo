@@ -529,13 +529,18 @@ affected; strings and numbers cross realms fine.
   real answer was 220/56, and the whole gap was books. Resolve a group by
   looking each member's id up in the works array, the way `planSharedRefRepair`
   does, never by matching an apiRef string.
-- **Refusals cluster at the head of a backfill queue.** `selectForRefresh`
-  sorts longest-unchecked first, and a work that never merged successfully is a
-  work with no `metadataUpdatedDate` — so the two populations are nearly the
-  same set and the refusal rate is wildly front-loaded. Measured on books: 144
-  of the first 150 refused, the next 178 produced three. A 96% refusal rate in
-  the first progress line is expected, not a broken guard; wait for the queue
-  to pass the never-checked block before judging.
+- **Refusals cluster at the *tail* of a backfill queue, and used to cluster at
+  the head.** `selectForRefresh` sorts longest-unchecked first, so where a
+  refusal left a work undated the two populations were nearly the same set and
+  the rate was wildly front-loaded: 144 of the first 150 books refused, the
+  next 178 produced three. #333 and #352 inverted that on purpose — a refusal
+  is a fact about the pair rather than weather, so it is `touch`ed like any
+  other answer and the work sorts as recently-checked. Measured again on books
+  on 2026-09-21: all 324 due books dated, **zero** refusals in the first 150,
+  all 97 in the last 174. So a quiet first progress line is expected now and a
+  busy one would be the surprise, and a `--limit` sized to a budget cuts off
+  exactly the part of the queue the refusals are in — it caps a crawl, not a
+  search for frozen works.
 - **Google Books does not fail cleanly at its cap.** It allows roughly 1,000
   calls a day and starts answering 429 partway through a long crawl. A refused
   page comes back *empty*, which is indistinguishable from a page that found

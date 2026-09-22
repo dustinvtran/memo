@@ -51,6 +51,29 @@
  * reading the script first would call it a translation of itself; the authors
  * disagree and it is a different book.
  *
+ * ## What the author check cannot be asked, which the 2026-09-21 run found
+ *
+ * A conflict selects the one destructive repair here, so the cost of reading
+ * one as a conflict when it is not is a `replacesRef` written against a work
+ * whose ISBN was right. The first production run of this file made that call
+ * seven times out of 34, and every one was the same name spelled another way:
+ *
+ *   - **In another script.** `Osamu Dazai` against `太宰治`, `Yasunari
+ *     Kawabata` against `康成·川端`. No string comparison bridges those and
+ *     none is attempted; what rescues those books is that the title the ISBN
+ *     answered with was sitting in the stored title's own brackets, which is
+ *     `glossNaming` below and is read before the author for that reason.
+ *   - **In the other order.** `Dav Pilkey` against Google Books' `Pilkey Dav`.
+ *   - **With a catalogue's parenthetical on it.** `Isaac Asimov` against
+ *     `Isaac Asimov (Schriftsteller)`, which is #385's own flagship
+ *     translation — `Foundation` under *Fondation* — filed as a different
+ *     book entirely.
+ *
+ * The last two are answered in `authorAgreement`, and neither is a loosening
+ * in the sense the surname fallback is: one compares the same words in either
+ * order and the other drops a suffix that was never part of a name. Two people
+ * who did not already share every part of one are still two people.
+ *
  * ## Where it deliberately gives up
  *
  * A shared author with two unrelated titles is the one shape this cannot
@@ -182,6 +205,41 @@ const titleRelation = (stored, ref) => {
 };
 
 /**
+ * The English name a stored title carries in brackets, when that name is
+ * exactly the title the ISBN answers with.
+ *
+ * A work whose own name is not in the Latin alphabet is stored here with a
+ * gloss after it — `人間失格 (No Longer Human)`, `雪国 (Snow Country)`,
+ * `走ることについて語るときに僕の語ること (What I Talk About When I Talk About
+ * Running)`. `comparableTitle` drops one trailing parenthetical, which is
+ * right for the `(Series, #1)` and `(1996)` it was written for and throws away
+ * the only half of these titles a Google Books answer could ever match. So
+ * every one of them reaches `titleRelation` as `disjoint` and is judged on its
+ * authors instead — and the author is `Osamu Dazai` against `太宰治`, two
+ * spellings of one name that no string comparison bridges. Three books were
+ * filed as a different book entirely on that reading and one as needing a
+ * human, when the ISBN had answered with the stored title's own gloss.
+ *
+ * **Equality, never containment.** Most of these brackets hold a series
+ * marker rather than a title, and `Holes (Holes, #1)` must not be read as
+ * naming anything. An exact match after `comparableTitle` is not a
+ * resemblance: the bracket holds the title the ISBN gave back, so the two
+ * name one book whatever the authors are spelled like. Containment would
+ * re-admit every series marker and is the shape of mistake #290 is.
+ *
+ * Returns the gloss as stored, for the reasoning to quote, or undefined.
+ * @type {(storedTitle: unknown, refTitle: unknown) => string | undefined}
+ */
+const glossNaming = (storedTitle, refTitle) => {
+  const matched = /[([]([^()[\]]+)[)\]]\s*$/.exec(String(storedTitle ?? "").trim());
+  if (!matched) return undefined;
+  const gloss = matched[1].trim();
+  const compared = comparableTitle(gloss);
+  if (compared === "" || compared !== comparableTitle(refTitle)) return undefined;
+  return gloss;
+};
+
+/**
  * Whether this refusal is the adapter disagreeing with itself rather than the
  * data being wrong.
  *
@@ -245,6 +303,17 @@ const authorAgreement = (ours, theirs) => {
     return "shared";
   }
 
+  // The same words in the other order are the same person. A catalogue files
+  // an author surname-first as readily as given-name-first, and both spellings
+  // reach this function unlabelled — `Dav Pilkey` stored against Google Books'
+  // `Pilkey Dav` for the French Capitaine Bobette. The full strings differ and
+  // the last word is the *given* name on one side, so both tests below it miss
+  // and two translations were filed as different books. This is an exact match
+  // on the same words rather than a loosening: nothing here calls two people
+  // one that did not already share every part of a name.
+  const theirWords = new Set(yours.map(({ words }) => words));
+  if (mine.some(({ words }) => theirWords.has(words))) return "shared";
+
   const theirSurnames = new Set(
     yours.map(({ surname }) => surname).filter((name) => name.length >= 3)
   );
@@ -265,19 +334,48 @@ const authorAgreement = (ours, theirs) => {
 const comparableNames = (names) =>
   (Array.isArray(names) ? names : [])
     .map((name) =>
-      String(name ?? "")
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/\p{Mark}/gu, "")
-        .trim()
+      withoutTrailingParenthetical(
+        String(name ?? "")
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/\p{Mark}/gu, "")
+          .trim()
+      )
     )
     .filter((name) => name !== "")
     .map((name) => {
       const words = name.split(/\s+/);
       const bare = (text) => text.replace(/[^\p{Letter}\p{Number}]/gu, "");
-      return { full: bare(name), surname: bare(words[words.length - 1]) };
+      return {
+        full: bare(name),
+        surname: bare(words[words.length - 1]),
+        // Sorted, so the same words in either order reduce to one string.
+        // See `authorAgreement`: `Pilkey Dav` is `Dav Pilkey`.
+        words: words.map(bare).filter((word) => word !== "").sort().join(" "),
+      };
     })
     .filter(({ full }) => full !== "");
+
+/**
+ * A name with a trailing `(...)` taken off, which is what a catalogue puts
+ * there rather than part of the name.
+ *
+ * Google Books answers `Fondation`'s author as `Isaac Asimov (Schriftsteller)`
+ * — a German disambiguator on a French edition — and that suffix is the whole
+ * of the difference from the stored `Isaac Asimov`. Left on, it beats both
+ * comparisons above: the full strings differ, and the last word is
+ * `schriftsteller` rather than `asimov`, so #385's own flagship translation
+ * was filed as a different book and proposed for a repoint.
+ *
+ * `comparableTitle` in ./work_collections.js drops a trailing parenthetical
+ * from a title for the same reason and this is the same operation on a name,
+ * kept local because a name loses only the one: `(Schriftsteller)` is a role
+ * and `Title (Series, #1) (1996)` is two facts, so the title's loop is the
+ * greedier of the two and greedier than a name wants.
+ * @type {(name: string) => string}
+ */
+const withoutTrailingParenthetical = (name) =>
+  name.replace(/\s*[([][^()[\]]*[)\]]$/, "").trim() || name;
 
 /**
  * The words a printing puts in a title when it is the same book again.
@@ -344,11 +442,15 @@ const isNonEnglish = (language) => {
  * because it is the stronger evidence, not because it is the commoner case:
  *
  *   1. The subtitle trap, because the book is not wrong at all.
- *   2. A known author conflict, because two people who share no author are
+ *   2. The stored title's bracketed gloss being exactly the answer, because
+ *      two titles that match are stronger evidence than two author lists that
+ *      do not — and the books this catches are the ones whose authors are
+ *      spelled in another script, where the author list proves nothing.
+ *   3. A known author conflict, because two people who share no author are
  *      not one book in two languages however the titles look.
- *   3. A non-English answer with a shared author, which is a translation.
- *   4. Containment, which is one name for one book.
- *   5. What is left, which is either an edition with a word to prove it or a
+ *   4. A non-English answer with a shared author, which is a translation.
+ *   5. Containment, which is one name for one book.
+ *   6. What is left, which is either an edition with a word to prove it or a
  *      row for a person.
  *
  * @type {(evidence: {
@@ -371,12 +473,14 @@ const classifyRefusal = (evidence = {}) => {
   const nonEnglish = isNonEnglish(refLanguage);
   const marker = editionMarker(refTitle);
   const subtitleTrap = isSubtitleTrap({ storedTitle, refTitle, refSubtitle });
+  const gloss = glossNaming(storedTitle, refTitle);
   const seen = {
     titleRelation: relation,
     authors,
     refLanguage: refLanguage ?? null,
     editionMarker: marker ?? null,
     subtitleTrap,
+    titleGloss: gloss ?? null,
   };
   const as = (bucket, reasoning) => ({ bucket, reasoning, evidence: seen });
 
@@ -395,6 +499,16 @@ const classifyRefusal = (evidence = {}) => {
         `what a search wrote and what a retrieve cannot match. The ISBN and ` +
         `the stored title are both right; the adapter disagrees with itself. ` +
         `No data repair — see the note on google_search.js's titleOf.`
+    );
+  }
+
+  if (gloss !== undefined) {
+    return as(
+      marker ? BUCKETS.EDITION : BUCKETS.TITLE_LENGTH,
+      `The stored title carries "${gloss}" in brackets and that is exactly ` +
+        `the title the ISBN answers with, so the two name one book under its ` +
+        `own name and its English one. Rename the work to the API's title, ` +
+        `keeping the owner's on the entry.`
     );
   }
 
@@ -533,6 +647,12 @@ const triageRow = ({
     id: String(work?._id ?? ""),
     storedTitle,
     refTitle: refTitle === undefined ? null : String(refTitle),
+    // Kept beside the title it belongs to so the file holds everything the
+    // call was made on. The evidence block reduces it to the one boolean the
+    // decision used, and a reader checking a `subtitle-trap` row — or
+    // re-running the classifier over a saved file rather than spending the
+    // day's Google Books budget again — needs the text.
+    refSubtitle: refSubtitle === undefined ? null : String(refSubtitle),
     isbn: isbn === undefined ? null : String(isbn),
     bucket,
     reasoning,
@@ -735,6 +855,7 @@ module.exports = {
   parseRefusal,
   titleRelation,
   isSubtitleTrap,
+  glossNaming,
   authorAgreement,
   editionMarker,
   isNonEnglish,

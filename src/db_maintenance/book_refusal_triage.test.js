@@ -7,6 +7,7 @@ const {
   parseRefusal,
   titleRelation,
   isSubtitleTrap,
+  glossNaming,
   authorAgreement,
   editionMarker,
   isNonEnglish,
@@ -459,7 +460,14 @@ test("every row carries the evidence its call was made on", () => {
     refLanguage: "en",
   });
   assert.deepEqual({ ...Object.keys(row.evidence) }, {
-    ...["titleRelation", "authors", "refLanguage", "editionMarker", "subtitleTrap"],
+    ...[
+      "titleRelation",
+      "authors",
+      "refLanguage",
+      "editionMarker",
+      "subtitleTrap",
+      "titleGloss",
+    ],
   });
   assert.equal(row.evidence.authors, "shared");
   assert.equal(row.reasoning.length > 0, true);
@@ -603,4 +611,133 @@ test("describeSummary reports the two non-bucket tallies separately", () => {
   assert.match(text, /1 classified/);
   assert.match(text, /not searched \(no answer, not a finding\): 3/);
   assert.match(text, /backfill failures \(quota, not refusals\): 54/);
+});
+
+// --- the gloss a title in another script carries ---------------------------
+//
+// Every row below was filed the wrong way by the 2026-09-21 production run,
+// and the four the gloss rescues are why this test block exists.
+
+test("glossNaming takes the bracketed name only when it is exactly the answer", () => {
+  assert.equal(
+    glossNaming("人間失格 (No Longer Human)", "No Longer Human"),
+    "No Longer Human"
+  );
+  assert.equal(glossNaming("雪国 (Snow Country)", "Snow Country"), "Snow Country");
+});
+
+test("glossNaming refuses a series marker, which is what most brackets hold", () => {
+  assert.equal(glossNaming("Holes (Holes, #1)", "Le Passage"), undefined);
+  assert.equal(
+    glossNaming("Foundation (Foundation, #1)", "Fondation"),
+    undefined
+  );
+});
+
+test("glossNaming will not take containment for a match", () => {
+  // The bracket naming part of the answer proves nothing: "Another" is in
+  // both of these and they are a volume and a different volume.
+  assert.equal(
+    glossNaming("Another (Another, #1)", "Another - La Fille à l'oeil de poupée"),
+    undefined
+  );
+});
+
+test("a title's own gloss outranks two author lists in different scripts", () => {
+  // 人間失格 under 0811204812, which answers "No Longer Human" by 太宰治. The
+  // stored author is the same person spelled "Osamu Dazai", so the author
+  // comparison can only report a conflict — and on that reading the run
+  // proposed repointing a work whose ISBN is perfectly correct.
+  const verdict = classifyRefusal({
+    storedTitle: "人間失格 (No Longer Human)",
+    refTitle: "No Longer Human",
+    storedAuthors: ["Osamu Dazai"],
+    refAuthors: ["太宰治"],
+    refLanguage: "en",
+  });
+  assert.equal(verdict.bucket, BUCKETS.TITLE_LENGTH);
+  assert.equal(verdict.evidence.authors, "conflict");
+  assert.equal(verdict.evidence.titleGloss, "No Longer Human");
+});
+
+test("a gloss with an edition word in the answer is still an edition", () => {
+  const verdict = classifyRefusal({
+    storedTitle: "雪国 (Snow Country, Revised)",
+    refTitle: "Snow Country, Revised",
+    storedAuthors: ["Yasunari Kawabata"],
+    refAuthors: ["康成·川端"],
+    refLanguage: "en",
+  });
+  assert.equal(verdict.bucket, BUCKETS.EDITION);
+});
+
+test("こゝろ under 会津のこころ is still a different book", () => {
+  // The guard the gloss must not break. Two Japanese titles, two Japanese
+  // authors who really are different people, and no bracket that matches.
+  const verdict = classifyRefusal({
+    storedTitle: "こゝろ (Kokoro)",
+    refTitle: "会津のこころ",
+    storedAuthors: ["Natsume Soseki"],
+    refAuthors: ["中村彰彦"],
+    refLanguage: "ja",
+  });
+  assert.equal(verdict.bucket, BUCKETS.DIFFERENT_BOOK);
+  assert.equal(verdict.evidence.titleGloss, null);
+});
+
+// --- the same name spelled another way -------------------------------------
+
+test("authorAgreement reads the same words in the other order as one name", () => {
+  // Google Books answers the French Capitaine Bobette's author surname-first.
+  assert.equal(authorAgreement(["Dav Pilkey"], ["Pilkey Dav"]), "shared");
+});
+
+test("authorAgreement drops a catalogue's parenthetical off a name", () => {
+  // Fondation's author, as Google Books gives it. #385's own example of a
+  // translation, filed as a different book until this line.
+  assert.equal(
+    authorAgreement(["Isaac Asimov"], ["Isaac Asimov (Schriftsteller)"]),
+    "shared"
+  );
+});
+
+test("neither loosening lets two different people become one", () => {
+  assert.equal(authorAgreement(["Dav Pilkey"], ["Dav Stine"]), "conflict");
+  assert.equal(
+    authorAgreement(["Natsume Soseki"], ["Soseki Hiroshi (Schriftsteller)"]),
+    "conflict"
+  );
+});
+
+test("Fondation is the translation it was always meant to be", () => {
+  const verdict = classifyRefusal({
+    storedTitle: "Foundation (Foundation, #1)",
+    refTitle: "Fondation",
+    storedAuthors: ["Isaac Asimov"],
+    refAuthors: ["Isaac Asimov (Schriftsteller)"],
+    refLanguage: "fr",
+  });
+  assert.equal(verdict.bucket, BUCKETS.TRANSLATION);
+});
+
+test("a row carries the subtitle the call was made on, not just the verdict", () => {
+  const row = triageRow({
+    work: { _id: "1", englishTranslatedTitle: "Howl and Other Poems" },
+    refTitle: "Howl",
+    refSubtitle: "and Other Poems",
+    refAuthors: ["Allen Ginsberg"],
+    refLanguage: "en",
+  });
+  assert.equal(row.bucket, BUCKETS.SUBTITLE_TRAP);
+  assert.equal(row.refSubtitle, "and Other Poems");
+});
+
+test("a row with no subtitle says so rather than leaving the field off", () => {
+  const row = triageRow({
+    work: { _id: "1", englishTranslatedTitle: "Howl and Other Poems" },
+    refTitle: "Howl",
+    refAuthors: ["Allen Ginsberg"],
+    refLanguage: "en",
+  });
+  assert.equal(row.refSubtitle, null);
 });
