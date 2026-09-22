@@ -1,8 +1,8 @@
 /**
  * @file The frontend scripts are plain globals concatenated into a bundle
  * rather than modules, so this loads list.js into a vm context with the
- * globals it expects and pulls the comparator and the page heading out of the
- * script's scope.
+ * globals it expects and pulls the comparator, the page heading and the stats
+ * line out of the script's scope.
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -48,9 +48,9 @@ const load = (js, exports) =>
 load(js("..", "..", "utils", "general.js"), "undefined");
 load(js("..", "..", "utils", "icons.js"), "undefined");
 
-const { byEnglishTitle, ListPageHeader } = load(
+const { byEnglishTitle, ListPageHeader, toStats } = load(
   source,
-  "({ byEnglishTitle, ListPageHeader })"
+  "({ byEnglishTitle, ListPageHeader, toStats })"
 );
 
 /** An entry as the sort sees it: overrides already merged into the metadata. */
@@ -134,4 +134,56 @@ test("a username is escaped in the label as it is in the href", () => {
   // double quotes is entitled to hold.
   assert.ok(rendered.includes(`href="/profile/a%22b&#39;c"`));
   assert.ok(rendered.includes(`aria-label="a&quot;b&#39;c's profile"`));
+});
+
+///////////////////////////////////////////////////////////////////////////////
+// The stats line under each sublist, and the one under the whole page.
+
+/** An entry as `toStats` reads one: a status, a score, and a work. */
+const rated = (score) => ({
+  status: "Watched",
+  score,
+  commonMetadata: { duration: 120 },
+});
+
+/** What the line says about the mean, which is the last field on it. */
+const meanOf = (entries) =>
+  String(toStats(entries, "films")).match(/Mean score: (.*)$/)[1];
+
+test("a section with nothing rated does not report a mean of zero", () => {
+  // The bug, live in the "To watch" section of /films/nil: 210 entries, not
+  // one of them scored, and `scores.length || 1` turned the sum of nothing
+  // into `0.00`. On a 1-10 scale that is a plausible score rather than a
+  // visible absence, which is what made it worse than the `NaN` next door.
+  const toWatch = [{ status: "Planned" }, { status: "Planned" }];
+
+  assert.equal(meanOf(toWatch), "-");
+  assert.equal(meanOf([]), "-");
+});
+
+test("the empty mean does not take the rest of the line with it", () => {
+  // `meanScore` is a formatted string now, so the template interpolates it
+  // rather than calling `toFixed` on it. Every other field is still a
+  // number, and a throw here would empty the whole stats line.
+  const line = String(toStats([{ status: "Planned" }], "films"));
+
+  assert.match(line, /^Total entries: 1 /);
+  assert.match(line, /Days spent: 0\.00 /);
+  assert.match(line, /Mean score: -$/);
+});
+
+test("a section with scores reports their mean to two places", () => {
+  assert.equal(meanOf([rated(8), rated(6)]), "7.00");
+  assert.equal(meanOf([rated(9)]), "9.00");
+});
+
+test("an unscored entry is left out of the mean, not counted as a zero", () => {
+  assert.equal(meanOf([rated(8), { status: "Watched" }]), "8.00");
+});
+
+test("a score of zero is counted rather than dropped", () => {
+  // Latent rather than live: `scoreParser` in `api/utils/parsers/entries.js`
+  // refuses anything outside 1-10, and nothing stored carries a zero. Pinned
+  // because `filter(e => e.score)` read as correct for as long as it did.
+  assert.equal(meanOf([rated(0), rated(10)]), "5.00");
 });

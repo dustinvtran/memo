@@ -306,15 +306,35 @@ const totalRated = (relevantScores) =>
     0
   )
 
+/**
+ * What a score statistic over nothing reads as, for both of the two below.
+ *
+ * The same `-` the rows above the panel already draw for a score there is
+ * none of — `EMPTY_CELL` in `utils/table_model.js`, and the missing half of
+ * `(score ?? '-') + '/10'` in `utils/columns.js` — and the same answer
+ * `toStats` in `components/list/list.js` gives to the same question.
+ *
+ * It is interpolated into an `html` template, which escapes what it is
+ * handed; a hyphen comes through that unchanged.
+ */
+const NO_SCORES = '-'
+
 const meanScore = (relevantScores) => {
   const scores = toArrayOfScores(relevantScores)
+  // Without this the sum of nothing is divided by a length of zero, and
+  // `NaN.toFixed(2)` is the string "NaN" — which is what a profile with
+  // nothing rated put on screen, beside a `Stdev: 0` from the guard below.
+  if (scores.length === 0) return NO_SCORES
   return (scores.reduce((acc, cur) => acc + cur, 0) / scores.length).toFixed(2)
 }
 
 const stdev = (relevantScores) => {
   const scores = toArrayOfScores(relevantScores)
   const n = scores.length
-  if (n === 0) return 0
+  // Not `0`: the spread of no scores is no more a zero than their mean is,
+  // and a `0` sitting beside the mean's `-` reads as a spread somebody
+  // measured and found to be none.
+  if (n === 0) return NO_SCORES
   const mean = scores.reduce((a, b) => a + b) / n
   return (Math.sqrt(scores.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b) / n))
     .toFixed(2)
