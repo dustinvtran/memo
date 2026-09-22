@@ -15,8 +15,8 @@ The scripts, and the section below that explains each:
 | `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, works filed under another work's id, dangling `workRef`s. Needs no API keys unless you pass `--verify-shared-refs`, `--verify-title-years` or `--verify-titles`. | never |
 | `backup_database.js` | Takes a timestamped snapshot of every collection and prunes old ones to a retention policy. | to disk only |
 | `verify_backup.js` | Checks a snapshot against its own manifest — every file present, hashing to the `sha256` recorded for it, holding the documents claimed. `--live` also counts the database beside it. | never |
-| `propose_work_refs.js` | Searches each work with no identity ref, and each entry with no work, and writes a worklist of candidates to confirm. | never |
-| `set_work_ref.js` | Gives one work the identity ref it has none of, after asking the API whether that id really names it. Renames it to the API's title when a person has said which of the two is right. | `--apply` |
+| `propose_work_refs.js` | Searches each work with no identity ref, and each entry with no work, and writes a worklist of candidates to confirm. Its own file is what `set_work_ref.js --from` reads. | never |
+| `set_work_ref.js` | Gives one work the identity ref it has none of, after asking the API whether that id really names it. Renames it to the API's title when a person has said which of the two is right. A row may name `alternates`, tried in order and each guarded the same way, since the first candidate of a search being wrong is ordinary. | `--apply` |
 | `link_entry.js` | Attaches a named entry to the work it belongs on, moves one off a sub-work that should never have been a work, and deletes a duplicate row. Takes its operations from a file a person filled in. | `--apply` |
 | `restore_backup.js` | Puts a snapshot, or one collection of it, back — matching on `_id`. | `--apply` |
 | `ensure_indexes.js` | Creates the indexes the site's queries need. Re-running is a no-op. | `--apply` |

@@ -9,8 +9,13 @@
  * hit would be #290 arriving by a new route — TMDB answers `Hero` with `THE
  * RIBBON HERO` first, and IGDB leads with a DCS World campaign.
  *
- * The output pairs with scripts/set_work_ref.js, which takes the confirmed
- * file and asks the API the same question again at the moment it writes.
+ * The output pairs with scripts/set_work_ref.js, which takes this file as it
+ * stands — `--from` reads these rows, so there is no flattening step between
+ * the two — and asks the API the same question again at the moment it writes.
+ * A row whose `ref` is still empty is passed over there rather than refused,
+ * and the `candidates` array is not read: what a person wrote in `ref` and
+ * `alternates` is the only place ids come from, which is this file's whole
+ * premise. #388 is why a row can name more than one.
  *
  * Usage:
  *   node scripts/propose_work_refs.js --out=worklist
@@ -161,6 +166,10 @@ const main = async () => {
           // What a person fills in. Left empty on purpose — see
           // ../work_ref_proposal.js for why nothing here chooses.
           ref: "",
+          // The ids to fall back to when the first is refused, which is the
+          // expected case rather than an edge one given what the score is for.
+          // scripts/set_work_ref.js tries them in order and guards each; #388.
+          alternates: [],
           retitleWorkTo: "",
           entryTitle: "",
         });
@@ -195,6 +204,12 @@ const HEADER = [
   "In the JSON beside this file, per row:",
   "",
   "- **`ref`** — the id you have chosen. Leave it empty to skip the row.",
+  "- **`alternates`** — further ids to try, in order, if that one is refused.",
+  "  The score below orders rather than decides, so a second candidate being",
+  "  the right one is ordinary; this is how it gets tried without anybody",
+  "  looking the id up again. Every one of them is guarded exactly as `ref`",
+  "  is, and a `retitleWorkTo` is never carried over to one — an alternate",
+  "  that needs a retitle is written as `{ \"ref\": …, \"retitleWorkTo\": … }`.",
   "- **`retitleWorkTo`** — the API's own title. Needed only when the candidate",
   "  you picked says `agrees: **no**`, which is the guard refusing a title it",
   "  cannot tell apart from a wrong id. Naming the API's title is how you say",

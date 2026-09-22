@@ -6,10 +6,18 @@
  */
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { refusalReason, refUpdate, unlinkRefusalReason, unlinkUpdate } = require("./work_ref_repair");
+const {
+  refCandidates,
+  chooseRef,
+  refusalReason,
+  refUpdate,
+  unlinkRefusalReason,
+  unlinkUpdate,
+} = require("./work_ref_repair");
 
 const games = { type: "games", retrievePrefix: "igdb" };
 const books = { type: "books", retrievePrefix: "ISBN" };
+const films = { type: "films", retrievePrefix: "tmdb" };
 const work = (title, apiRefs = []) => ({ _id: "w1", englishTranslatedTitle: title, apiRefs });
 const why = (args) => refusalReason({ collection: games, ...args });
 
@@ -255,6 +263,189 @@ test("the replaced ref is dropped, and everything else is kept", () => {
 test("without a replacesRef the write still only appends", () => {
   const { set } = refUpdate(work("A", ["hltb__5"]), "igdb__11346", undefined, undefined);
   assert.deepEqual(set.apiRefs, ["hltb__5", "igdb__11346"]);
+});
+
+// --- a row that names more than one id (#388) ---
+
+/**
+ * The queue is what a person wrote, in the order they wrote it. A worklist
+ * field left blank is absent rather than an empty claim, which is what lets
+ * propose_work_refs.js's `"ref": ""` rows be handed over unedited.
+ */
+test("a flat row is a queue of one, and its retitle belongs to that one id", () => {
+  assert.deepEqual(refCandidates({ work: "w1", ref: "igdb__9", retitleWorkTo: "Portal 2" }), [
+    { ref: "igdb__9", retitleWorkTo: "Portal 2", replacesRef: undefined },
+  ]);
+  assert.deepEqual(refCandidates({ work: "w1", ref: "", retitleWorkTo: "", entryTitle: "" }), []);
+  assert.deepEqual(refCandidates(undefined), []);
+});
+
+test("alternates are tried after the first, in the order given", () => {
+  assert.deepEqual(
+    refCandidates({ work: "w1", ref: "tmdb__1", alternates: ["tmdb__2", "tmdb__3"] }).map((c) => c.ref),
+    ["tmdb__1", "tmdb__2", "tmdb__3"]
+  );
+});
+
+/**
+ * #388's second invariant, at the level where it is decided. `retitleWorkTo`
+ * says a person read *that* id's answer, so it cannot be handed to an id
+ * nobody looked at; `replacesRef` names the ref coming off the work, which is
+ * the same ref whichever candidate goes on, so it travels.
+ */
+test("an alternate inherits replacesRef and never a retitle", () => {
+  const queue = refCandidates({
+    work: "w1",
+    ref: "igdb__9",
+    retitleWorkTo: "Portal 2",
+    replacesRef: "igdb__1",
+    alternates: ["igdb__10"],
+  });
+  assert.deepEqual(queue[1], { ref: "igdb__10", retitleWorkTo: undefined, replacesRef: "igdb__1" });
+});
+
+test("an alternate may carry its own retitle, and its own replacesRef", () => {
+  const queue = refCandidates({
+    work: "w1",
+    ref: "igdb__9",
+    replacesRef: "igdb__1",
+    alternates: [{ ref: "igdb__10", retitleWorkTo: "Portal 2" }, { ref: "igdb__11", replacesRef: "igdb__2" }],
+  });
+  assert.deepEqual(queue[1], { ref: "igdb__10", retitleWorkTo: "Portal 2", replacesRef: "igdb__1" });
+  assert.deepEqual(queue[2], { ref: "igdb__11", retitleWorkTo: undefined, replacesRef: "igdb__2" });
+});
+
+/**
+ * The proposal file's premise, kept: `candidates` is what the search found and
+ * `ref` is what a person chose from it. Reading the array would make `--from`
+ * write a raw search's first hit, which is #290 arriving by a new route and
+ * the reason nothing in propose_work_refs.js chooses in the first place.
+ */
+test("the candidates a search wrote are not a source of ids", () => {
+  const proposalRow = {
+    kind: "work",
+    work: "w1",
+    candidates: [{ ref: "tmdb__1", score: 95 }, { ref: "tmdb__2", score: 60 }],
+    ref: "",
+    alternates: [],
+    retitleWorkTo: "",
+  };
+  assert.deepEqual(refCandidates(proposalRow), []);
+});
+
+/** An entry row is link_entry.js's; nothing here would know what to do with it. */
+test("a row naming no work still yields whatever ids it names", () => {
+  assert.deepEqual(refCandidates({ kind: "entry", entry: "e1", ref: "" }), []);
+});
+
+/**
+ * The guard, wired the way scripts/set_work_ref.js wires it: a table of what
+ * each id answers stands in for the retrieve, and the verdict is the real
+ * `refusalReason`. That is the claim worth testing — an alternate is checked,
+ * not waved through.
+ */
+const guardedAgainst = (theWork, answers, collection = games) => async ({ ref, retitleWorkTo, replacesRef }) => {
+  const retrieved = answers[ref];
+  return {
+    reason: refusalReason({ collection, work: theWork, ref, retitleWorkTo, replacesRef, retrieved }),
+    retrieved,
+  };
+};
+
+/**
+ * The case #388 was found by, and the one the proposal's header predicts: the
+ * search led with the wrong film and the second candidate is the right one.
+ */
+test("a refused first candidate falls through to a second that passes", async () => {
+  const hero = work("Hero");
+  const { taken, retrieved, refused } = await chooseRef(
+    { work: "w1", ref: "tmdb__1", alternates: ["tmdb__2"] },
+    guardedAgainst(
+      hero,
+      {
+        tmdb__1: { englishTranslatedTitle: "THE RIBBON HERO" },
+        tmdb__2: { englishTranslatedTitle: "Hero" },
+      },
+      films
+    )
+  );
+
+  assert.equal(taken.ref, "tmdb__2");
+  assert.deepEqual({ ...retrieved }, { englishTranslatedTitle: "Hero" });
+  // Why the earlier one was not taken, in the guard's own words.
+  assert.equal(refused.length, 1);
+  assert.equal(refused[0].ref, "tmdb__1");
+  assert.match(refused[0].reason, /THE RIBBON HERO/);
+  assert.match(refused[0].reason, /not this work/);
+});
+
+/** A queue is not a relaxation: every id can still be refused, and then is. */
+test("a row every candidate refuses is refused, and says so about each", async () => {
+  const { taken, refused } = await chooseRef(
+    { work: "w1", ref: "igdb__1", alternates: ["igdb__2", "igdb__N/A"] },
+    guardedAgainst(work("Hero"), {
+      igdb__1: { englishTranslatedTitle: "DCS World: Hero Campaign" },
+      igdb__2: { englishTranslatedTitle: "Big Hero 6" },
+    })
+  );
+
+  assert.equal(taken, undefined);
+  assert.deepEqual(
+    refused.map((attempt) => attempt.ref),
+    ["igdb__1", "igdb__2", "igdb__N/A"]
+  );
+  assert.match(refused[0].reason, /not this work/);
+  assert.match(refused[1].reason, /not this work/);
+  assert.match(refused[2].reason, /not a usable ref/);
+});
+
+/**
+ * #388's second invariant, end to end. `Portal 2: Coop` is a right id under a
+ * name of its owner's, and `retitleWorkTo` is how a person says they read
+ * IGDB's answer for *that* id. The alternate is a different id nobody read, so
+ * it meets the title guard with nothing, and the guard refuses it — which is
+ * the behaviour, not a gap in it.
+ */
+test("an alternate does not inherit the first candidate's retitle", async () => {
+  const coop = work("Portal 2: Coop");
+  const answers = { igdb__73: { englishTranslatedTitle: "Portal 2" } };
+
+  const { taken, refused } = await chooseRef(
+    { work: "w1", ref: "igdb__72", retitleWorkTo: "Portal 2", alternates: ["igdb__73"] },
+    guardedAgainst(coop, answers)
+  );
+  assert.equal(taken, undefined);
+  assert.match(refused[0].reason, /igdb__72 names nothing/);
+  assert.match(refused[1].reason, /one of them is not this work/);
+
+  // And the way past it is the alternate carrying its own, which is a person
+  // having read the answer for the id that is actually going to be written.
+  const second = await chooseRef(
+    {
+      work: "w1",
+      ref: "igdb__72",
+      retitleWorkTo: "Portal 2",
+      alternates: [{ ref: "igdb__73", retitleWorkTo: "Portal 2" }],
+    },
+    guardedAgainst(coop, answers)
+  );
+  assert.equal(second.taken.ref, "igdb__73");
+  assert.equal(second.taken.retitleWorkTo, "Portal 2");
+});
+
+/** Each candidate costs a retrieve, so the queue stops at the first that passes. */
+test("nothing past the accepted candidate is asked about", async () => {
+  const asked = [];
+  const { taken } = await chooseRef(
+    { work: "w1", ref: "igdb__9", alternates: ["igdb__10", "igdb__11"] },
+    async ({ ref }) => {
+      asked.push(ref);
+      return { reason: undefined };
+    }
+  );
+
+  assert.equal(taken.ref, "igdb__9");
+  assert.deepEqual([...asked], ["igdb__9"]);
 });
 
 // --- taking a ref off ---
