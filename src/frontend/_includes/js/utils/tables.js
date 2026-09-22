@@ -73,10 +73,16 @@ const detailFormatter = (_, row) => {
   // Markup rather than a string: `utils/table_view.js` interpolates this into
   // the detail row's `html` template, which escapes anything that is not
   // already markup.
+  //
+  // The permalink's `aria-label` is its whole accessible name: the chain link
+  // is an `aria-hidden` glyph and the "Comments:" text is outside the anchor,
+  // so without the label the link has nothing to compute a name from and is
+  // announced as "link" (#421). Same shape as the caret's "Comments" label in
+  // `utils/table_view.js`.
   return html`
     <div class="review">
       <p>
-        <b><a href="#${anchorId}">${icon('link')}</a> Comments:</b>
+        <b><a href="#${anchorId}" aria-label="Link to this entry">${icon('link')}</a> Comments:</b>
           ${cover}
           <div id="review-${row.dbRef}" data-review-type="${type}" data-review-ref="${row.dbRef}">
           </div>

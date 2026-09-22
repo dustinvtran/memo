@@ -60,6 +60,22 @@ test("the expanded row names its entry rather than carrying a script", () => {
   assert.doesNotMatch(rendered, /\son[a-z]+=/i);
 });
 
+test("the panel's permalink has an accessible name", () => {
+  const rendered = String(detailFormatter(null, row()));
+
+  // The anchor holds the chain glyph and nothing else — "Comments:" sits
+  // outside it — and `icon` marks every glyph `aria-hidden`, so the label is
+  // the whole of the link's name (#421).
+  assert.ok(
+    rendered.includes('<a href="#entry-abc" aria-label="Link to this entry">')
+  );
+
+  const inside = /<a href="#entry-abc"[^>]*>(.*?)<\/a>/s.exec(rendered);
+  assert.ok(inside);
+  assert.ok(inside[1].includes('aria-hidden="true"'));
+  assert.equal(inside[1].replace(/<[^>]*>/g, "").trim(), "");
+});
+
 test("an id in the panel is escaped like any other attribute value", () => {
   const rendered = String(detailFormatter(null, row(`a"b'c`)));
 

@@ -151,10 +151,21 @@ Components.List.List = List
 
 ///////////////////////////////////////////////////////////////////////////////
 
+/**
+ * The heading, with the house icon in it linking back to the owner's profile.
+ *
+ * The `aria-label` is the link's whole accessible name. `icon` marks every
+ * glyph `aria-hidden` — right on its own, since a decorative path is nothing
+ * to read out — and there is no text inside the anchor, so without the label
+ * the link computes no name at all and is announced as "link", a blank row in
+ * a links list (#421). The same convention labels the comment caret in
+ * `utils/table_view.js` and the permalink in `utils/tables.js`: the label says
+ * where the link goes, and the icon stays hidden.
+ */
 const ListPageHeader = (title, username) => initComponent({
   content: () => html`
     <div class="full-bleed">
-      <h1><a href="/profile/${encodeURIComponent(username)}">${icon('home')}</a> ${title}</h1>
+      <h1><a href="/profile/${encodeURIComponent(username)}" aria-label="${username}'s profile">${icon('home')}</a> ${title}</h1>
     </div>
     <hr>
   `
