@@ -21,15 +21,40 @@ Describe the code as it stands, not the path taken to it. A reviewer wants to
 know what the branch does and which decisions are worth arguing with, not
 what was tried first.
 
+**The shape is `.github/pull_request_template.md`, and it is enforced.** One
+sentence from the author, then Summary, Changes as a Before and an After,
+Artifact, Prior / Future work — then a horizontal rule, then an optional
+Details for whoever is verifying rather than skimming. Above that rule is
+natural language: no file paths, no symbol names, no code, because a summary
+a reviewer has to read the diff to understand is not a summary. Artifact is
+the exception and is where the command, the output and the screenshot belong.
+
+**The opening sentence belongs to the pull request author.** Ask for it, or
+quote what they have already said about the change, and correct only spelling
+and grammar. Never write one for them: the template ships a visible
+`Human TL;DR pending` marker in its place, and a body still carrying that
+marker fails the check rather than shipping. If a description has to go up
+before the author has answered, leave the marker and say so.
+
+`.github/workflows/pr_body.yml` checks the parts of this that have a
+mechanical test — the sections, the ceilings, the wrapping, the marker, and a
+Conventional Commit title — and `node scripts/check_pr_body.js draft.md` asks
+the same of a file before a pull request exists. The rest is taste. The
+numbers and the reasoning are at the top of `scripts/pr_body_rules.js`.
+
 ## Commits
 
-`feat:` / `fix:` / `docs:` / `chore:` prefixes, optionally scoped
-(`feat(db_maintenance):`). Say why, not just what — the diff already says
-what. End with:
+`feat:` / `fix:` / `refactor:` / `test:` / `docs:` / `chore:` prefixes,
+optionally scoped (`feat(db_maintenance):`), wrapped at 72 columns. Say why,
+not just what — the diff already says what. The same shape is required of a
+pull request title, and `.github/workflows/pr_body.yml` checks that half.
 
-```
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
-```
+**No attribution trailers, and no AI attribution anywhere** — not in a commit
+message, not in a pull request description. This replaces the
+`Co-Authored-By: Claude …` line the repo used to ask for; commits before
+2026-09 still carry it. The one exception is out of our hands: the GitHub API
+appends a generated-by line of its own to a body written through it, which
+nothing in the repository can suppress.
 
 **Stage each commit's files by explicit path.** `git commit` takes everything
 staged, so a blanket `git add -A` or `-u` sweeps whatever else is in the tree
