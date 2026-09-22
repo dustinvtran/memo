@@ -93,7 +93,7 @@ local path, pointing them back at the Drive copy's `.env` and `backups` so
 the credentials and the snapshots never leave Drive:
 
 ```
-MEMO_ENV_FILE=/path/on/drive/src/db_maintenance/.env \
+MEMO_ENV_FILE=/path/on/drive/.env \
   node C:/local/copy/src/db_maintenance/scripts/some_script.js \
   --backup-dir=/path/on/drive/src/db_maintenance/backups
 ```

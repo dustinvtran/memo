@@ -58,7 +58,7 @@ jobs:
         run: |
           if [ -z "$MONGODB_URL" ]; then
             echo "::error::Unset repository secret: MONGODB_URL"
-            echo "Set it under Settings > Secrets and variables > Actions."                  "The value lives in src/db_maintenance/.env. See #338."
+            echo "Set it under Settings > Secrets and variables > Actions."                  "The value lives in the repository root's .env. See #338."
             exit 1
           fi
 
