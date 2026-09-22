@@ -93,6 +93,52 @@ const linkRefusalReason = ({ entry, work, ref, collection, entryTitle, siblings,
 };
 
 /**
+ * The entries on a work as the apply would find them: what the database says,
+ * with the writes this run has already made folded over it.
+ *
+ * `linkRefusalReason`'s sibling check asks which names are taken on the target
+ * work. On an `--apply` the database is the whole answer, because every earlier
+ * operation in the file has been written by the time the next one looks. On a
+ * dry run nothing has, so the database answers with the names as they were
+ * before the run started, and a `--from` file whose operations depend on each
+ * other is judged against a state the apply never reaches. Renaming one entry
+ * off a name and moving another onto it was refused for that reason — #386, and
+ * the same hole `createdThisRun` closed for the works a run creates (#377). A
+ * dry run that does not describe the apply is worse than no dry run.
+ *
+ * Both directions, because both are what the apply would find. An entry this
+ * run has renamed, or moved away, no longer holds on this work the name the
+ * database still has against it; an entry this run has moved *onto* the work
+ * holds its name there before the database says so. The second is a clash the
+ * dry run could not see either, and inventing a refusal is the same failure as
+ * inventing a pass.
+ *
+ * `assigned` is keyed by entry id and holds each entry as the run has left it —
+ * which is what makes folding it in idempotent. On an `--apply` the database
+ * has already answered with that row, and replacing it with itself is not the
+ * double count that `createdThisRun` re-reads the database to avoid. Keyed by
+ * an id both sides carry, there is nothing to re-read.
+ *
+ * @type {(args: {
+ *   siblings?: any[], workId?: any, userId?: any, assigned?: Map<string, any>,
+ * }) => any[]}
+ */
+const siblingsAfterRun = ({ siblings, workId, userId, assigned }) => {
+  const found = siblings ?? [];
+  // No work to be a sibling on: a link whose work does not exist yet is
+  // created below this in the caller, and nothing can have landed on it.
+  if (workId === undefined || workId === null || !assigned?.size) return [...found];
+
+  const on = String(workId);
+  return [
+    ...found.filter((other) => !assigned.has(String(other._id))),
+    ...[...assigned.values()].filter(
+      (other) => String(other.workRef) === on && sameOwner(other.userId, userId)
+    ),
+  ];
+};
+
+/**
  * Why this entry and its work cannot be deleted, or `undefined` if they can.
  *
  * Deliberately thin. A delete here is only ever reached because a person read
@@ -244,6 +290,7 @@ const workTitleUpdate = (retrieved) => ({
 
 module.exports = {
   linkRefusalReason,
+  siblingsAfterRun,
   workTitleRefusalReason,
   workTitleUpdate,
   deleteRefusalReason,
@@ -253,6 +300,14 @@ module.exports = {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Whether two entries belong to the same person, which is what the sibling
+ * query asks the database. An operation on somebody else's entry cannot take a
+ * name on this one's work, and folding one in would invent a clash the apply —
+ * which reads the same `userId` filter — never produces.
+ */
+const sameOwner = (a, b) => String(a ?? "") === String(b ?? "");
 
 /** A blank override is no override: see `filedAs`. */
 const normalise = (title) =>
