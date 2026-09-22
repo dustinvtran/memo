@@ -311,7 +311,13 @@ const repairOne = async (db, pair, apply) => {
   // `refCandidates`.
   const retitleTo =
     taken.retitleWorkTo && titlesAgree(work, retrieved) === false ? displayTitle(retrieved) : undefined;
-  const { set, unset } = refUpdate(work, taken.ref, retitleTo, taken.replacesRef);
+  const { set, unset, cleared } = refUpdate(
+    work,
+    taken.ref,
+    retitleTo,
+    taken.replacesRef,
+    collection
+  );
 
   const ordinal = queue.length > 1 ? `; candidate ${refused.length + 1} of ${queue.length}` : "";
   console.log(`  ~ ${label} -> ${taken.ref}  (${collection.type}; the API answers "${displayTitle(retrieved)}"${ordinal})`);
@@ -319,6 +325,15 @@ const repairOne = async (db, pair, apply) => {
   if (retitleTo) {
     console.log(`      englishTranslatedTitle "${displayTitle(work)}" -> "${retitleTo}"`);
     await warnIfNameVanishes(db, collection, work, retitleTo);
+  }
+  // Said out loud rather than done quietly: these are values a reader can see
+  // on the page today, and the row goes blank until the next refresh fills it
+  // from the new id. See `staleAfterRepoint`.
+  if (cleared.length > 0) {
+    console.log(
+      `      cleared ${cleared.map((f) => `${f}=${JSON.stringify(work[f])}`).join(", ")}` +
+        " — the old ref's, and a refresh would not have replaced them"
+    );
   }
   if (apply) await db.collection(collection.works).updateOne({ _id: workId }, { $set: set, $unset: unset });
   return true;

@@ -13,6 +13,8 @@ const {
   refUpdate,
   unlinkRefusalReason,
   unlinkUpdate,
+  staleAfterRepoint,
+  isWidening,
 } = require("./work_ref_repair");
 
 const games = { type: "games", retrievePrefix: "igdb" };
@@ -102,6 +104,7 @@ test("a books work takes its retrieve prefix", () => {
 
 test("the write appends the ref and forces a refresh", () => {
   assert.deepEqual(refUpdate(work("A", ["hltb__N/A"]), "igdb__9"), {
+    cleared: [],
     set: { apiRefs: ["hltb__N/A", "igdb__9"] },
     unset: { metadataUpdatedDate: "" },
   });
@@ -167,6 +170,7 @@ test("a retitle on a work whose title already agrees changes nothing", () => {
     undefined
   );
   assert.deepEqual(refUpdate(work("Nioh"), "igdb__12571"), {
+    cleared: [],
     set: { apiRefs: ["igdb__12571"] },
     unset: { metadataUpdatedDate: "" },
   });
@@ -174,6 +178,7 @@ test("a retitle on a work whose title already agrees changes nothing", () => {
 
 test("the retitle is written from the API's spelling, not from what was typed", () => {
   assert.deepEqual(refUpdate(work("Ultimate Doom: Episode 4 Only"), "igdb__10192", "The Ultimate Doom"), {
+    cleared: [],
     set: { apiRefs: ["igdb__10192"], englishTranslatedTitle: "The Ultimate Doom" },
     unset: { metadataUpdatedDate: "" },
   });
@@ -540,3 +545,91 @@ test("an unlink leaves metadataUpdatedDate alone", () => {
   assert.equal("metadataUpdatedDate" in unlinkUpdate(work("A", ["igdb__1"]), "igdb__1").set, false);
 });
 
+
+////////////////////////////////////////////////////////////////////////////////
+// A repoint clears what a refresh would not replace (CLAUDE.md's repoint rule)
+////////////////////////////////////////////////////////////////////////////////
+
+const BOOKS = { type: "books", fillOnlyFields: ["releaseYear", "duration"] };
+const GAMES = { type: "games" };
+const FILMS = { type: "films" };
+
+test("staleAfterRepoint names the fields each type will not replace", () => {
+  assert.deepEqual([...staleAfterRepoint(BOOKS)], ["releaseYear", "duration"]);
+  assert.deepEqual([...staleAfterRepoint(GAMES)], ["duration", "durationSource"]);
+  assert.deepEqual([...staleAfterRepoint(FILMS)], []);
+});
+
+test("a replacesRef repoint clears the stale fields it finds", () => {
+  const work = {
+    _id: "w1",
+    apiRefs: ["ISBN__old"],
+    englishTranslatedTitle: "Numerical Linear Algebra",
+    releaseYear: 2018,
+    duration: 419,
+  };
+  const { set, unset, cleared } = refUpdate(work, "ISBN__new", undefined, "ISBN__old", BOOKS);
+  assert.deepEqual([...set.apiRefs], ["ISBN__new"]);
+  assert.deepEqual([...cleared], ["releaseYear", "duration"]);
+  assert.equal(unset.releaseYear, "");
+  assert.equal(unset.duration, "");
+  assert.equal(unset.metadataUpdatedDate, "");
+});
+
+test("a field the work does not carry is not reported as cleared", () => {
+  const work = { _id: "w1", apiRefs: ["ISBN__old"], releaseYear: 2018 };
+  const { cleared, unset } = refUpdate(work, "ISBN__new", undefined, "ISBN__old", BOOKS);
+  assert.deepEqual([...cleared], ["releaseYear"]);
+  assert.equal(unset.duration, undefined);
+});
+
+test("a games repoint takes durationSource with the duration", () => {
+  const work = { _id: "w1", apiRefs: ["igdb__1"], duration: 780, durationSource: "igdb" };
+  const { cleared } = refUpdate(work, "igdb__2", undefined, "igdb__1", GAMES);
+  assert.deepEqual([...cleared], ["duration", "durationSource"]);
+});
+
+test("giving a ref to a work that had none clears nothing", () => {
+  // Not a repoint: there is no previous id whose values these were.
+  const work = { _id: "w1", apiRefs: [], releaseYear: 1997, duration: 356 };
+  const { cleared, unset } = refUpdate(work, "ISBN__new", undefined, undefined, BOOKS);
+  assert.deepEqual([...cleared], []);
+  assert.deepEqual(Object.keys(unset), ["metadataUpdatedDate"]);
+});
+
+test("widening a work is a repoint for this purpose, with no replacesRef", () => {
+  // `Resident Evil 4: Assignment Ada` -> `Resident Evil 4` keeps a playtime
+  // measured for the part. CLAUDE.md names this exact pair.
+  const work = {
+    _id: "w1",
+    apiRefs: [],
+    englishTranslatedTitle: "Resident Evil 4: Assignment Ada",
+    duration: 60,
+    durationSource: "igdb",
+  };
+  const { cleared } = refUpdate(work, "igdb__2", "Resident Evil 4", undefined, GAMES);
+  assert.deepEqual([...cleared], ["duration", "durationSource"]);
+});
+
+test("correcting a misspelling is not a widening and keeps the values", () => {
+  // `McCabe & Mrs. McMiller` contains nothing of `McCabe & Mrs. Miller`.
+  const work = {
+    _id: "w1",
+    apiRefs: [],
+    englishTranslatedTitle: "McCabe & Mrs. McMiller",
+    duration: 120,
+  };
+  const { cleared } = refUpdate(work, "tmdb__2", "McCabe & Mrs. Miller", undefined, GAMES);
+  assert.deepEqual([...cleared], []);
+});
+
+test("a retitle to the same name is not a widening", () => {
+  const work = { _id: "w1", apiRefs: [], englishTranslatedTitle: "Portal 2", duration: 60 };
+  assert.equal(isWidening(work, "Portal 2"), false);
+  assert.equal(isWidening(work, undefined), false);
+});
+
+test("isWidening is true only when the stored title is the new one plus something", () => {
+  const work = { _id: "w1", englishTranslatedTitle: "Portal 2: Coop" };
+  assert.equal(isWidening(work, "Portal 2"), true);
+});
