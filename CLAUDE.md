@@ -321,22 +321,39 @@ are what catch that, in CI's dependency-free job.
 
 ## Credentials
 
-`src/db_maintenance/.env` holds `MONGODB_URL`, `TWITCH_CLIENT_ID`,
-`TWITCH_CLIENT_SECRET`, `TMDB_API_KEY`, `GOOGLE_API_KEY`. Never print the
-values, and never copy the file anywhere — if something can't see it from
-where it is, point it at the file with `MEMO_ENV_FILE` rather than moving
-the file to it.
+**`.env.example` at the repository root is the list**, with a note on each
+variable saying what reads it and where the real value lives. It is the only
+env file that is tracked. Copy it to `.env` — either beside it at the root or
+in `src/db_maintenance/`, since `env.js` looks in both, preferring the latter.
 
-It is gitignored, so it exists **only in the main checkout**. A worktree or a
-fresh clone does not have one, and pointing `MEMO_ENV_FILE` at a path that
-lacks it fails as `TypeError: Cannot read properties of undefined (reading
-'startsWith')` from `mongodb-connection-string-url` — an unset `MONGODB_URL`,
-not a bad one. Point it at the main checkout's copy.
+The `.env` holds `MONGODB_URL`, `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`,
+`TMDB_API_KEY`, `GOOGLE_API_KEY`, and — only if you are running the API
+locally — `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_TOKEN_NAMESPACE` and
+`TOKEN_SECRET`. Never print the values, and never copy the file anywhere — if
+something can't see it from where it is, point it at the file with
+`MEMO_ENV_FILE` rather than moving the file to it.
+
+**Filling it in does not configure the deployed site.** Netlify holds its own
+copy of the runtime variables, set in its UI and readable only through the
+Netlify API or console, and that copy is what the API actually runs on. #185
+is why that distinction is worth keeping in mind rather than assuming the two
+agree.
+
+A filled-in `.env` is gitignored, so it exists **only in the main checkout**.
+A worktree or a fresh clone does not have one, and pointing `MEMO_ENV_FILE` at
+a path that lacks it fails as `TypeError: Cannot read properties of undefined
+(reading 'startsWith')` from `mongodb-connection-string-url` — an unset
+`MONGODB_URL`, not a bad one. Point it at the main checkout's copy. An
+explicit `MEMO_ENV_FILE` is never fallen back from, deliberately: silently
+reading a different file would mean reading production's credentials by
+accident.
 
 Loading it is `src/db_maintenance/env.js`'s job, and every script's first
 line is `require("../env")`. Don't call `dotenv` directly in a new script:
 a bare `config()` resolves against the working directory, which is how the
-scripts came to only work when run from one particular folder.
+scripts came to only work when run from one particular folder. Which file gets
+read is decided by `env_file.js`, which is pure and tested; `env.js` is the
+half that touches the disk.
 
 ## Writing to the database
 

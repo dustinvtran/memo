@@ -61,9 +61,18 @@ We use:
 **Credentials.**
 This project is deployed via netlify with the account `{ask}` (ask me for password).
 
-External API keys are set in [Netlify](https://app.netlify.com/sites/td-memo/settings/deploys#environment)
-environment variables. They are also avaiable in production inside
-`process.env`.
+`.env.example` at the repository root lists every variable this project
+reads, with a note on each saying what reads it and where the real value
+lives. Copy it to `.env` — beside it at the root, or in `src/db_maintenance/`,
+since `env.js` looks in both — and fill it in. That copy is gitignored and is
+what the maintenance scripts read.
+
+The deployed site does not read it. External API keys are set in
+[Netlify](https://app.netlify.com/sites/td-memo/settings/deploys#environment)
+environment variables, which are available in production inside
+`process.env`, and that copy is the one the API actually runs on — see #185
+for why the two are worth checking against each other rather than assumed to
+agree.
 
 You might need to run `npx netlify login` inside the project.
 
