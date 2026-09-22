@@ -17,10 +17,101 @@
  * using the same `titlesAgree` the backfill guard uses, and a disagreement is
  * refused rather than warned about.
  *
+ * A worklist row may offer more than one id, and `refCandidates` and
+ * `chooseRef` are the order they are tried in — see #388 and the two of them
+ * below. Nothing about the guard is softened by that: each id in the queue is
+ * asked the same question, and the one thing that does not travel down the
+ * queue is the one piece of evidence that is about a single id.
+ *
  * Pure and dependency-free: the retrieve lives in scripts/set_work_ref.js and
  * the verdict lives here, so the decision is covered by the no-install suite.
  */
 const { parseApiRef, findApiRef, titlesAgree, displayTitle } = require("./work_collections");
+
+/** A worklist field that was left blank is absent, not an empty claim. */
+const filledIn = (value) =>
+  typeof value === "string" && value.trim() ? value.trim() : undefined;
+
+/**
+ * The ids to try for one worklist row, in the order they are to be tried.
+ *
+ * **Why a row carries more than one id.** scripts/propose_work_refs.js ranks
+ * several candidates per work and its own header says the score is for
+ * ordering rather than deciding — TMDB answers `Hero` with `THE RIBBON HERO`
+ * first and `Big Hero 6` second, IGDB leads with a DCS World campaign. So the
+ * first choice being refused while a later one is right is the expected case,
+ * and until #388 the refusal skipped the work and the second-ranked id sat in
+ * the file untried while a person looked it up by hand. An `alternates` list
+ * is that second id, and `chooseRef` walks the queue.
+ *
+ * **What is inherited down the queue and what is not, which is the whole of
+ * #388's second invariant.** `replacesRef` is inherited: it names the wrong
+ * ref coming *off* the work, which is the same ref whichever candidate goes
+ * on, so it is evidence about something that does not change between them —
+ * and without it every alternate of a #378 repoint would refuse with "already
+ * has". `retitleWorkTo` is not inherited under any circumstances: it says a
+ * person read *that* id's answer and confirmed it is this work under their own
+ * name, and handing that confirmation to an id nobody looked at is #290
+ * arriving by a new route. An alternate that needs one carries its own, as an
+ * object rather than a bare string.
+ *
+ * **A row's `candidates` array is not a source of ids**, which is why nothing
+ * here reads it. That array is what the search found; `ref` and `alternates`
+ * are what a person chose from it. A proposal row that has not been filled in
+ * yields an empty queue and is passed over, which is what lets the proposal
+ * file be handed to `--from` unedited without a search's first hit ever being
+ * written.
+ *
+ * @type {(pair: any) => { ref: string, retitleWorkTo?: string, replacesRef?: string }[]}
+ */
+const refCandidates = (pair) => {
+  if (!pair || typeof pair !== "object") return [];
+  const inherited = filledIn(pair.replacesRef);
+  const first = filledIn(pair.ref);
+  const alternates = Array.isArray(pair.alternates) ? pair.alternates : [];
+
+  return [
+    ...(first
+      ? [{ ref: first, retitleWorkTo: filledIn(pair.retitleWorkTo), replacesRef: inherited }]
+      : []),
+    ...alternates.map((alternate) =>
+      typeof alternate === "string"
+        ? { ref: filledIn(alternate), retitleWorkTo: undefined, replacesRef: inherited }
+        : {
+            ref: filledIn(alternate?.ref),
+            retitleWorkTo: filledIn(alternate?.retitleWorkTo),
+            replacesRef: filledIn(alternate?.replacesRef) ?? inherited,
+          }
+    ),
+  ].filter((candidate) => candidate.ref !== undefined);
+};
+
+/**
+ * The first candidate `check` allows, and why each earlier one was refused.
+ *
+ * **Every candidate gets the full guard**, which is #388's first invariant:
+ * this is a queue of ids each of which is asked the same question, not a
+ * relaxation of the question. `check` is the caller's whole verdict —
+ * scripts/set_work_ref.js passes one that retrieves the id and runs
+ * `refusalReason` against the answer — so an alternate that fails the title
+ * comparison fails exactly as a first choice does.
+ *
+ * **It stops at the first id that passes rather than scoring them**, because
+ * `check` costs an API retrieve: a row of three alternates is up to three
+ * calls, and the one that is accepted is the last one made.
+ *
+ * @type {<T>(pair: any, check: (candidate: any) => Promise<{ reason?: string, retrieved?: T }>)
+ *   => Promise<{ taken?: object, retrieved?: T, refused: { ref: string, reason: string }[] }>}
+ */
+const chooseRef = async (pair, check) => {
+  const refused = [];
+  for (const candidate of refCandidates(pair)) {
+    const { reason, retrieved } = (await check(candidate)) ?? {};
+    if (!reason) return { taken: candidate, retrieved, refused };
+    refused.push({ ref: candidate.ref, reason });
+  }
+  return { refused };
+};
 
 /**
  * Why this work cannot be given this ref, or `undefined` if it can.
@@ -206,4 +297,11 @@ const unlinkUpdate = (work, unlinkRef) => ({
   set: { apiRefs: (Array.isArray(work.apiRefs) ? work.apiRefs : []).filter((r) => r !== unlinkRef) },
 });
 
-module.exports = { refusalReason, refUpdate, unlinkRefusalReason, unlinkUpdate };
+module.exports = {
+  refCandidates,
+  chooseRef,
+  refusalReason,
+  refUpdate,
+  unlinkRefusalReason,
+  unlinkUpdate,
+};
