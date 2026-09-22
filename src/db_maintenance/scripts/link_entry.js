@@ -78,6 +78,7 @@ const {
 const { loadAdapter, describeError } = require("../load_adapter");
 const {
   linkRefusalReason,
+  siblingsAfterRun,
   deleteRefusalReason,
   linkUpdate,
   nameAfter,
@@ -99,6 +100,27 @@ const parsers = require("../../api/utils/parsers");
  * @type {Map<string, any>}
  */
 const createdThisRun = new Map();
+
+/**
+ * Every entry this run has written, by its id, as the run has left it — on the
+ * work it now sits on and under the name it is now filed as. The same argument
+ * as `createdThisRun` one level down: a dry run reads the siblings of a work
+ * from the database, so without this it judges each operation against the names
+ * as they were before the run started and refuses the second half of a file
+ * that frees a name and then takes it. ../entry_link_plan.js `siblingsAfterRun`
+ * is what folds it over the read. #386.
+ *
+ * One map per collection, because an id is only unique within one: a `--from`
+ * file may name a film and a game, and the numeric ids the first import wrote
+ * are short enough for two collections to hold the same one.
+ * @type {Map<string, Map<string, any>>}
+ */
+const assignedThisRun = new Map();
+
+/** The run's writes to one collection's entries, created on first use. */
+const assignedIn = (collection) =>
+  assignedThisRun.get(collection.entries) ??
+  assignedThisRun.set(collection.entries, new Map()).get(collection.entries);
 
 const main = async () => {
   const args = parseArgs(process.argv);
@@ -171,12 +193,17 @@ const runOne = async (db, op, apply) => {
     ? await db.collection(collection.works).findOne({ _id: op.toWork })
     : holders?.[0];
 
-  const siblings = target
-    ? await db
-        .collection(collection.entries)
-        .find({ workRef: String(target._id), userId: entry?.userId })
-        .toArray()
-    : [];
+  const siblings = siblingsAfterRun({
+    siblings: target
+      ? await db
+          .collection(collection.entries)
+          .find({ workRef: String(target._id), userId: entry?.userId })
+          .toArray()
+      : [],
+    workId: target?._id,
+    userId: entry?.userId,
+    assigned: assignedIn(collection),
+  });
 
   const refusal = linkRefusalReason({
     entry,
@@ -229,6 +256,14 @@ const runOne = async (db, op, apply) => {
       { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) }
     );
   }
+
+  // Recorded in both modes, like `createdThisRun`, so the dry run and the apply
+  // answer "what is on this work" the same way rather than by coincidence.
+  assignedIn(collection).set(String(entry._id), {
+    ...entry,
+    workRef: String(work._id),
+    overrides: { ...entry.overrides, englishTranslatedTitle: filed },
+  });
 
   // The work the entry came from, now that nothing is on it. Left behind it
   // would be a work with no entries and no id, which is what the audit calls
