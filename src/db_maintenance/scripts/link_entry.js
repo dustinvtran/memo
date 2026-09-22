@@ -46,6 +46,14 @@
  *       written down nowhere; that script says so and this is the answer.
  *       Run the two in that order — a work with no identity ref is refused.
  *
+ *   Any of the three above may also carry `"entryOriginalTitle": "人間失格"`,
+ *   which sets `overrides.originalTitle` on the entry. It is for a work whose
+ *   own name is not in the Latin alphabet and is stored with an English gloss
+ *   after it — the books adapter has never written `originalTitle`, so a
+ *   rename would otherwise delete the native name with nothing able to put it
+ *   back. The row then renders `人間失格 (No Longer Human)` exactly as it did
+ *   before, because the title formatter composes the two fields. #385.
+ *
  *   Any of the three above may also carry `"workTitle": "<the API's title>"`,
  *   which renames the work to it and clears `metadataUpdatedDate` so that it
  *   refreshes again. A work is the database's copy of what an API says and a
@@ -211,6 +219,7 @@ const runOne = async (db, op, apply) => {
     ref: op.ref,
     collection,
     entryTitle: op.entryTitle,
+    entryOriginalTitle: op.entryOriginalTitle,
     siblings,
     holders,
   });
@@ -236,7 +245,12 @@ const runOne = async (db, op, apply) => {
   const renamed = op.workTitle === undefined ? undefined : await adoptApiTitle(db, collection, work, op, apply);
   if (renamed === false) return false;
 
-  const { set, unset } = linkUpdate({ entry, workId: work._id, entryTitle: op.entryTitle });
+  const { set, unset } = linkUpdate({
+    entry,
+    workId: work._id,
+    entryTitle: op.entryTitle,
+    entryOriginalTitle: op.entryOriginalTitle,
+  });
   const filed = nameAfter(entry, op.entryTitle);
 
   console.log(`  ~ ${op.op} "${op.was ?? displayTitle(entry?.overrides ?? {})}" (entry ${entry._id})`);
@@ -305,6 +319,7 @@ const adoptApiTitle = async (db, collection, work, op, apply) => {
     work,
     workTitle: op.workTitle,
     entryTitle: op.entryTitle,
+    entryOriginalTitle: op.entryOriginalTitle,
     retrieved,
     retrieveError,
   });

@@ -32,7 +32,13 @@
  * Pure and dependency-free: the reads, the retrieve and the writes live in
  * scripts/link_entry.js and the verdicts live here.
  */
-const { parseApiRef, findApiRef, displayTitle, titlesAgree } = require("./work_collections");
+const {
+  parseApiRef,
+  findApiRef,
+  displayTitle,
+  titlesAgree,
+  normalizeTitle,
+} = require("./work_collections");
 const { filedAs } = require("../api/utils/entry_state");
 
 /**
@@ -179,24 +185,64 @@ const deleteRefusalReason = ({ entry, otherEntries }) => {
  * the same reason: a tidy-up you did not ask for is data loss when you find it
  * six months later.
  *
- * @type {(args: { entry: any, workId: string, entryTitle?: string }) => {
- *   set: object, unset: object,
- * }}
+ * **`entryOriginalTitle` is the same three values over `overrides.originalTitle`.**
+ * It exists for the works whose own name is not in the Latin alphabet and
+ * which are stored with an English gloss after it — `人間失格 (No Longer Human)`
+ * in one field, with `originalTitle` unset. The books adapter has never
+ * written `originalTitle` (`google_mapping.js` maps `englishTranslatedTitle:
+ * volumeInfo.title` and nothing to it), so renaming such a work to the API's
+ * own title does not move the native name anywhere — it removes it, and no
+ * later refresh can put it back. Writing it here first is what makes that
+ * rename safe. #385.
+ *
+ * The native name goes on the entry rather than on the work deliberately, and
+ * docs/works_and_entries.md is the reason: a work is the database's copy of
+ * what an API says. Google Books answers `No Longer Human` for that ISBN, so
+ * a work carrying `人間失格` would be saying something no API ever returned,
+ * which is the shape that freezes a work under `mergeWork`'s title guard.
+ *
+ * @type {(args: {
+ *   entry: any, workId: string, entryTitle?: string, entryOriginalTitle?: string,
+ * }) => { set: object, unset: object }}
  */
-const linkUpdate = ({ entry, workId, entryTitle }) => {
+const linkUpdate = ({ entry, workId, entryTitle, entryOriginalTitle }) => {
   const set = { workRef: String(workId) };
-  if (entryTitle === undefined) return { set, unset: {} };
+  const unset = {};
 
-  const title = normalise(entryTitle);
-  if (title !== null) set["overrides.englishTranslatedTitle"] = title;
-  return {
-    set,
+  if (entryTitle !== undefined) {
+    const title = normalise(entryTitle);
+    if (title !== null) set["overrides.englishTranslatedTitle"] = title;
     // An unset rather than an empty string, so `filedAs` and the unique index
     // see the same absence they see on every other untitled entry.
-    unset: title === null && filedAs(entry) !== null
-      ? { "overrides.englishTranslatedTitle": "" }
-      : {},
-  };
+    else if (filedAs(entry) !== null) unset["overrides.englishTranslatedTitle"] = "";
+  }
+
+  if (entryOriginalTitle !== undefined) {
+    const original = normalise(entryOriginalTitle);
+    if (original !== null) set["overrides.originalTitle"] = original;
+    else if (entry?.overrides?.originalTitle !== undefined) {
+      unset["overrides.originalTitle"] = "";
+    }
+  }
+
+  return { set, unset };
+};
+
+/**
+ * The display a row would render after a rename, which is what decides whether
+ * the old name really is written down somewhere.
+ *
+ * `titleFormatter` in ../frontend/_includes/js/utils/columns.js composes the
+ * two fields as `${originalTitle} (${englishTranslatedTitle})` whenever an
+ * original is present and differs — so an entry carrying `人間失格` over a work
+ * renamed to `No Longer Human` renders `人間失格 (No Longer Human)`, which is
+ * the string the work held before. Nothing is lost, and that is a fact about
+ * the composition rather than a promise, so it is checked rather than assumed.
+ * @type {(entryOriginalTitle: string | undefined, workTitle: string) => string | null}
+ */
+const renderedAfterRename = (entryOriginalTitle, workTitle) => {
+  const original = normalise(entryOriginalTitle);
+  return original === null ? null : `${original} (${workTitle})`;
 };
 
 /** The name the entry would be filed under after this write. */
@@ -240,11 +286,11 @@ const overrideIsRedundant = (entry, work) => {
  * my own name for it" from a genuinely misfiled id. A guess is refused.
  *
  * @type {(args: {
- *   work: any, workTitle: string, entryTitle?: string,
+ *   work: any, workTitle: string, entryTitle?: string, entryOriginalTitle?: string,
  *   retrieved?: any, retrieveError?: string,
  * }) => string | undefined}
  */
-const workTitleRefusalReason = ({ work, workTitle, entryTitle, retrieved, retrieveError }) => {
+const workTitleRefusalReason = ({ work, workTitle, entryTitle, entryOriginalTitle, retrieved, retrieveError }) => {
   if (!work) return "no work to rename";
   if (normalise(workTitle) === null) return "workTitle is empty — to leave the work's title alone, leave it out";
 
@@ -257,7 +303,25 @@ const workTitleRefusalReason = ({ work, workTitle, entryTitle, retrieved, retrie
   // somebody looked at it and said to drop it, which is theirs to say. A work
   // filed as `The Witcher` under The Witcher IV's id is the case — the id is
   // right, the name is simply stale, and there is nothing worth keeping.
-  if (entryTitle === undefined && displayTitle(work) !== workTitle) {
+  // `entryOriginalTitle` satisfies this guard only when the two fields compose
+  // back into the name the work is losing — see `renderedAfterRename`. That is
+  // narrower than accepting any original title on purpose: the guard's job is
+  // that the old name survives somewhere, and a native title that does not
+  // reconstruct it leaves part of it written down nowhere just as an absent
+  // `entryTitle` would.
+  // Compared through `normalizeTitle`, which is how the rest of this module
+  // decides two strings are the same name — the stored Quixote gloss says
+  // "of La Mancha" and Google Books says "of la Mancha", and one letter's case
+  // is not a name written down nowhere. It is also the title the work will
+  // actually be given that matters, which is the API's own, not the
+  // `workTitle` asserted here; they differ in exactly this kind of way.
+  const becomes = retrieved ? displayTitle(retrieved) : workTitle;
+  const rendered = renderedAfterRename(entryOriginalTitle, becomes);
+  const reconstructs =
+    rendered !== null &&
+    normalizeTitle(rendered) === normalizeTitle(displayTitle(work));
+
+  if (entryTitle === undefined && !reconstructs && displayTitle(work) !== workTitle) {
     return `renaming this work to "${workTitle}" would leave "${displayTitle(work)}" written down nowhere — give the entry that name with entryTitle, or pass "" to drop it`;
   }
 
@@ -291,6 +355,7 @@ const workTitleUpdate = (retrieved) => ({
 module.exports = {
   linkRefusalReason,
   siblingsAfterRun,
+  renderedAfterRename,
   workTitleRefusalReason,
   workTitleUpdate,
   deleteRefusalReason,
