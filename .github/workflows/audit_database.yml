@@ -32,6 +32,18 @@
 # `--fail-on-refusal` in `backfill_work_metadata.js` is the gate, and #385 is
 # what has to be cleared before it can be turned on. This job is how you watch
 # that happen.
+#
+# **The export endpoint's own ceiling is measured here too, and for every
+# reason above.** `/api/export/<user>?limit=N` assembles four lists into one
+# body and refuses to send one over five mebibytes; the owner's four lists are
+# at 90% of that and nothing watched the number, so the first sign of the line
+# being crossed would have been a machine reader getting a `413` where a
+# person got a `200` — #422. Measuring it needs the database, which `npm test`
+# deliberately does without; the number is only worth reading against the run
+# before it, which is the artifact; and it is not a number anyone can act on
+# the morning it moves, so a gate on it would be red until somebody either
+# shrank a list or switched this job off. Same shape, same file, one more
+# step.
 name: Audit the database
 
 on:
@@ -162,6 +174,36 @@ jobs:
             ${{ inputs['verify-titles'] == true && '--verify-titles' || '' }} \
             | tee "$RUNNER_TEMP/audit.txt"
 
+      # How close every body `/api/export` would send is to `MAX_BODY_BYTES`,
+      # the ceiling `src/api/controllers/export.js` enforces on itself. #422,
+      # and the header above is why it is a step here rather than a test or a
+      # workflow of its own.
+      #
+      # It measures by driving the route with the event Netlify would hand it
+      # and weighing what comes back, so the number reported is the number the
+      # route's own budget check weighs rather than a second opinion about it.
+      # Read-only, needs no API keys, and takes no `--apply` — there is
+      # nothing for it to write.
+      #
+      # It exits non-zero only when a body could not be measured at all, never
+      # because one is large. A body past the ceiling is not an outage either:
+      # the endpoint answers a `413` naming the smaller urls to fetch instead,
+      # which is the whole reason #422 is a monitoring gap rather than a bug.
+      #
+      # `if: always()` so a failed audit does not take the measurement with
+      # it. The two are separate readings of the same database and either is
+      # worth having without the other. `pipefail` so the step's status is the
+      # script's and not `tee`'s, as above.
+      - name: Measure the export against its own ceiling
+        if: always()
+        env:
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+        run: |
+          set -o pipefail
+          node src/db_maintenance/scripts/check_export_size.js \
+            --json="$RUNNER_TEMP/export_size.json" \
+            | tee "$RUNNER_TEMP/export_size.txt"
+
       # **This repository is public, so its artifacts and logs are too.** The
       # report is almost entirely public data — titles, years, counts, the same
       # lists `/api/export` serves on purpose — with one exception:
@@ -182,6 +224,15 @@ jobs:
       # shape. An auth0 `sub` is `<connection>|<id>`, and the connection is not
       # always `auth0`, so grepping for a prefix would quietly pass on a
       # `google-oauth2|` one.
+      #
+      # The export measurement's two files are checked the same way and for
+      # the same reason. They should carry no id by construction — every row
+      # is keyed by the username the public url is keyed by, and the route is
+      # handed a name and looks the id up itself, so none ever reaches the
+      # script — which is exactly the kind of claim that is worth a grep. What
+      # the check is worth is bounded by the audit having produced a report to
+      # take the ids out of: with no `audit.json` there is no set of values to
+      # look for, and the step below exits before any of this.
       - name: Take the userIds out of the report before it is published
         if: always()
         run: |
@@ -189,7 +240,12 @@ jobs:
           node -e '
             const fs = require("fs");
             const json = process.env.RUNNER_TEMP + "/audit.json";
-            const text = process.env.RUNNER_TEMP + "/audit.txt";
+            // Everything this job publishes without redacting it.
+            const published = [
+              "audit.txt",
+              "export_size.txt",
+              "export_size.json",
+            ];
 
             const before = fs.readFileSync(json, "utf8");
             const report = JSON.parse(before);
@@ -207,16 +263,19 @@ jobs:
             };
             collect(report);
 
-            if (fs.existsSync(text)) {
-              const printed = fs.readFileSync(text, "utf8");
-              const leaked = [...seen].filter((id) => printed.includes(id));
-              if (leaked.length > 0) {
-                console.error(
-                  `::error::the text output carries ${leaked.length} userId(s), ` +
-                  "which this workflow assumed it never does — see the note above this step"
-                );
-                process.exit(1);
-              }
+            const leaked = published.filter((name) => {
+              const file = `${process.env.RUNNER_TEMP}/${name}`;
+              if (!fs.existsSync(file)) return false;
+              const printed = fs.readFileSync(file, "utf8");
+              return [...seen].some((id) => printed.includes(id));
+            });
+
+            if (leaked.length > 0) {
+              console.error(
+                `::error::${leaked.join(", ")} carries a userId, which this ` +
+                "workflow assumed it never does — see the note above this step"
+              );
+              process.exit(1);
             }
 
             const strip = (v) =>
@@ -249,12 +308,14 @@ jobs:
       - name: Put the summary in the job summary
         if: always()
         run: |
-          test -s "$RUNNER_TEMP/audit.txt" || exit 0
-          {
-            echo '```'
-            cat "$RUNNER_TEMP/audit.txt"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          for report in audit export_size; do
+            test -s "$RUNNER_TEMP/$report.txt" || continue
+            {
+              echo '```'
+              cat "$RUNNER_TEMP/$report.txt"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
 
       # `if: always()` because the run that failed partway is the one whose
       # partial report is worth having — the same reasoning as the refresh's
@@ -271,5 +332,7 @@ jobs:
           path: |
             ${{ runner.temp }}/audit.json
             ${{ runner.temp }}/audit.txt
+            ${{ runner.temp }}/export_size.json
+            ${{ runner.temp }}/export_size.txt
           retention-days: 90
           if-no-files-found: warn

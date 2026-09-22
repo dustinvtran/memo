@@ -13,6 +13,7 @@ The scripts, and the section below that explains each:
 | Script | What it does | Writes? |
 | --- | --- | --- |
 | `audit_database.js` | Reports every inconsistency it can find — unrefreshable works, missing metadata, duplicates, works filed under another work's id, dangling `workRef`s, empty override lists. Needs no API keys unless you pass `--verify-shared-refs`, `--verify-title-years` or `--verify-titles`. | never |
+| `check_export_size.js` | Measures every body `/api/export` would send, by driving the route itself, and reports each as a share of the ceiling that endpoint enforces on itself. | never |
 | `backup_database.js` | Takes a timestamped snapshot of every collection and prunes old ones to a retention policy. | to disk only |
 | `verify_backup.js` | Checks a snapshot against its own manifest — every file present, hashing to the `sha256` recorded for it, holding the documents claimed. `--live` also counts the database beside it. | never |
 | `propose_work_refs.js` | Searches each work with no identity ref, and each entry with no work, and writes a worklist of candidates to confirm. Its own file is what `set_work_ref.js --from` reads. | never |
@@ -650,6 +651,77 @@ work in the crawl's favour: the refresh script exits non-zero when every call
 it made failed, so a spent quota or a revoked key is a failure rather than a
 quiet success. That covers the crawl breaking. It does not cover the crawl
 never being started, which is the state the repository is in today.
+
+## How close the export is to its own ceiling
+
+`scripts/check_export_size.js` weighs every response `/api/export` would send
+against `MAX_BODY_BYTES` — the five-mebibyte ceiling
+`../api/controllers/export.js` enforces on itself — and reports each as a share
+of it. Read-only, needs no API keys, and has no `--apply`: there is nothing for
+it to write.
+
+```
+node scripts/check_export_size.js
+node scripts/check_export_size.js --user=nil --json=./export_size.json
+```
+
+The all-lists url is what #422 is about. On 2026-09-21, against production:
+
+| Body | Bytes | Share of the ceiling | Headroom |
+| --- | --- | --- | --- |
+| `/api/export/nil?limit=99999` | 4,741,315 | 90.4% | 501,565 bytes, about 399 more entries |
+| the same url as `?format=md` | 4,224,877 | 80.6% | 1,018,003 bytes |
+| `/api/export/games/nil` | 2,956,687 | 56.4% | 2,286,193 bytes |
+| `/api/export/films/nil` | 1,020,789 | 19.5% | 4,222,091 bytes |
+
+Everything else is under 10%, and the second account holding entries is under
+half a percent of the ceiling in every shape.
+
+- **It asks the route rather than assembling the document itself.** What
+  governs is `Buffer.byteLength` of the exact string `withinBudget` weighs, so
+  each body is measured by handing `../api/routes/export.js` the event Netlify
+  would hand it and weighing what comes back. A second copy of the assembly
+  would agree for a while and then quietly stop agreeing, and a monitor
+  reporting a number other than the enforced one is worse than none.
+  `MAX_BODY_BYTES` is imported for the same reason: nothing in
+  `src/db_maintenance` knows what the ceiling is.
+- **Both formats, because the same check governs both.** `?format=md` goes
+  through the same budget and nobody had ever weighed it; it is smaller than
+  the JSON, and past 80% as well.
+- **Every account with an entry, and no others.** Accounts holding nothing are
+  counted and not named — an empty export cannot approach 5 MB, so measuring
+  them would buy nothing and the report has no reason to publish a list of who
+  holds an account. The index url is fetched for the counts, which is what they
+  are for, and not measured: it is a few hundred bytes by construction.
+- **A refused body is a measurement it does not have.** Over the ceiling the
+  route sends a few hundred bytes of advice instead of the list, so there is
+  nothing left to weigh. The report says the line has been crossed and stops
+  claiming a percentage, which is the one state the whole script exists to
+  arrive at before a reader does.
+- **The percentage is computed rather than written down, and that is the
+  point.** #422 reads the same 4,741,315 bytes as 94.8% of the budget with 258
+  KB to spare, which is that body against five million bytes; the constant is
+  five *mebi*bytes, so it is 90.4% with 501,565 bytes to spare. Both are a
+  division done once by hand and only one is of the number the endpoint
+  enforces.
+
+`../export_budget.js` is the arithmetic, so the threshold and the wording are
+unit tested rather than discovered against production, and the script does the
+reads.
+
+**`.github/workflows/audit_database.yml` runs it nightly**, beside the audit
+and for the same three reasons: the measurement needs a database, which the
+test suite deliberately does without; the number is only worth reading against
+the run before it, which is that job's 90-day artifact; and it is not a number
+anyone can act on the morning it moves, so a gate on it would be red until
+somebody either shrank a list or switched the job off. The script exits
+non-zero only when a body could not be measured at all.
+
+Nothing it prints carries a `userId`: every row is keyed by the username the
+public url is keyed by, and the route is handed a name and looks the id up
+itself, so none reaches the script. That workflow's redaction step greps both
+of its output files for every id the audit saw, so the claim is checked rather
+than trusted.
 
 ## Books filed under another book's ISBN
 
@@ -1722,8 +1794,10 @@ The parts that decide what to write (`work_metadata_merge.js`,
 (`unusable_field_plan.js`, `noop_override_plan.js`), which English edition a misfiled book could be
 repointed at (`book_ref_proposal.js`), which snapshots a retention policy
 keeps (`backup_plan.js`), whether a snapshot is still what the backup wrote
-(`backup_verification.js`) and which indexes are missing (`index_plan.js`)
-are pure and dependency-free, and are covered by `node --test`:
+(`backup_verification.js`), which indexes are missing (`index_plan.js`) and
+how close an export body is to the ceiling it is weighed against
+(`export_budget.js`) are pure and dependency-free, and are covered by
+`node --test`:
 
 ```
 npm test
