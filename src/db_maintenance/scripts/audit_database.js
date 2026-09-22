@@ -45,8 +45,9 @@
  * needs both collections to decide: an override of `[""]` beats the work it
  * overlays, so the row renders empty while the database holds the answer.
  * ../blank_override_check.js, and #395. Reporting is all this does with them
- * — clearing the keys is a write to `*Entries`, which CLAUDE.md reserves, and
- * this script never writes and takes no `--apply`.
+ * — clearing the keys is a write to `*Entries`, which CLAUDE.md reserves, so
+ * it is ./clear_blank_overrides.js's job and needs a human's authorisation.
+ * This script never writes and takes no `--apply`.
  *
  * Usage:
  *   node scripts/audit_database.js

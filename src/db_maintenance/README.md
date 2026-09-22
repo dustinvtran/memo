@@ -31,6 +31,7 @@ The scripts, and the section below that explains each:
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
 | `prune_unreachable_documents.js` | Deletes cached works no entry in any collection points at, and review documents holding the empty string. Two halves, run separately with `--only=works` / `--only=reviews`. | `--apply` |
 | `clear_noop_overrides.js` | `$unset`s the `overrides.<field>` keys holding a byte-identical copy of the work's own value, so a corrected work can reach the page again. Leaves every different value, every `null`, and every entry with no work. | `--apply` |
+| `clear_blank_overrides.js` | `$unset`s the `overrides.<field>` keys holding a list with nothing readable in it — `directors: [""]` — so the work's own value reaches the page instead of an empty anchor. Leaves every `null`, every list with a readable member, and every entry with no work. | `--apply` |
 
 Everything marked `--apply` is a **dry run without it**, and takes a backup of
 each collection it writes to first — except `ensure_indexes.js`, which writes
@@ -39,16 +40,21 @@ the overrides a user set by hand, which live on the entry documents, are out
 of reach by construction; `dedupe_works.js` is the one that also writes to the
 entry collections, repointing `workRef` at the document it merged into.
 
-Four scripts write outside the work collections, and each says so in its own
+Five scripts write outside the work collections, and each says so in its own
 section below: `prune_orphan_reviews.js` deletes review documents nothing can
 reach, `prune_unreachable_documents.js --only=reviews` deletes review
 documents holding nothing, `clear_noop_overrides.js` removes the overrides
-that are copies of the work they override, and `link_entry.js` writes an
-entry's `workRef` and the name it is filed under.
+that are copies of the work they override, `clear_blank_overrides.js` removes
+the ones holding a list with nothing readable in it, and `link_entry.js`
+writes an entry's `workRef` and the name it is filed under.
 
-The last two are the ones that reach an override at all, and their exceptions
-are about the overrides rather than in spite of them, so each argues the case
-in its own file header and section rather than inheriting one.
+The last three are the ones that reach an override at all, and their
+exceptions are about the overrides rather than in spite of them, so each
+argues the case in its own file header and section rather than inheriting one.
+The two `clear_*` scripts are deliberately two rather than one comparison
+loosened to cover both: a copy of the work is not a user decision, and a list
+of blanks is not a user decision either, but for a different reason and with a
+different effect on the page, and each argument has to stand on its own.
 `link_entry.js` is also the only script here that deletes an entry, and the
 only one that creates a work outside a backfill. What holds it inside the rule
 is that it is not a population: every operation names one entry by its id and
@@ -254,10 +260,10 @@ work cannot be read is reported undecided rather than guessed at.
 `clear_noop_overrides.js` will not clear these and should not: it removes
 overrides that are byte-identical copies of the work, and `[""]` against
 `["Amy Sherman-Palladino"]` is a different value, which is the whole reason
-`noop_override_plan.js`'s comparison is stricter than the form's. **There is no
-script for this yet, deliberately.** Unsetting the keys writes to `*Entries`,
-which the rule at the top of this file reserves, and adding another exception
-to that list is a human's call — see #395 for the bounds one would need.
+`noop_override_plan.js`'s comparison is stricter than the form's.
+`clear_blank_overrides.js` is the script that does clear them, and
+[Override lists with nothing in them](#override-lists-with-nothing-in-them)
+below is its argument for being allowed to. **It has not been applied.**
 
 ### Works sharing an id
 
@@ -1405,14 +1411,163 @@ on tv `directors` sit exactly on top of #328, whose backfill has just given
 341 shows the director they were missing — corrected works, blanked at the
 row by a value nobody chose.
 
-Worth its own issue, its own argument and its own script. What it is not is a
-reason to loosen this one: the whole point of listing survivors rather than
-counting them is that a second population shows up as a line you can read
-instead of a number you have to trust.
+That got its own issue, its own argument and its own script —
+`clear_blank_overrides.js`, the next section. What it is not is a reason to
+loosen this one: the whole point of listing survivors rather than counting
+them is that a second population shows up as a line you can read instead of a
+number you have to trust, and that is exactly how this one was found.
 
 This is only safe *after* #321, which is in production and confirmed: entries
 saved since it shipped contribute no no-op overrides at all. Run before it,
 this would have cleared a backlog the next save refilled.
+
+## Override lists with nothing in them
+
+The population `clear_noop_overrides.js` printed and could not touch.
+`asOverride` used to store an emptied list field as `[""]` rather than as a
+`null`, and `[""]` is not nullish, so the merge applies it: the row draws an
+empty Wikipedia anchor and the work's own directors, actors or studios never
+reach the page. `Gilmore Girls: Season 1` has
+`directors: ["Amy Sherman-Palladino"]` on its work and shows no director at
+all, and the three `link-name` violations axe reports on the books list are
+blank `genres` rendering as anchors with no text — the ones #423 named and
+left, since naming a decorative glyph is a different repair from putting a
+work's own value back on the row. #395, and
+[Empty override lists](#empty-override-lists) above is the audit's half of it,
+which shipped in #409.
+
+`blank_override_plan.js` decides and `scripts/clear_blank_overrides.js`
+`$unset`s. It is a **dry run unless you pass `--apply`**, and it dumps each
+entry collection before writing to it.
+
+```
+node scripts/clear_blank_overrides.js
+node scripts/clear_blank_overrides.js --only=tv --masking-only
+node scripts/clear_blank_overrides.js --apply
+```
+
+Flags: `--only=films,tv,games,books`, `--masking-only`, `--show-kept=n|all`,
+`--json=path`, `--backup-dir=path`.
+
+`--masking-only` narrows a run to the keys hiding a value the work really
+has — the 219 rows a reader can see today — and leaves the rest. It can only
+ever remove less, and it is there because the two halves may reasonably be
+authorised separately, not because the ones it holds back are fine. They are
+not: the moment the scheduled refresh fills the field on the work, a held-back
+blank starts masking it with nothing having written to the entry, and the run
+says so where it lists them.
+
+### Why this one is allowed to write to `*Entries` as well
+
+The rule in `../../CLAUDE.md` is that maintenance scripts write to the **work**
+collections, because user overrides live on entry documents and a script that
+never touches `*Entries` cannot clobber one. This script's entire job is to
+touch that object, so the exception is argued rather than assumed — the third
+in this folder, after `clear_noop_overrides.js` and `link_entry.js`.
+
+The argument has three parts, and each is a claim a reader can check:
+
+- **Removing the key restores the work's own value to the page**, which is the
+  outcome in every case. Both merges — the row builder in
+  `components/list/list.js` and `withOverrides` in `api/utils/export_view.js` —
+  fall through to the work the moment the override stops being nullish. That is
+  the whole effect of a run.
+- **`$unset` of a key whose value is a list of blanks destroys no user text,
+  because there is none.** Every member is empty or whitespace. There is
+  nothing in it a person can have typed, and no state it could be expressing:
+  the form's way of saying "the work's value is wrong and there is no
+  replacement" is a `null`, and a `null` is never touched.
+- **A restore from the snapshot undoes it.** `restore_backup.js` matches on
+  `_id`, every write is an `$unset` on a document that keeps its `_id`, and
+  nothing here creates, deletes or repoints a document — so there is no shape a
+  restore could not put back, field for field, from the snapshot taken
+  immediately beforehand.
+
+What bounds it, beyond that:
+
+- It only ever `$unset`s `overrides.<field>` keys it has classified, one key at
+  a time, and removes the `overrides` object itself only when the removal
+  accounted for every key in it. `status`, `score`, the dates, `workRef` and
+  the note are unreachable from it. `unsetPaths` in `blank_override_plan.js` is
+  where the paths are decided, so the shape of the write is covered by the
+  no-install suite rather than living in the script.
+- **A `null` is never touched**, as above. This is the easiest thing here to
+  get wrong and the only one that loses a decision silently.
+- **A list with any non-blank member is never touched**, whatever else is in
+  it: `["", "Christopher Nolan"]` renders Nolan, and salvaging one is a `$set`,
+  which is a different decision. Every survivor is printed with the work's
+  value beside it rather than left as a count.
+- **An empty list `[]` and a blank scalar `""` are left alone too**, and named
+  in the output as left alone. Both do the same damage by the same route, and
+  neither is measured: #395 counted lists with a blank member in them, and a
+  script that cleared what the audit does not report could not be checked
+  against the audit. When one is measured it belongs here, decided rather than
+  swept up.
+- **A key whose own name `overrides.<field>` cannot address is refused**, to
+  stderr and with a non-zero exit. A field holding a `.` would name something
+  nested and one starting with `$` would read as an operator, so there is no
+  path that reaches it one key at a time. MongoDB has allowed both in a stored
+  document since 5.0; nothing the site writes is one, and the dry run found
+  none, which is why a line there would be news rather than a footnote.
+- **An entry with no readable work is skipped entirely**, both the hand-typed
+  entries that point at no work and any dangling `workRef`. For those,
+  `overrides` is not a layer over the metadata, it *is* the metadata, so there
+  is nothing underneath for a removal to reveal. 13 entries and 28 blank keys
+  are in that state.
+- It never touches `updatedDate`, which would reorder every list on the site.
+  The plan emits no `$set` at all.
+- It re-reads the collection afterwards and reports the entry count, so a run
+  that did something other than what it planned says so.
+
+**`noop_override_plan.js:185` is deliberately stricter and is right to be.**
+It compares an override against the work byte for byte and keeps anything
+different, so `[""]` against `["Amy Sherman-Palladino"]` is a real override to
+it and always will be. An empty override is not a no-op override, it is a wrong
+one; the two arguments are different, and so are their effects on the page. A
+comparison loosened to cover both would also have destroyed the line in that
+script's output that found this population in the first place — 497 of the 907
+survivors it printed on 2026-09-14 were `[""]`.
+
+**`isBlankList` and `hasRealValue` come from `blank_override_check.js`**, so
+there is one definition of "blank" in this folder and the script clears
+precisely the keys the audit reports. The by-field table is printed with the
+audit's own three counts in its first three columns for the same reason, and
+`blank_override_plan.test.js` asserts the correspondence key for key and field
+for field rather than trusting the shared import to stay shared.
+
+### The dry run, 2026-09-21
+
+```
+                   keys   blank  masking  hides nothing  no work  removed  entries
+filmEntries         371      64       23             32        9       55       48
+tvShowEntries       627     208      168             38        2      206      167
+gameEntries        1008     121       84             29        8      113       55
+bookEntries         569     148        0            139        9      139      139
+                   2575     541      275            238       28      513      409
+```
+
+513 keys off 409 entries, 78 overrides objects emptied and dropped. 219 of
+those 409 entries are rows drawing a reader an empty cell today over a value
+the database holds — films 19, tv 158, games 42, books 0 — which is the
+audit's own count of masked rows, arrived at through the same module. The 275
+masking *keys* and the 219 masking *rows* differ by design: an entry with an
+empty `genres` and an empty `directors` is one damaged row and two keys.
+
+`tv directors` is 164 of the 206, and the 157 of those hiding a value sit
+exactly on top of #328's backfill, which gave 341 shows a director they were
+missing — corrected works, blanked at the row by a value nobody chose.
+`books genres` is 139 of the 148 and hides nothing at all, because Google
+Books has told us no genres for any of them yet.
+
+Left alone: 529 real overrides, 1452 nulls, and every key on the 13 entries
+with no work to compare against.
+
+**Not applied.** Adding this exception to the list at the top of this file is
+a human's call, as is the `--apply`, and both are still outstanding. Applying
+it wants a fresh snapshot taken with `backup_database.js` and verified with
+`verify_backup.js --live` immediately beforehand, as everything in this folder
+does; the audit's `entries whose empty override list hides the work's value`
+line going to zero is what afterwards looks like.
 
 ## Documents nothing can reach
 
@@ -1818,7 +1973,8 @@ The parts that decide what to write (`work_metadata_merge.js`,
 `game_playtime_plan.js`), what to spend an API call on and in what order
 (`metadata_refresh_plan.js`), what to delete (`work_dedupe_plan.js`,
 `orphan_review_plan.js`, `unreachable_document_plan.js`), what to clear
-(`unusable_field_plan.js`, `noop_override_plan.js`), which English edition a misfiled book could be
+(`unusable_field_plan.js`, `noop_override_plan.js`,
+`blank_override_plan.js`), which English edition a misfiled book could be
 repointed at (`book_ref_proposal.js`), which snapshots a retention policy
 keeps (`backup_plan.js`), whether a snapshot is still what the backup wrote
 (`backup_verification.js`), which indexes are missing (`index_plan.js`) and
