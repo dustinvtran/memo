@@ -46,6 +46,15 @@ const JSON_CONTENT_TYPE = 'application/json; charset=utf-8'
  * — and no part of that applies to a response that loads nothing and renders
  * nowhere. A second policy here would be a second list to keep in step with
  * `_headers` in exchange for that.
+ *
+ * No `X-Frame-Options` either, and for the first of those reasons rather
+ * than the second: #418 added `DENY` to `_headers` and stopped there. That
+ * header answers one question — may another origin render this inside a
+ * frame — and a body that renders nowhere has no answer to give. What is
+ * above is the set that protects a *response*; that one protects a
+ * document, which is the line the CSP already falls on. So the note above
+ * about keeping this file and `_headers` in step is about the three values
+ * they share, not about every rule in that file.
  */
 const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
