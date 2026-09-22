@@ -575,7 +575,7 @@ repository and all of which is a repository setting (#301):
 
 - **Five repository secrets** — `MONGODB_URL`, `TMDB_API_KEY`,
   `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `GOOGLE_API_KEY`. The values are
-  the ones in `src/db_maintenance/.env`, and setting them is the first time
+  the ones in the repository root's `.env`, and setting them is the first time
   those credentials exist anywhere but that one file on Google Drive — a
   deliberate widening, and the thing #336 accepted when it chose Actions over
   a Netlify scheduled function.
