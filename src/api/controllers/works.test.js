@@ -107,7 +107,10 @@ let retrieved = retrievedFilm
 const stubAdapter = {
   search: (query) => {
     adapterCalls.push({ action: 'search', arg: query })
-    return okAsync([{ title: 'Stalker', ref: '1234' }])
+    // A listing rather than the rows themselves, which is what every adapter
+    // answers with since #387 — the books one counts the volumes it found no
+    // ISBN for beside them.
+    return okAsync({ results: [{ title: 'Stalker', ref: '1234' }] })
   },
   retrieve: (ref) => {
     adapterCalls.push({ action: 'retrieve', arg: ref })
@@ -213,7 +216,7 @@ test('a logged-in user still gets their search', options, async () => {
   const { statusCode, body } = await call('works/search/films/stalker', { as: 'u1' })
 
   assert.equal(statusCode, 200)
-  assert.deepEqual(body, [{ title: 'Stalker', ref: '1234' }])
+  assert.deepEqual(body, { results: [{ title: 'Stalker', ref: '1234' }] })
   assert.deepEqual(adapterCalls, [{ action: 'search', arg: 'stalker' }])
 })
 

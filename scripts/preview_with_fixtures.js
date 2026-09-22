@@ -182,6 +182,24 @@ const WORKS = {
   },
   tmdb__136315: theBear,
   tmdb__693134: dune,
+  // A book, so that a books search has a row in it as well as a count of what
+  // it could not offer — the case #387 added. Filed under `ISBN__`, which is
+  // what the Google Books adapter writes, and shaped like that adapter's
+  // `retrieve`: authors and a page count where a film has actors and a
+  // duration. See `src/api/utils/external_api_adapters/books/google.js`.
+  ISBN__9780099448778: {
+    _id: "w-sheep",
+    entryType: "Book",
+    apiRefs: ["ISBN__9780099448778"],
+    englishTranslatedTitle: "A Wild Sheep Chase",
+    originalTitle: "A Wild Sheep Chase",
+    releaseYear: 2003,
+    duration: 299,
+    imageUrl: "",
+    authors: ["Haruki Murakami"],
+    publishers: ["Random House"],
+    externalUrls: [],
+  },
 };
 
 const send = (res, code, body, type = "application/json") => {
@@ -253,23 +271,36 @@ const api = (url, method, res) => {
   if (route === "revisions" && rest[2] === "draft") return send(res, 200, { draft: null });
   if (route === "revisions") return send(res, 200, { versions: [] });
 
+  // A search answers with `{ results }` and **not** a bare array, and a books
+  // search carries `discarded` beside it: the count of volumes Google lists no
+  // ISBN for, which cannot be offered because a book is filed under its ISBN.
+  // #387. Only books has one — the other three adapters offer everything they
+  // find — and it is the one number the results list draws a line for, so a
+  // stub sending an array here would hide both that line and the list itself.
   if (route === "works" && rest[0] === "search") {
+    const type = rest[1];
     const query = decodeURIComponent(rest.slice(2).join("/")).toLowerCase();
-    return send(
-      res,
-      200,
-      Object.entries(WORKS)
-        .filter(([, w]) => w.englishTranslatedTitle.toLowerCase().includes(query))
-        .map(([ref, w]) => ({
-          ref: ref.split("__")[1],
-          title: w.englishTranslatedTitle,
-          year: w.releaseYear,
-          imageUrl: w.imageUrl,
-        }))
-    );
+    const results = Object.entries(WORKS)
+      .filter(([, w]) => w.englishTranslatedTitle.toLowerCase().includes(query))
+      .map(([ref, w]) => ({
+        ref: ref.split("__")[1],
+        title: w.englishTranslatedTitle,
+        year: w.releaseYear,
+        imageUrl: w.imageUrl,
+      }));
+
+    return send(res, 200, {
+      results,
+      // Searching books for something these fixtures do not hold is the other
+      // case worth seeing: every candidate discarded, which is a different
+      // answer from "no results found for this query".
+      ...(type === "books" ? { discarded: { noRef: 2, duplicateRef: 1 } } : {}),
+    });
   }
   if (route === "works" && rest[0] === "retrieve") {
-    const work = WORKS[`tmdb__${rest[2]}`];
+    // Books are filed under `ISBN__` and everything else under `tmdb__`, and
+    // the url carries the bare id either way.
+    const work = WORKS[`tmdb__${rest[2]}`] ?? WORKS[`ISBN__${rest[2]}`];
     // `internalRef` is added **here and only here**, which is the asymmetry
     // that hid the #370 bug.
     return work

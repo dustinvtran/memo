@@ -10,22 +10,64 @@ const { EntryForm } = Components.List
  * results with a form for the work just chosen. The link flow (#343) passes
  * its own, because there is already a form on screen with a half-filled entry
  * in it and the work is being attached to that rather than starting a new one.
- * @type {(type: string, results: any[], onPick?: (result: any) => void) => object}
+ *
+ * `listing` is what `/api/works/search` answers with: `{ results }`, and from a
+ * books search a `discarded` count beside them. A search for an older book can
+ * find several editions and offer none of them, because a book is filed under
+ * its ISBN and Google holds plenty of volumes without one — anything printed
+ * before about 1970, and anything scanned rather than supplied by a publisher.
+ * Those rows are still not shown, since there is no ref to fetch them by; what
+ * is shown is that they were there, so that a search answering with four
+ * editions is not mistaken for a search that found four. #387.
+ * @type {(type: string, listing: any, onPick?: (result: any) => void) => object}
  */
-const SearchResults = (type, results, onPick) => initComponent({
-  content: ({ include }) => html`
-    <div id="search-results">
-      ${results.length > 0
-        ? include(results.map((r) => Result(type, r, onPick)))
-        : html`<i>No results found for this query...</i>`
-      }
-    </div>
+const SearchResults = (type, listing, onPick) => initComponent({
+  content: ({ include }) => {
+    const results = listing?.results ?? []
+    const noRef = listing?.discarded?.noRef ?? 0
+
+    return html`
+      <div id="search-results">
+        ${results.length > 0
+          ? include(results.map((r) => Result(type, r, onPick)))
+          : noRef > 0 ? '' : html`<i>No results found for this query...</i>`
+        }
+        ${noRef > 0
+          ? html`<p class="search-results-discarded">${discardedNote(noRef, results.length)}</p>`
+          : ''
+        }
+      </div>
+    `
+  },
+  style: () => css`
+    .search-results-discarded {
+      font-size: 12px;
+      color: #666;
+      margin: 8px 0 0;
+    }
   `
 })
 
 Components.List.SearchResults = SearchResults
 
 ///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * What the count says, which depends on whether anything was offered at all:
+ * "three more" under a list of four reads as a list that is short, and the
+ * same sentence under nothing at all has to say why there is nothing rather
+ * than leave "no results found" standing — the search did find them.
+ * @type {(count: number, shown: number) => string}
+ */
+const discardedNote = (count, shown) => {
+  const noId = `no id to look ${count === 1 ? 'it' : 'them'} up by (for a book, no ISBN)`
+
+  return shown > 0
+    ? `${count} more ${count === 1 ? 'was' : 'were'} found with ${noId}, so ${
+        count === 1 ? 'it is' : 'they are'} not shown.`
+    : `Nothing here can be added: the search found ${count} ${
+        count === 1 ? 'edition' : 'editions'} with ${noId}.`
+}
 
 /**
  * One candidate from the API's search.

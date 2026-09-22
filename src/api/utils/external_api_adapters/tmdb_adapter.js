@@ -64,9 +64,13 @@ const tmdbAdapter = ({ mapping, search, details, credits, alternativeTitles }) =
   const toError = tmdbError(mapping.notFoundMessage)
 
   return {
+    // A listing rather than the rows themselves, because the books adapter has
+    // a count to send with its rows and one shape for all four is what keeps
+    // the route and the results component from having to ask which. TMDB
+    // offers everything it finds, so there is nothing to report. #387.
     search: (titleSearch) => ResultAsync.fromPromise(
       retrying(() => search(tmdbClient(), titleSearch))
-        .then(({ data }) => toSearchResults(mapping, data)),
+        .then(({ data }) => ({ results: toSearchResults(mapping, data) })),
       toError
     ),
 

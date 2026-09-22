@@ -10,7 +10,7 @@ import axios from 'axios'
 import { throwIt } from '../../general.js'
 import { retrying, describeFailure, publicFailure, statusOf } from '../retry.js'
 import { toBook } from './google_mapping.js'
-import { BASE_URL, searchUrls, toSearchResults } from './google_search.js'
+import { BASE_URL, searchUrls, toSearchListing } from './google_search.js'
 const { GOOGLE_API_KEY } = process.env
 
 /* Only use key if it's present in the env vars */
@@ -22,11 +22,15 @@ const urlKey =
 /**
  * A search is several requests now — see ./google_search.js for which, and
  * why one of them wasn't enough.
+ *
+ * This is the one adapter whose listing carries a `discarded` count, because
+ * it is the one that cannot offer everything it finds: a book is filed under
+ * its ISBN and Google answers with volumes it holds no ISBN for. #387.
  * @type SearchFunction
  */
 const search = (titleSearch) => ResultAsync.fromPromise(
   searchPages(searchUrls(titleSearch, urlKey))
-    .then((pages) => toSearchResults(titleSearch, pages)),
+    .then((pages) => toSearchListing(titleSearch, pages)),
   toError('searching for books')
 )
 

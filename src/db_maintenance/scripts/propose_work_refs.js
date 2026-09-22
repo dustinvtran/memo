@@ -131,9 +131,15 @@ const main = async () => {
           // query returning *something* is not a query returning the right
           // thing. Ranking the pool lets the better query win whenever it is
           // asked, in whatever order.
-          gathered.push(...result.value);
+          //
+          // An adapter answers with a listing rather than the rows themselves
+          // (#387): books reports a count of the volumes it found no ISBN for
+          // beside them, and those are the ones this crawl could not propose
+          // anyway — a proposal is a ref.
+          const found = result.value.results;
+          gathered.push(...found);
           error = undefined;
-          if (usedQuery === undefined && result.value.length > 0) usedQuery = query;
+          if (usedQuery === undefined && found.length > 0) usedQuery = query;
 
           // Stopping early only on a match strong enough that no looser
           // variation could improve on it — which is most of them, and is what
