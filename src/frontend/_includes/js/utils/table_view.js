@@ -25,7 +25,8 @@ const { icon } = Icons
  * The settings are the ones the two callers pass, and they are a small subset
  * of what bootstrap-table took: `columns`, `sortName` / `sortOrder`,
  * `showHeader`, `showColumns`, `search` / `searchText` / `onSearch`, and
- * `detailView` / `detailFormatter` / `onExpandRow`.
+ * `detailView` / `detailFormatter` / `onExpandRow`. `label` is the one
+ * addition rather than an inheritance — see `chrome` below.
  * @type {(selector: string, rows: object[], settings: object) => object}
  */
 const initTable = (selector, rows, settings) => {
@@ -169,13 +170,38 @@ const CARET_OPEN = 'caret-up'
 /** What `initTable` answers when the element it was pointed at is not there. */
 const NO_TABLE = { setSearch: () => undefined }
 
-/** The parts that are drawn once: the toolbar, and the table to redraw into. */
+/**
+ * The parts that are drawn once: the toolbar, and the table to redraw into.
+ *
+ * The wrapper scrolls sideways on a narrow viewport — a full list is wider
+ * than a phone — and a scrolling box that nothing can focus is reachable only
+ * with a pointer, so the columns past the fold are unreachable from a
+ * keyboard (#400, WCAG 2.1.1). `tabindex="0"` is what fixes that, and
+ * `role="region"` with a name is what stops the new tab stop being an
+ * unexplained one: a focusable `div` with no accessible name announces
+ * nothing and is arguably worse than leaving it alone.
+ *
+ * So the name is required rather than defaulted. Both callers have a real
+ * heading to hand — the status a sublist is cut by, the type a profile
+ * summary is for — and a table with no `label` gets no `tabindex` either,
+ * which keeps the two halves of the fix from coming apart.
+ */
 const chrome = (state, options) => html`
   ${options.search || options.showColumns ? toolbar(state, options) : ''}
-  <div class="entry-table-scroll">
+  <div class="entry-table-scroll"${scrollRegionAttributes(options)}>
     <table></table>
   </div>
 `
+
+/**
+ * The three attributes above as markup, or nothing at all when the table was
+ * given no name to put in the third.
+ * @type {(options: object) => object}
+ */
+const scrollRegionAttributes = (options) =>
+  options.label
+    ? html` tabindex="0" role="region" aria-label="${options.label} table"`
+    : html``
 
 const toolbar = (state, options) => html`
   <div class="entry-table-toolbar">

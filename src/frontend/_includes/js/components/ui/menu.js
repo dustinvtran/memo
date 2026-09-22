@@ -2,6 +2,19 @@ const { initComponent } = Components
 const { html, css } = Utils
 const { el } = Dom
 
+/**
+ * The navigation block every page carries.
+ *
+ * The logo's `alt` is empty on purpose, and the empty value is the value
+ * rather than the omission (#399): the image is decorative here — it is not
+ * a link, and the "Home" item under it already says in text where the
+ * navigation goes — so the empty string is what tells assistive technology
+ * to skip it. With the attribute absent instead, a screen reader falls back
+ * to the filename and opens every page on the site with "memo_logo.png,
+ * image". If the logo is ever wrapped in an `<a href="/">`, it needs a real
+ * `alt` at that point, because the accessible name would then be carrying
+ * the link.
+ */
 const Menu = () => initComponent({
   content: ({ include }) => html`
     <div
@@ -10,7 +23,7 @@ const Menu = () => initComponent({
       role="navigation"
     >
       <div id="menu-logo">
-        <img src="/img/memo_logo.png">
+        <img src="/img/memo_logo.png" alt="">
       </div>
       <hr>
       <ul class="memo-menu-links">
