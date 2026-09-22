@@ -27,10 +27,18 @@ Components.List.SearchResults = SearchResults
 
 ///////////////////////////////////////////////////////////////////////////////
 
+/**
+ * One candidate from the API's search.
+ *
+ * The cover's `alt` is empty for the same reason as the list row's in
+ * `utils/columns.js` (#399): the title and year sit next to it, so a
+ * described cover would be read out twice, and an undescribed one is read
+ * out as its url.
+ */
 const Result = (type, { title, year, imageUrl, ref }, onPick) => initComponent({
   content: ({ id }) => html`
     <div id="${id}" class="search-result">
-      <div class="search-result-img"><img src="${toSafeUrl(imageUrl) || '/img/mawaru.png'}"></div>
+      <div class="search-result-img"><img src="${toSafeUrl(imageUrl) || '/img/mawaru.png'}" alt=""></div>
       <div class="search-result-title">${title}${year ? ' (' + year + ')' : ''}</div>
     </div>
   `,

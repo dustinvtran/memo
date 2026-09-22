@@ -54,10 +54,15 @@ const detailFormatter = (_, row) => {
   // Same treatment as the cover in `titleFormatter`: the url is metadata, so
   // its scheme is checked before it is allowed near a `src`. The escaping is
   // the tag function's now, here and on every attribute below.
+  //
+  // `alt=""` for the same reason as the cover there (#399): this panel hangs
+  // off the row whose title cell names the work, so a described cover would
+  // read the name out a second time. The empty value is what makes a screen
+  // reader skip it; leaving the attribute off makes it read the url.
   const coverUrl = toSafeUrl(row.commonMetadata.imageUrl)
   const cover =
     coverUrl
-      ? html`<img src="${coverUrl}" class="review-cover" style="float:right;">`
+      ? html`<img src="${coverUrl}" class="review-cover" style="float:right;" alt="">`
       : ''
 
   const type = Conversions.apiTypeToType[row.commonMetadata.entryType]
