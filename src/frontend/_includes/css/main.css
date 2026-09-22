@@ -42,21 +42,40 @@ optgroup {
   margin: 0;
 }
 
+/* #0b7cb3 was the hover colour until #398, and the resting one was #0e9ce0 --
+ * which is 3.07:1 on white and so fails WCAG AA's 4.5:1 for text under
+ * 18.66px, which every link on a list is. The compliant version of this blue
+ * was therefore already in the palette and was spent on the one state a
+ * keyboard or touch reader may never reach, so the two have moved down a
+ * step: the hover colour is now the resting colour at 4.62:1, and the hover
+ * is a further darkening of it at 5.54:1.
+ *
+ * Ratios computed with the WCAG relative-luminance formula, on #ffffff:
+ * #0e9ce0 3.07 (was, fails), #0b7cb3 4.62, #0b6f9f 5.54, #333333 12.63.
+ *
+ * Where the two came from, since #269 step 6 wrote it down and the move would
+ * otherwise lose it: Bootstrap darkened a hovered link to #23527c, which is
+ * its own #337ab7 link colour darkened, and the site had overridden that
+ * colour with #0e9ce0 long before -- so every hover landed on a navy
+ * belonging to a palette nothing else here uses. #0b7cb3 is that same
+ * darkening applied to the blue the links actually were. #0b6f9f is a
+ * shorter step again -- about four points of lightness rather than nine,
+ * which is enough to read as a state change without the hover looking like
+ * a different colour.
+ *
+ * This moves links only. #0e9ce0 is still the site's blue elsewhere -- the
+ * tab and draft-restore backgrounds, the profile's Edit button -- and a
+ * background carrying white text is a different contrast question from 14px
+ * text on white, so it is deliberately not a find-and-replace.
+*/
 a {
-  color: #0e9ce0;
+  color: #0b7cb3;
   text-decoration: none;
 }
 
-/* The one deliberate difference in this change. Bootstrap darkened a hovered
- * link to #23527c, which is its own #337ab7 link colour darkened -- and the
- * site has overridden that colour with #0e9ce0 since long before this, so
- * every hover was landing on a navy belonging to a palette nothing else here
- * uses. This is the same darkening applied to the colour the links actually
- * are.
-*/
 a:hover,
 a:focus {
-  color: #0b7cb3;
+  color: #0b6f9f;
   text-decoration: underline;
 }
 
@@ -581,6 +600,22 @@ button {
 
 .entry-table-scroll {
   overflow-x: auto;
+}
+
+/* Colour alone is not enough to mark a link (#398, WCAG 1.4.1), and in a cell
+ * colour alone is all there is: the rule at the top of this file takes the
+ * underline off every link on the site, which is fine in the menu and in
+ * prose, where position says what is clickable, and is not fine in a table
+ * where most of the text is links and nothing tells them from the text that
+ * is not. The site's own convention for the answer is already here -- a
+ * hovered link underlines -- so this is that state made permanent inside a
+ * cell rather than a new treatment.
+ *
+ * A descendant selector on purpose, unlike the rules above it: a link inside
+ * a review's markdown, in the detail row, is a link too and wants the same.
+*/
+.entry-table td a {
+  text-decoration: underline;
 }
 
 .entry-table-toolbar {
