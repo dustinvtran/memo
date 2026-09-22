@@ -296,7 +296,7 @@ const toWikipediaLink = (name, label) =>
 // into a query string: without `encodeURIComponent` an `&` in it silently
 // becomes another parameter, and a `"` ends the attribute it sits in.
 const toWikipediaUrl = (name) =>
-  `http://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(name ?? '')}&go=Go`
+  `https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(name ?? '')}&go=Go`
 
 const sortableAndLinked = (prop, toLink) => ({
   sortable: true,

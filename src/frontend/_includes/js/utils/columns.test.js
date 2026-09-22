@@ -209,9 +209,9 @@ test("a placeholder hltb ref is searched for, not linked to", () => {
 test("a list of publishers renders one link each, comma separated", () => {
   assert.equal(
     publishers(["Penguin", "Vintage"]),
-    '<a href="http://en.wikipedia.org/wiki/Special:Search?search=Penguin&amp;go=Go">' +
+    '<a href="https://en.wikipedia.org/wiki/Special:Search?search=Penguin&amp;go=Go">' +
       "Penguin</a>, " +
-      '<a href="http://en.wikipedia.org/wiki/Special:Search?search=Vintage&amp;go=Go">' +
+      '<a href="https://en.wikipedia.org/wiki/Special:Search?search=Vintage&amp;go=Go">' +
       "Vintage</a>"
   );
 });
@@ -254,7 +254,7 @@ test("an empty string in the list is still drawn as an empty link", () => {
   // one document taking the table down, which no data cleanup can promise for
   // the shape nobody has stored yet.
   const emptyLink =
-    '<a href="http://en.wikipedia.org/wiki/Special:Search?search=&amp;go=Go"></a>';
+    '<a href="https://en.wikipedia.org/wiki/Special:Search?search=&amp;go=Go"></a>';
   assert.equal(publishers([""]), emptyLink);
   assert.equal(publishers([[]]), emptyLink);
 });
@@ -290,7 +290,7 @@ test("an ordinary title renders a closed link and the placeholder cover", () => 
     title({ englishTranslatedTitle: "Hollow Knight" }),
     '<span id="entry-abc" class="title-with-cover">' +
       '<img class="mini-thumb" src="/img/mawaru.png" loading="lazy" decoding="async" alt="">' +
-      '<a href="http://en.wikipedia.org/wiki/Special:Search?search=Hollow%20Knight&amp;go=Go">' +
+      '<a href="https://en.wikipedia.org/wiki/Special:Search?search=Hollow%20Knight&amp;go=Go">' +
       "Hollow Knight</a></span>"
   );
 });
@@ -362,7 +362,7 @@ test("a genre cannot break out of its wikipedia link", () => {
 test("an ampersand in a name is searched for, not read as a parameter", () => {
   assert.equal(
     genres(["Rock & Roll"]),
-    '<a href="http://en.wikipedia.org/wiki/Special:Search?search=Rock%20%26%20Roll&amp;go=Go">' +
+    '<a href="https://en.wikipedia.org/wiki/Special:Search?search=Rock%20%26%20Roll&amp;go=Go">' +
       "Rock &amp; Roll</a>"
   );
 });
