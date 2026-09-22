@@ -4,7 +4,9 @@
  * `table_view.js` is the half of a list table that touches an element, so most
  * of it needs a DOM and is not asserted here. `cellContent` is the exception:
  * it is reached from `draw` on every cell of every redraw, it is where a
- * formatter's output becomes markup, and it is pure. Loaded the way
+ * formatter's output becomes markup, and it is pure. `chrome` is the other
+ * one, and the part of it worth pinning is the scroll region's name — see
+ * the tests at the foot of this file. Loaded the way
  * `columns.test.js` and `table_model.test.js` load theirs — the frontend is
  * plain globals concatenated into a bundle rather than modules, so this runs
  * the source in a vm context holding the globals it expects, and pulls the
@@ -40,7 +42,10 @@ load(read("icons.js"), "undefined");
 load(read("entry_search.js"), "undefined");
 load(read("table_model.js"), "undefined");
 
-const { cellContent } = load(read("table_view.js"), "({ cellContent })");
+const { cellContent, chrome } = load(
+  read("table_view.js"),
+  "({ cellContent, chrome })"
+);
 
 const draw = (column, row) => String(cellContent(column, row, 0));
 
@@ -117,4 +122,41 @@ test("the neighbouring cells in the same row still draw", () => {
 
   assert.equal(draw(bad, row), "-");
   assert.equal(draw(good, row), "1998");
+});
+
+///////////////////////////////////////////////////////////////////////////////
+// The scroll region, which is #400.
+
+const drawChrome = (options) => String(chrome({}, options));
+
+test("a named table's scroll region is focusable and says what it is", () => {
+  // The wrapper scrolls sideways on a phone, and a scrolling box nothing can
+  // focus is a set of columns only a pointer can reach.
+  const markup = drawChrome({ label: "Completed" });
+
+  assert.match(markup, /class="entry-table-scroll" tabindex="0"/);
+  assert.match(markup, /role="region"/);
+  assert.match(markup, /aria-label="Completed table"/);
+});
+
+test("a table with no name gets no tab stop either", () => {
+  // The two halves of the fix are one thing: a focusable `div` with no
+  // accessible name announces nothing when it is tabbed to, which is worse
+  // than the scroll region nobody could reach. So a caller that forgets the
+  // name does not get the `tabindex` on its own.
+  const markup = drawChrome({});
+
+  assert.match(markup, /<div class="entry-table-scroll">/);
+  assert.ok(!markup.includes("tabindex"));
+  assert.ok(!markup.includes("role="));
+});
+
+test("the name is escaped like any other attribute value", () => {
+  // It comes from `conversions.js` today rather than from a document, so this
+  // is the guard rather than the bug — an attribute built by hand out of a
+  // template is exactly where the next one stops being true.
+  const markup = drawChrome({ label: '" onfocus="alert(1)' });
+
+  assert.ok(!markup.includes('onfocus="alert(1)"'));
+  assert.match(markup, /aria-label="&quot; onfocus=&quot;alert\(1\) table"/);
 });

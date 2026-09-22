@@ -1,0 +1,275 @@
+# Runs the read-only database audit on a schedule and keeps its report, so
+# that the state of the data is something anyone can read rather than something
+# someone has to go and ask for.
+#
+# **Why this exists as a job of its own.** `audit_database.js` is already run
+# in two places, and neither leaves a report behind. `refresh_metadata.yml`
+# runs it as its last step, without `--json`, and only on a run that applied —
+# so its output is a few lines in a log that expires, gated on a variable named
+# after metadata refreshing. CLAUDE.md's fourth rule ("verify afterwards") is
+# what that step is for, and it is right for that. It is not a record. The
+# other place is a person's laptop, which is where every number in #381, #385
+# and #395 came from, and which is why those numbers are quoted in issues
+# rather than linked to.
+#
+# The report matters more than the run. Almost every finding in this repo's
+# history is a count that moved: 93 frozen works became 0, 49 `duration: 0`
+# works became 0, 210 unlinked games turned out to be 0 and the check was
+# stale. None of that is visible from one run — it needs the previous one to
+# compare against, which is what the artifact is.
+#
+# **It is a reporter, not a gate, and that is deliberate.** The script exits 0
+# when it finds problems; it exits non-zero only when `--only` matches nothing
+# or something throws. That asymmetry is correct here and should not be
+# "fixed": the headline count bundles three different things — real defects,
+# work the nightly backfill is meant to do and has not reached yet, and at
+# least one check that no longer measures what it was written to measure. A
+# job that went red on it would be red permanently and would be switched off,
+# which is the fate CLAUDE.md predicts for a check that cries wolf. The one
+# thing worth failing on is a run that could not complete, and that already
+# fails on its own.
+#
+# `--fail-on-refusal` in `backfill_work_metadata.js` is the gate, and #385 is
+# what has to be cleared before it can be turned on. This job is how you watch
+# that happen.
+name: Audit the database
+
+on:
+  # Daily, and off the hour for the reason the other two schedules are: GitHub
+  # queues every cron in the minute after the hour and runs them late.
+  #
+  # 09:50 UTC sits between the metadata refresh at 03:40 and the backup at
+  # 15:20. The gap is not about load — this job is seconds of read-only
+  # queries — it is so that a day's three jobs fail separately. Two jobs at the
+  # same minute that both die of the same Atlas outage look like one incident,
+  # and the audit's whole value is being a second opinion on what the refresh
+  # did.
+  #
+  # After the refresh rather than before it, so the numbers describe the state
+  # the night's crawl left behind.
+  schedule:
+    - cron: "50 9 * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Types to audit (films,tv,games,books)"
+        default: "films,tv,games,books"
+      max-age-days:
+        description: "Works unchecked for this many days count as due"
+        default: "180"
+      # The three checks that reach an API, off by default here for the same
+      # reason they are off by default in the script. Each needs the metadata
+      # credentials, which the scheduled run deliberately does without — see
+      # the credential check below.
+      verify-shared-refs:
+        description: "Ask the API whether works sharing an id are one work (~25 calls)"
+        type: boolean
+        default: false
+      verify-title-years:
+        description: "Ask the API about title+year collisions"
+        type: boolean
+        default: false
+      verify-titles:
+        description: "Ask the API for every work's title (expensive)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never two audits at once. They would read the same collections and write the
+# same artifact name, and the second one's report would be the one kept for no
+# better reason than that it finished last. `cancel-in-progress: false` because
+# a run this cheap is not worth interrupting.
+concurrency:
+  group: audit-database
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    # A flag-free audit is seconds. `--verify-titles` is the outlier — it asks
+    # the API about every work in the slice, paced by each collection's own
+    # pause — so the ceiling is sized for that rather than for the common case,
+    # and still far below the six hours a job may take.
+    timeout-minutes: 60
+    steps:
+      # Checked before anything is installed or opened. Without it an unset
+      # secret gets as far as the script and dies on an empty connection
+      # string, which reads like a database fault rather than the unset setting
+      # it is (#338). Name only — a masked secret echoed into a log is still a
+      # secret in a log.
+      #
+      # **One credential, not five.** The audit reaches an API only when asked
+      # to with one of the three `--verify-*` flags, and the schedule asks for
+      # none of them. That is worth keeping: it means the daily record of the
+      # database's state does not stop being written because a metadata key was
+      # revoked or a quota was spent, which is exactly the kind of coupling
+      # `backup_database.yml` exists to avoid. A manual run that does ask for a
+      # verify flag needs the matching key, and fails in the script naming the
+      # one it wanted if it is not set.
+      - name: Check the credential is set
+        env:
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+        run: |
+          if [ -z "$MONGODB_URL" ]; then
+            echo "::error::Unset repository secret: MONGODB_URL"
+            echo "Set it under Settings > Secrets and variables > Actions." \
+                 "The value lives in src/db_maintenance/.env. See #338."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      # The same Node as `netlify.toml`, `ci.yml` and the other two jobs.
+      # `src/db_maintenance` is CommonJS and requires three modules out of
+      # `src/api`, which is ESM, so this needs a Node where `require(esm)` is
+      # unflagged — 22.12 and up. See CLAUDE.md.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci --omit=dev
+
+      # The audit. Read-only throughout: it takes no `--apply` and must never
+      # grow one, so there is no snapshot step here and CLAUDE.md's first rule
+      # does not apply.
+      #
+      # `tee` because both halves of the output are wanted and they are
+      # different things. The text is the summary a person reads — counts per
+      # collection, the `metadata checked against the API` line, a few worked
+      # examples — and it goes in the job summary below. The `--json` is the
+      # whole report, every finding with its documents, which is what a
+      # comparison against last week's run needs.
+      #
+      # `pipefail` so the step's status is the script's and not `tee`'s.
+      - name: Audit
+        env:
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          set -o pipefail
+          node src/db_maintenance/scripts/audit_database.js \
+            --only="${{ inputs.only || 'films,tv,games,books' }}" \
+            --max-age-days="${{ inputs['max-age-days'] || '180' }}" \
+            --json="$RUNNER_TEMP/audit.json" \
+            ${{ inputs['verify-shared-refs'] == true && '--verify-shared-refs' || '' }} \
+            ${{ inputs['verify-title-years'] == true && '--verify-title-years' || '' }} \
+            ${{ inputs['verify-titles'] == true && '--verify-titles' || '' }} \
+            | tee "$RUNNER_TEMP/audit.txt"
+
+      # **This repository is public, so its artifacts and logs are too.** The
+      # report is almost entirely public data — titles, years, counts, the same
+      # lists `/api/export` serves on purpose — with one exception:
+      # `entriesWithoutWorkRef` and `entriesWithDanglingWorkRef` each carry the
+      # `userId` of the entry they name, and that is the auth0 `sub` every
+      # ownership check is written against. #105 is the issue about keeping it
+      # out of a response, so publishing it in an artifact would undo that by
+      # another route.
+      #
+      # Dropped rather than hashed: nothing downstream of this file correlates
+      # entries by owner, and on a site with two accounts holding any entries a
+      # stable pseudonym would not be one. The `id` stays, which is what
+      # someone repairing the row actually needs.
+      #
+      # The text log needs no such pass — it prints counts and titles, never a
+      # `userId` — but that is checked rather than assumed, and checked against
+      # the values this run actually saw rather than against a guess at their
+      # shape. An auth0 `sub` is `<connection>|<id>`, and the connection is not
+      # always `auth0`, so grepping for a prefix would quietly pass on a
+      # `google-oauth2|` one.
+      - name: Take the userIds out of the report before it is published
+        if: always()
+        run: |
+          test -s "$RUNNER_TEMP/audit.json" || exit 0
+          node -e '
+            const fs = require("fs");
+            const json = process.env.RUNNER_TEMP + "/audit.json";
+            const text = process.env.RUNNER_TEMP + "/audit.txt";
+
+            const before = fs.readFileSync(json, "utf8");
+            const report = JSON.parse(before);
+
+            // Every userId this run saw, whatever nesting it was found at, so
+            // the leak check below tests values rather than a pattern.
+            const seen = new Set();
+            const collect = (v) => {
+              if (Array.isArray(v)) return v.forEach(collect);
+              if (!v || typeof v !== "object") return;
+              for (const [k, x] of Object.entries(v)) {
+                if (k === "userId" && typeof x === "string" && x) seen.add(x);
+                else collect(x);
+              }
+            };
+            collect(report);
+
+            if (fs.existsSync(text)) {
+              const printed = fs.readFileSync(text, "utf8");
+              const leaked = [...seen].filter((id) => printed.includes(id));
+              if (leaked.length > 0) {
+                console.error(
+                  `::error::the text output carries ${leaked.length} userId(s), ` +
+                  "which this workflow assumed it never does — see the note above this step"
+                );
+                process.exit(1);
+              }
+            }
+
+            const strip = (v) =>
+              Array.isArray(v)
+                ? v.map(strip)
+                : v && typeof v === "object"
+                  ? Object.fromEntries(
+                      Object.entries(v)
+                        .filter(([k]) => k !== "userId")
+                        .map(([k, x]) => [k, strip(x)])
+                    )
+                  : v;
+
+            fs.writeFileSync(json, JSON.stringify(strip(report), null, 2));
+
+            const after = fs.readFileSync(json, "utf8");
+            const survivors = [...seen].filter((id) => after.includes(id));
+            if (survivors.length > 0) {
+              console.error(
+                `::error::${survivors.length} userId(s) survived the redaction`
+              );
+              process.exit(1);
+            }
+            console.log(`removed ${seen.size} distinct userId(s) from the report`);
+          '
+
+      # The headline where it can be seen without downloading anything. The
+      # counts are the point of reading this at all, and the artifact is for
+      # the run after next.
+      - name: Put the summary in the job summary
+        if: always()
+        run: |
+          test -s "$RUNNER_TEMP/audit.txt" || exit 0
+          {
+            echo '```'
+            cat "$RUNNER_TEMP/audit.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # `if: always()` because the run that failed partway is the one whose
+      # partial report is worth having — the same reasoning as the refresh's
+      # report step.
+      #
+      # 90 days to match the snapshot artifact. The value of this file is the
+      # comparison between runs, so the retention is the window in which a
+      # count that moved can still be seen to have moved.
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/audit.json
+            ${{ runner.temp }}/audit.txt
+          retention-days: 90
+          if-no-files-found: warn

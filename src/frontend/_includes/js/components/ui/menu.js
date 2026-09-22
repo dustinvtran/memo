@@ -2,6 +2,19 @@ const { initComponent } = Components
 const { html, css } = Utils
 const { el } = Dom
 
+/**
+ * The navigation block every page carries.
+ *
+ * The logo's `alt` is empty on purpose, and the empty value is the value
+ * rather than the omission (#399): the image is decorative here — it is not
+ * a link, and the "Home" item under it already says in text where the
+ * navigation goes — so the empty string is what tells assistive technology
+ * to skip it. With the attribute absent instead, a screen reader falls back
+ * to the filename and opens every page on the site with "memo_logo.png,
+ * image". If the logo is ever wrapped in an `<a href="/">`, it needs a real
+ * `alt` at that point, because the accessible name would then be carrying
+ * the link.
+ */
 const Menu = () => initComponent({
   content: ({ include }) => html`
     <div
@@ -10,7 +23,7 @@ const Menu = () => initComponent({
       role="navigation"
     >
       <div id="menu-logo">
-        <img src="/img/memo_logo.png">
+        <img src="/img/memo_logo.png" alt="">
       </div>
       <hr>
       <ul class="memo-menu-links">
@@ -33,15 +46,23 @@ const Menu = () => initComponent({
       String(html`<li>${menuAuthLink}</li>`)
     )
 
-    Netlify.getUserName()
-      .map(({ username }) => {
-        if (username) {
-          el('#home-menu-item')?.insertAdjacentHTML('afterend', String(html`
-            <li id="profile-menu-item"><a href="/profile/${encodeURIComponent(username)}">Profile</a></li>
-          `))
-        }
-      })
-      .mapErr(console.log)
+    // Only a logged-in reader is ever shown the Profile item, and only the
+    // cookie above decides that — so asking the server who this is when there
+    // is no cookie is a request whose one possible answer is 401, for a menu
+    // item nobody is going to be given. Unguarded that was a function
+    // invocation and a red console line for every logged-out visitor of every
+    // page `Base` draws, which is the home page and the profile. See #397.
+    if (isLoggedIn) {
+      Netlify.getUserName()
+        .map(({ username }) => {
+          if (username) {
+            el('#home-menu-item')?.insertAdjacentHTML('afterend', String(html`
+              <li id="profile-menu-item"><a href="/profile/${encodeURIComponent(username)}">Profile</a></li>
+            `))
+          }
+        })
+        .mapErr(console.log)
+    }
   },
   style: () => css`
     #menu-logo {

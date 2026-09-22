@@ -97,6 +97,31 @@ const providerUnavailable = (error) =>
     errors.internal(error, "the login provider did not answer")
   )
 
+/* Every response built by hand below spreads `responses.SECURITY_HEADERS` —
+   the site-wide set `_headers` declares for pages and
+   `src/api/utils/responses.js` sends on everything it builds. These build
+   their own header objects, for the `Location`, `Cache-Control` and
+   `Set-Cookie` that none of `responses.js`' constructors take, so until #403
+   they were the responses on the origin that carried none of it. `_headers`
+   called them five — the two login redirects, the logout redirect and the
+   renewal's 401 and 200 — and the 401 is two objects rather than one: a
+   renewal with no token to renew, and one whose session is past saving.
+
+   `Strict-Transport-Security` is why that was worth fixing rather than noting.
+   Netlify answers a function it did not send one for with its own bare
+   `max-age=31536000`, and under RFC 6797 §8.1 a `Strict-Transport-Security`
+   header *replaces* the policy the browser has stored for the host rather than
+   merging with it — so a reader who had learned `includeSubDomains` from any
+   page here unlearned it on following `/api/auth/login`, and every subdomain
+   of the site fell out of HSTS until a page put it back. Login is the one
+   request every authenticating reader makes.
+
+   Spread from the constant, never copied: one list is what #300 was for, and
+   `export.js`'s `asText` is the other call site that does this. `nosniff` and
+   the referrer policy come along for uniformity — a 302 with no body has
+   nothing to sniff — which is why the constant is spread whole rather than
+   picked from. */
+
 /* The registered redirect_uri. It moved out of the client metadata in v6 and
    into the authorization request, so it is written down once here rather than
    at the two call sites that used to disagree about it — see `handleCallback`. */
@@ -379,6 +404,7 @@ const handleLogin = async (event) => {
     return {
       statusCode: 302,
       headers: {
+        ...responses.SECURITY_HEADERS,
         Location: authRedirectURL.href,
         "Cache-Control": "no-cache",
         "Set-Cookie": generateAuth0LoginCookie(nonce, state),
@@ -455,6 +481,7 @@ const handleCallback = async (event) => {
   return {
     statusCode: 302,
     headers: {
+      ...responses.SECURITY_HEADERS,
       // Where the login started, carried through Auth0 in the state and cut
       // down to a path on this site by `toSafeRoute` on the way back in.
       Location: login.route,
@@ -472,6 +499,7 @@ const handleCallback = async (event) => {
 const sessionOver = () => ({
   statusCode: 401,
   headers: {
+    ...responses.SECURITY_HEADERS,
     "Cache-Control": "no-store",
     "Set-Cookie": generateLogoutCookie(),
   },
@@ -488,7 +516,7 @@ const handleRenew = async (event) => {
   if (!currentToken) {
     return {
       statusCode: 401,
-      headers: { "Cache-Control": "no-store" },
+      headers: { ...responses.SECURITY_HEADERS, "Cache-Control": "no-store" },
       body: JSON.stringify({ error: "Not logged in" }),
     }
   }
@@ -527,6 +555,7 @@ const handleRenew = async (event) => {
   return {
     statusCode: 200,
     headers: {
+      ...responses.SECURITY_HEADERS,
       "Cache-Control": "no-store",
       "Content-Type": "application/json",
       "Set-Cookie": generateNetlifyCookie(renewedToken),
@@ -539,6 +568,7 @@ const handleLogout = async () => {
   return {
     statusCode: 302,
     headers: {
+      ...responses.SECURITY_HEADERS,
       Location: generateAuth0LogoutUrl(),
       "Cache-Control": "no-cache",
       "Set-Cookie": generateLogoutCookie(),

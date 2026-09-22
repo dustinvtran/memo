@@ -14,6 +14,7 @@
  * loses to every monograph with the word in its index. Three things come of
  * that: `queriesFor`, `searchUrls` and the sort in `toSearchResults`.
  */
+import { httpsUrl } from './google_mapping.js'
 
 /**
  * Google caps a response at 20 volumes however large `maxResults` is — the
@@ -54,7 +55,7 @@ const toSearchResult = (volumeInfo) => ({
   title: `${titleOf(volumeInfo)} [${volumeInfo?.authors?.join(', ')}]`,
   year: volumeInfo?.publishedDate?.substring(0, 4),
   ref: isbnOf(volumeInfo),
-  imageUrl: volumeInfo?.imageLinks?.thumbnail,
+  imageUrl: httpsUrl(volumeInfo?.imageLinks?.thumbnail),
 })
 
 /**

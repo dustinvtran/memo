@@ -1,5 +1,5 @@
 const { initComponent, Error404, WithRemoteData } = Components
-const { getUserIdFromName, getUserName, getEntries } = Netlify
+const { getUserIdFromName, getUserName, getEntries, isLoggedIn } = Netlify
 const { getNameFromUrl, getEntryTypeFromUrl } = Http
 const { waitForEl } = Utils
 const { List } = Components.List
@@ -21,9 +21,17 @@ const ListPage = () => initComponent({
     const entries = getEntries(entryType, username)
     // Resolved once and shared: every table on the page asks whose list this
     // is, and each of them used to ask the server again.
-    const isOwner = getUserName()
-      .map((resp) => resp?.username === username)
-      .unwrapOr(false)
+    //
+    // A reader with no token is not the owner, which is the same answer the
+    // request would come back with as a 401 — so it is settled here rather
+    // than asked for (#397). An already-resolved promise, not a reordering:
+    // `WithRemoteData` and `SubList` both read this as one, and nothing above
+    // waits on it, so the entries still go out first either way.
+    const isOwner = isLoggedIn()
+      ? getUserName()
+        .map((resp) => resp?.username === username)
+        .unwrapOr(false)
+      : Promise.resolve(false)
 
     return include(WithRemoteData({
       remoteData: user,

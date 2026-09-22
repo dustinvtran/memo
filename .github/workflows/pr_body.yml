@@ -1,0 +1,84 @@
+name: PR body
+
+# Its own file rather than a third job in `ci.yml`, for two reasons that both
+# come down to this not being a check about the code.
+#
+# It needs a trigger `ci.yml` must not have. A body edited after the pull
+# request is opened does not fire `opened` or `synchronize`, so without
+# `edited` below the check would answer once, on the body as first written,
+# and fixing that body would never turn the cross into a tick. Putting
+# `edited` on `ci.yml` instead would mean a full install, build and audit
+# every time somebody corrects a typo in a title.
+#
+# And a red body should not be able to hide a red build. These run as separate
+# checks, so "CI failed" keeps meaning the code failed, and the list of checks
+# on the pull request says which of the two is wrong without anyone opening a
+# log.
+#
+# What it does *not* need is either of `ci.yml`'s jobs: the rules are a pure,
+# dependency-free module, so there is no install, no database and no API key
+# here — the `test` job's constraints, met by a workflow that is not about the
+# code at all.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+# Reading a body needs no permission at all: it arrives in the webhook payload
+# that started this run, so there is no API call to authorise and nothing here
+# ever writes. `contents: read` is for the checkout, which is how the script
+# gets here. The repository default is `write` (#301); this overrides it for
+# this workflow whatever that setting happens to be, the same way `ci.yml`
+# does and for the same reason.
+permissions:
+  contents: read
+
+# Editing a description twice in a minute is normal — that is what this check
+# asks people to do — and only the latest answer is ever read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # **A pull request that conflicts with `main` fires no `pull_request`
+  # workflow at all**, and nothing says so: no queued run, no failed run, no
+  # red check, just a row that is absent. `pull_request` workflows build a
+  # merge commit and GitHub cannot build one for a conflicted pull request. So
+  # this check, exactly like `ci.yml`, is *missing* rather than green on a
+  # conflicted branch — and a missing check reads as a passing one to anybody
+  # skimming. Rebase first, then believe the ticks. See CLAUDE.md.
+  body:
+    runs-on: ubuntu-latest
+
+    # Dependabot writes its own descriptions and they are not ours to rewrite:
+    # measured over the four it had merged when this was written, they run 531
+    # to 856 words of release notes and commit lists, hard-wrapped, under no
+    # heading this template knows. Every one of them would fail every rule
+    # here, on every push, for the lifetime of the repository — which is how a
+    # check gets ignored and then deleted. `user.type` is `Bot` for anything
+    # driven by an app, so this covers whatever else GitHub opens on our
+    # behalf later.
+    if: github.event.pull_request.user.type != 'Bot'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `setup-node`: the rules are string handling with no dependency on a
+      # Node version, so pinning one here would add a fourth number to keep in
+      # step with `netlify.toml` — and unlike the three in `ci.yml`, nothing
+      # would be checking it.
+      #
+      # The title and the body go through the environment rather than into the
+      # `run:` line because `${{ … }}` is substituted as text before the shell
+      # sees it, and both are written by whoever opened the pull request.
+      # `$(curl …)` in a description would run here. The script reads
+      # `PR_BODY` and `PR_TITLE`; an environment variable is data at every
+      # step.
+      #
+      # `edited` fires for a title change as well as a body change, which is
+      # what makes checking the title here worth doing rather than only at
+      # merge: a title corrected after review re-runs this.
+      - name: The title and description must follow the house standard
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/check_pr_body.js

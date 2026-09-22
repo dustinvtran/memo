@@ -9,6 +9,7 @@ import * as errors from '../../errors.js'
 import axios from 'axios'
 import { throwIt } from '../../general.js'
 import { retrying, describeFailure, publicFailure, statusOf } from '../retry.js'
+import { toBook } from './google_mapping.js'
 import { BASE_URL, searchUrls, toSearchResults } from './google_search.js'
 const { GOOGLE_API_KEY } = process.env
 
@@ -56,19 +57,9 @@ const retrieve = (ref) => ResultAsync.fromPromise(
   }).then((response) => volumesOf(response.data).length > 0
     ? response
     : throwEmptyLookup(ref)))
-    .then(({ data }) => volumesOf(data).map(({ volumeInfo }) => ({
-      entryType: 'Book',
-      publishers: volumeInfo.publisher ? [volumeInfo.publisher] : undefined,
-      englishTranslatedTitle: volumeInfo.title,
-      releaseYear: parseInt(volumeInfo.publishedDate?.substring(0, 4)) || undefined,
-      duration: volumeInfo.pageCount,
-      imageUrl: volumeInfo?.imageLinks?.thumbnail,
-      authors: volumeInfo?.authors,
-      apiRefs: [`ISBN__${ref}`],
-      externalUrls: volumeInfo?.canonicalVolumeLink
-        ? [{ name: 'Google Play', url: volumeInfo?.canonicalVolumeLink }]
-        : [],
-    }))[0] ?? throwNoSuchVolume(ref)),
+    .then(({ data }) => volumesOf(data)
+      .map(({ volumeInfo }) => toBook(ref, volumeInfo))[0]
+      ?? throwNoSuchVolume(ref)),
   toError('retrieving a book')
 )
 

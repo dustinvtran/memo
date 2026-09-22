@@ -21,13 +21,42 @@
  *   node scripts/set_work_ref.js --work=<id> --ref=igdb__1234
  *   node scripts/set_work_ref.js --work=<id> --ref=igdb__1234 --apply
  *   node scripts/set_work_ref.js --from=refs.json --apply
+ *   node scripts/set_work_ref.js --from=work_refs.json --apply
  *   node scripts/set_work_ref.js --work=<id> --unlink=tmdb__62128 --apply
  *
  * `--from` takes `[{ "work": "<id>", "ref": "igdb__1234" }, ...]`, which is
  * what makes a backfill of 168 tractable: assemble the pairs however you like,
  * and every one still gets asked the same question before it is written. A
- * refusal in a batch skips that pair and the rest carry on, because one bad id
+ * refusal in a batch skips that row and the rest carry on, because one bad id
  * in a list of a hundred should not cost the other ninety-nine.
+ *
+ * **A row may carry `"alternates"`, and that is #388.** One refused id used to
+ * skip the work, and the second-ranked candidate — already scored by
+ * scripts/propose_work_refs.js, and quite possibly the right one — sat in the
+ * file untried while a person looked the id up by hand, which is the work that
+ * script exists to avoid. The refusal is expected rather than exceptional: the
+ * proposal's own header says the score orders rather than decides, and TMDB
+ * answers `Hero` with `THE RIBBON HERO` before `Big Hero 6`. So the ids on a
+ * row are a queue, tried in order until one passes, and the run says which was
+ * taken and why each earlier one was not:
+ *
+ *     { "work": "<id>", "ref": "tmdb__1", "alternates": ["tmdb__2", "tmdb__3"] }
+ *
+ * **Nothing about the guard is softened by that.** Each id in the queue is
+ * retrieved and compared exactly as a lone `--ref` is, and an alternate that
+ * disagrees on its title is refused in the same words. The one thing that does
+ * not travel down a queue is `retitleWorkTo`, because it is evidence about one
+ * id rather than about the row — an alternate that needs one gives its own,
+ * `{ "ref": "igdb__73", "retitleWorkTo": "Portal 2" }`. See ../work_ref_repair.js.
+ *
+ * **`--from` also reads scripts/propose_work_refs.js's own file**, so there is
+ * no flattening step between the two: fill `ref` on the rows you have
+ * confirmed, add `alternates` where the second candidate is worth a try, and
+ * hand the file over. A row with nothing filled in is passed over rather than
+ * refused, and an `entry` row is passed over too — that one is
+ * scripts/link_entry.js's. The `candidates` array the search wrote is never
+ * read, which is the point: those are what was found, `ref` and `alternates`
+ * are what a person chose, and a search's first hit is still not an answer.
  *
  * A pair carrying `"unlink"` does the third thing that can be wrong with a
  * ref, after missing and wrong: the id was real and the API has since dropped
@@ -63,11 +92,16 @@
  *   --only=a,b      restrict to these collections
  *   --work=<id>     the work to repair
  *   --ref=<ref>     the ref to give it, as <prefix>__<id>
+ *   --alternates=<ref>,<ref>  ids to fall back to, tried in order, each
+ *                   getting the same guard and none inheriting a retitle
+ *   --retitleWorkTo=<title>  the API's own title, for a right id under a name
+ *                   of your own, which is how this says you read the answer
  *   --replacesRef=<ref>  the wrong ref to take off, for a work that has one
  *   --unlink=<ref>  take this ref off and give none, for an id the API dropped
  *   --becauseItNames=<title>  what a still-answering ref answers with, which
  *                   is how an unlink of one says it was read rather than guessed
- *   --from=<file>   a JSON array of { work, ref } pairs
+ *   --from=<file>   a JSON array of { work, ref, alternates? } rows, or
+ *                   propose_work_refs.js's own file with the refs filled in
  *   --apply         actually write (without it, nothing is written)
  */
 require("../env");
@@ -85,7 +119,14 @@ const {
   sleep,
 } = require("../work_collections");
 const { loadAdapter, describeError } = require("../load_adapter");
-const { refusalReason, refUpdate, unlinkRefusalReason, unlinkUpdate } = require("../work_ref_repair");
+const {
+  refCandidates,
+  chooseRef,
+  refusalReason,
+  refUpdate,
+  unlinkRefusalReason,
+  unlinkUpdate,
+} = require("../work_ref_repair");
 const { filedAs } = require("../../api/utils/entry_state");
 
 const main = async () => {
@@ -119,21 +160,41 @@ const main = async () => {
       : [{
           work: String(args.work),
           ref: String(args.ref ?? ""),
+          alternates:
+            args.alternates === undefined || args.alternates === true
+              ? []
+              : String(args.alternates).split(","),
+          retitleWorkTo: args.retitleWorkTo,
           replacesRef: args.replacesRef,
           unlink: args.unlink,
           becauseItNames: args.becauseItNames,
         }];
 
-    console.log(`${apply ? "APPLY" : "DRY RUN"}: ${pairs.length} work(s)\n`);
+    console.log(`${apply ? "APPLY" : "DRY RUN"}: ${pairs.length} row(s)\n`);
     let done = 0;
     let refused = 0;
+    let unchosen = 0;
 
     for (const pair of pairs) {
-      const ran = pair.unlink ? await unlinkOne(db, pair, apply) : await repairOne(db, pair, apply);
-      ran ? done++ : refused++;
+      if (pair.unlink) {
+        (await unlinkOne(db, pair, apply)) ? done++ : refused++;
+        continue;
+      }
+      // A row with no id filled in is passed over rather than refused, which
+      // is what lets propose_work_refs.js's own file be handed straight to
+      // `--from`: it writes `"ref": ""` on every row, and its entry rows are
+      // scripts/link_entry.js's work rather than this script's.
+      if (!pair.work || refCandidates(pair).length === 0) {
+        unchosen++;
+        continue;
+      }
+      (await repairOne(db, pair, apply)) ? done++ : refused++;
     }
 
-    console.log(`\n${apply ? "written" : "would write"}: ${done}, refused: ${refused}`);
+    console.log(
+      `\n${apply ? "written" : "would write"}: ${done}, refused: ${refused}` +
+        (unchosen > 0 ? `, no ref chosen: ${unchosen}` : "")
+    );
     if (!apply && done > 0) console.log("Nothing was written. Re-run with --apply.");
   } finally {
     await client.close();
@@ -165,9 +226,17 @@ const listUnrefreshable = async (db, collections) => {
   }
 };
 
-/** @returns {Promise<boolean>} whether this pair was written (or would be). */
-const repairOne = async (db, { work: workId, ref, retitleWorkTo, replacesRef }, apply) => {
-  const parsed = parseApiRef(ref);
+/**
+ * One row of the worklist: the ids it names, tried in order until one passes.
+ *
+ * `main` has already established that the row names at least one id — a row
+ * that names none is passed over there rather than refused here — so `queue[0]`
+ * is the row's first choice and is what the messages before the loop speak of.
+ * @returns {Promise<boolean>} whether this row was written (or would be).
+ */
+const repairOne = async (db, pair, apply) => {
+  const workId = String(pair.work);
+  const queue = refCandidates(pair);
   // The work's own collection decides the type, and the ref's prefix is only
   // the fallback for a work that is not there at all. The other way round,
   // `find` answers `tmdb__` with films every time — both films and tv are
@@ -175,49 +244,77 @@ const repairOne = async (db, { work: workId, ref, retitleWorkTo, replacesRef }, 
   // collection and was refused as a work that does not exist.
   const collection =
     (await collectionHolding(db, workId)) ??
-    COLLECTIONS.find((c) => c.retrievePrefix === parsed?.name);
+    COLLECTIONS.find((c) => c.retrievePrefix === parseApiRef(queue[0].ref)?.name);
 
   if (!collection) {
-    console.log(`  ! ${workId} -> ${ref}: refused — no collection holds that work, and "${ref}" names no type`);
+    console.log(
+      `  ! ${workId} -> ${queue[0].ref}: refused — no collection holds that work, and "${queue[0].ref}" names no type`
+    );
     return false;
   }
 
   const work = await db.collection(collection.works).findOne({ _id: workId });
-  const otherHolders = parsed
-    ? await db.collection(collection.works).find({ apiRefs: ref, _id: { $ne: workId } }).toArray()
-    : [];
 
-  // Retrieved only once the free checks have passed, so a typo costs nothing.
-  const cheapRefusal = refusalReason({ collection, work, ref, replacesRef, otherHolders, retrieved: {} });
-  let retrieved;
-  let retrieveError;
-  if (!cheapRefusal) {
-    // The collection's own pause, which is the one thing that keeps this
-    // inside the API's budget: an IGDB retrieve is three of the four requests
-    // a second it allows, and a flat 200ms spent half a batch on 429s.
-    await sleep(collection.defaultDelayMs);
-    const result = await loadAdapter(collection).retrieve(parsed.ref);
-    if (result.isErr()) retrieveError = describeError(result.error);
-    else retrieved = result.value;
-  }
-
-  const refusal =
-    cheapRefusal ??
-    refusalReason({ collection, work, ref, retitleWorkTo, replacesRef, otherHolders, retrieved, retrieveError });
-  const label = work ? `"${displayTitle(work)}"` : workId;
-
-  if (refusal) {
-    console.log(`  ! ${label} -> ${ref}: refused — ${refusal}`);
+  // Every candidate would refuse for this one reason, so it is said once here
+  // rather than once per id in the queue.
+  if (!work) {
+    console.log(`  ! ${workId} -> ${queue[0].ref}: refused — ${refusalReason({ collection, work, ref: queue[0].ref })}`);
     return false;
   }
+  const label = `"${displayTitle(work)}"`;
+  const adapter = loadAdapter(collection);
+
+  // The guard, once per candidate, in order, stopping at the first that
+  // passes — see `chooseRef`. The queue is ids a person chose; the question
+  // asked of each is the same one a single `--ref` is asked.
+  const { taken, retrieved, refused } = await chooseRef(pair, async ({ ref, retitleWorkTo, replacesRef }) => {
+    const parsed = parseApiRef(ref);
+    const otherHolders = parsed
+      ? await db.collection(collection.works).find({ apiRefs: ref, _id: { $ne: workId } }).toArray()
+      : [];
+
+    // Retrieved only once the free checks have passed, so a typo costs
+    // nothing — and a queue of three typos still costs nothing.
+    const cheapRefusal = refusalReason({ collection, work, ref, replacesRef, otherHolders, retrieved: {} });
+    if (cheapRefusal) return { reason: cheapRefusal };
+
+    // The collection's own pause, which is the one thing that keeps this
+    // inside the API's budget: an IGDB retrieve is three of the four requests
+    // a second it allows, and a flat 200ms spent half a batch on 429s. It
+    // sits with the retrieve rather than with the row, so an alternate is
+    // paced exactly as a first choice is and a row of three alternates is
+    // three pauses rather than one.
+    await sleep(collection.defaultDelayMs);
+    const result = await adapter.retrieve(parsed.ref);
+    const retrieveError = result.isErr() ? describeError(result.error) : undefined;
+    const answered = result.isErr() ? undefined : result.value;
+
+    return {
+      reason: refusalReason({
+        collection, work, ref, retitleWorkTo, replacesRef, otherHolders,
+        retrieved: answered, retrieveError,
+      }),
+      retrieved: answered,
+    };
+  });
+
+  // Why each earlier candidate was not taken, which is the point of trying
+  // them in order: a row that ends up refused says it about every id it had.
+  for (const attempt of refused) {
+    console.log(`  ! ${label} -> ${attempt.ref}: refused — ${attempt.reason}`);
+  }
+  if (!taken) return false;
 
   // Renamed only when the guard was got past, so a `retitleWorkTo` supplied
   // for a work whose title already agreed is a no-op rather than a rewrite.
+  // It is the accepted candidate's own, never the queue's first: see #388 and
+  // `refCandidates`.
   const retitleTo =
-    retitleWorkTo && titlesAgree(work, retrieved) === false ? displayTitle(retrieved) : undefined;
-  const { set, unset } = refUpdate(work, ref, retitleTo, replacesRef);
+    taken.retitleWorkTo && titlesAgree(work, retrieved) === false ? displayTitle(retrieved) : undefined;
+  const { set, unset } = refUpdate(work, taken.ref, retitleTo, taken.replacesRef);
 
-  console.log(`  ~ ${label} -> ${ref}  (${collection.type}; the API answers "${displayTitle(retrieved)}")`);
+  const ordinal = queue.length > 1 ? `; candidate ${refused.length + 1} of ${queue.length}` : "";
+  console.log(`  ~ ${label} -> ${taken.ref}  (${collection.type}; the API answers "${displayTitle(retrieved)}"${ordinal})`);
   console.log(`      apiRefs ${JSON.stringify(work.apiRefs ?? [])} -> ${JSON.stringify(set.apiRefs)}, metadataUpdatedDate cleared`);
   if (retitleTo) {
     console.log(`      englishTranslatedTitle "${displayTitle(work)}" -> "${retitleTo}"`);

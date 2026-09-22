@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 const {
   linkRefusalReason,
+  siblingsAfterRun,
   deleteRefusalReason,
   linkUpdate,
   nameAfter,
@@ -136,6 +137,108 @@ test("a blank override and a missing one are the same name", () => {
     siblings: [{ _id: "e2", overrides: { englishTranslatedTitle: "" } }],
   });
   assert.match(why, /already has an entry filed as the work's own title/);
+});
+
+// --- the names the run itself has assigned ---
+
+/**
+ * The Castlevania repair from #381, which is what found this. Three entries on
+ * one show: one is renamed off `Castlevania: Season 2` and the next moves in to
+ * take the name it has just left. On an `--apply` the first write is in the
+ * database by the time the second operation reads the siblings, so both go
+ * through; the dry run read both against the database and refused the second.
+ * #386.
+ */
+const castlevania = { _id: "w9", englishTranslatedTitle: "Castlevania", apiRefs: ["tmdb__71535"] };
+const dropped = {
+  _id: "e-dropped",
+  userId: "u1",
+  workRef: "w9",
+  overrides: { englishTranslatedTitle: "Castlevania: Season 2" },
+};
+const stray = { _id: "e-stray", userId: "u1", workRef: "w8", overrides: { englishTranslatedTitle: "S2" } };
+
+/** The run having performed one operation: the entry as it leaves it. */
+const after = (entry, { workRef, filedAs }) => [
+  String(entry._id),
+  { ...entry, workRef, overrides: { ...entry.overrides, englishTranslatedTitle: filedAs } },
+];
+
+test("a name an earlier operation freed is free", () => {
+  const move = {
+    entry: stray,
+    work: castlevania,
+    collection: films,
+    entryTitle: "Castlevania: Season 2",
+  };
+  // What the database says, which is the state before the run started.
+  assert.match(
+    linkRefusalReason({ ...move, siblings: [dropped] }),
+    /already has an entry filed as "Castlevania: Season 2"/
+  );
+
+  const assigned = new Map([after(dropped, { workRef: "w9", filedAs: "Castlevania: Season 3" })]);
+  const siblings = siblingsAfterRun({ siblings: [dropped], workId: "w9", userId: "u1", assigned });
+  assert.equal(linkRefusalReason({ ...move, siblings }), undefined);
+});
+
+/** The other way off a name: the entry is still called that, elsewhere. */
+test("an entry the run has moved away is not on this work any more", () => {
+  const assigned = new Map([after(dropped, { workRef: "w7", filedAs: "Castlevania: Season 2" })]);
+  assert.deepEqual(
+    siblingsAfterRun({ siblings: [dropped], workId: "w9", userId: "u1", assigned }),
+    []
+  );
+});
+
+/**
+ * The same blindness pointing the other way, and fixed by the same fold: a
+ * clash the run creates is one the apply would refuse, so inventing a pass here
+ * is the failure that inventing a refusal was.
+ */
+test("a name an earlier operation took is taken, which the database cannot say either", () => {
+  const assigned = new Map([after(stray, { workRef: "w9", filedAs: "Castlevania: Season 2" })]);
+  const siblings = siblingsAfterRun({ siblings: [], workId: "w9", userId: "u1", assigned });
+  assert.match(
+    linkRefusalReason({
+      entry: { _id: "e-third", userId: "u1" },
+      work: castlevania,
+      collection: films,
+      entryTitle: "Castlevania: Season 2",
+      siblings,
+    }),
+    /already has an entry filed as "Castlevania: Season 2" \(e-stray\)/
+  );
+});
+
+/**
+ * On an `--apply` the database has already answered with the row the run
+ * wrote. Keyed by entry id, folding it in replaces that row with itself —
+ * which is why this needs no equivalent of `createdThisRun`'s re-read.
+ */
+test("the apply's own write is not counted twice", () => {
+  const [id, renamed] = after(dropped, { workRef: "w9", filedAs: "Castlevania: Season 3" });
+  const siblings = siblingsAfterRun({
+    siblings: [renamed],
+    workId: "w9",
+    userId: "u1",
+    assigned: new Map([[id, renamed]]),
+  });
+  assert.deepEqual(siblings, [renamed]);
+});
+
+/** The sibling read is filtered by owner, and so is this. */
+test("another person's entry does not take a name on this one's work", () => {
+  const theirs = { ...dropped, _id: "e-other", userId: "u2" };
+  assert.deepEqual(
+    siblingsAfterRun({ siblings: [], workId: "w9", userId: "u1", assigned: new Map([["e-other", theirs]]) }),
+    []
+  );
+});
+
+test("a link whose work is yet to be created has nothing to be a sibling on", () => {
+  const assigned = new Map([after(dropped, { workRef: "w9", filedAs: "Castlevania: Season 2" })]);
+  assert.deepEqual(siblingsAfterRun({ siblings: [], workId: undefined, userId: "u1", assigned }), []);
 });
 
 test("the write sets the workRef and merges the override", () => {
