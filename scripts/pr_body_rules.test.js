@@ -6,6 +6,7 @@ const assert = require('node:assert/strict')
 const {
   REQUIRED_HEADINGS,
   DETAILS_HEADING,
+  TLDR_PLACEHOLDER,
   MAX_WORDS,
   MAX_SECTION_WORDS,
   SECTION_WORDS,
@@ -52,20 +53,27 @@ test('a body that follows the standard passes', () => {
   assert.deepEqual(checkPrBody(bodyOf()), [])
 })
 
-test('the pending marker fails rather than shipping', () => {
-  const body = bodyOf({
-    tldr: '> **Human TL;DR pending:** PR author, replace this line with your one-sentence summary before review.',
-  })
-  const problems = checkPrBody(body)
+test('the template\'s opening placeholder fails rather than shipping', () => {
+  const problems = checkPrBody(bodyOf({ tldr: TLDR_PLACEHOLDER }))
   assert.equal(problems.length, 1)
-  assert.match(problems[0], /Human TL;DR pending/)
-  assert.match(problems[0], /author's job/)
+  assert.match(problems[0], /still the template's/)
+  assert.match(problems[0], /it renders/)
 })
 
-test('a body that opens straight into a heading has no author sentence', () => {
+test('a body that opens straight into a heading has no summary sentence', () => {
   const problems = checkPrBody(bodyOf({ tldr: '' }))
   assert.equal(problems.length, 1)
   assert.match(problems[0], /one-sentence summary/)
+})
+
+test('the opening is one sentence, not a paragraph', () => {
+  const problems = checkPrBody(bodyOf({ tldr: words(SECTION_WORDS[''] + 1) }))
+  assert.equal(problems.length, 1)
+  assert.match(problems[0], new RegExp(`opening is \\d+ words against a ceiling of ${SECTION_WORDS['']}`))
+})
+
+test('an opening at its ceiling passes', () => {
+  assert.deepEqual(checkPrBody(bodyOf({ tldr: words(SECTION_WORDS['']) })), [])
 })
 
 test('a missing section is named, and so is the template', () => {
@@ -293,9 +301,19 @@ test('the template on disk has the headings the check asks for, in order', () =>
   assert.deepEqual(headings, [...REQUIRED_HEADINGS, DETAILS_HEADING])
 })
 
-test('the template submitted untouched fails, starting with the marker', () => {
+test('the template ships the placeholder the check looks for, spelled the same', () => {
+  assert.ok(
+    fs
+      .readFileSync(TEMPLATE, 'utf8')
+      .split(/\r?\n/)
+      .some((line) => line.trim() === TLDR_PLACEHOLDER),
+    `the template has no line reading exactly "${TLDR_PLACEHOLDER}"`
+  )
+})
+
+test('the template submitted untouched fails, starting with the placeholder', () => {
   const problems = checkPrBody(fs.readFileSync(TEMPLATE, 'utf8'))
-  assert.match(problems[0], /Human TL;DR pending/)
+  assert.match(problems[0], /still the template's/)
   /* Every section but Changes, whose placeholder bullets are content; that one
      is caught as an unfilled placeholder instead. */
   for (const heading of REQUIRED_HEADINGS.filter((h) => h !== 'Changes')) {

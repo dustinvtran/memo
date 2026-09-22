@@ -16,17 +16,18 @@
  *
  * ## The shape, and what each part of it is for
  *
- * A body opens with one sentence the **author** wrote, then four sections that
- * orient a reviewer without making them read code — Summary, Changes,
- * Artifact, Prior / Future work — then a horizontal rule, then an optional
- * Details for whoever is verifying rather than skimming. The rule is load
- * bearing: above it is for skimmers, below it is for verifiers.
+ * A body opens with one sentence, then four sections that orient a reviewer
+ * without making them read code — Summary, Changes, Artifact, Prior / Future
+ * work — then a horizontal rule, then an optional Details for whoever is
+ * verifying rather than skimming. The rule is load bearing: above it is for
+ * skimmers, below it is for verifiers.
  *
- * **The opening sentence is the author's and no one else's.** An agent asks
- * for it or quotes what the author already said; it never writes one. So the
- * template ships a visible marker in its place, and a body still carrying that
- * marker fails here rather than passing quietly — which is the whole point of
- * a marker over a blank line.
+ * **The opening sentence is one sentence.** It is whatever a reader skimming a
+ * list of merged pull requests needs, and the Summary underneath is not a
+ * longer retelling of it. Nothing here needs a human to supply it, so the
+ * template ships a placeholder rather than a handoff — and a body still
+ * carrying that placeholder fails, because an unfilled line that renders is
+ * worse than a blank one that does not.
  *
  * **The four sections above the rule are natural language.** A file path or a
  * symbol name in them is a reviewer being asked to read code to understand the
@@ -70,8 +71,14 @@ const DETAILS_HEADING = 'Details'
  */
 const HIGH_LEVEL = ['', 'Summary', 'Changes', 'Prior / Future work']
 
-/** The marker the template ships where the author's sentence goes. */
-const TLDR_PENDING = /Human TL;DR pending/i
+/**
+ * The line the template ships where the opening sentence goes, matched exactly
+ * so that the check and the template cannot drift apart without a test
+ * noticing. It is plain text rather than an HTML comment on purpose: a comment
+ * left in place is invisible and would have to be caught by its absence, and
+ * this way the failure is legible in the rendered body as well as here.
+ */
+const TLDR_PLACEHOLDER = 'One-sentence summary of PR.'
 
 /**
  * Measured, not guessed. Of the last 36 merged pull requests written here by a
@@ -101,6 +108,11 @@ const MAX_WORDS = 500
  */
 const MAX_SECTION_WORDS = 250
 const SECTION_WORDS = {
+  /* The unheaded opening. "One sentence" has no honest mechanical test —
+     splitting on full stops argues with every abbreviation — so this is the
+     cheap proxy: long enough for a sentence with room to breathe, short
+     enough that a paragraph cannot hide here. */
+  '': 45,
   Summary: 150,
   'Prior / Future work': 80,
   [DETAILS_HEADING]: 150,
@@ -315,21 +327,29 @@ const checkPrBody = (body) => {
   const byHeading = new Map(sections.map((section) => [section.heading, section]))
   const problems = []
 
-  /* The author's sentence, which is the one thing here no agent may supply. */
+  /* The opening sentence, above the first heading. */
   const opening = sections[0]
   if (isEmpty(opening)) {
     problems.push(
       'The body opens straight into a heading, and the line above the first ' +
-        'section is the pull request author\'s one-sentence summary. It is ' +
-        'theirs to write: ask for it, or quote what they have already said.'
+        'section is the one-sentence summary — what somebody skimming a list ' +
+        'of merged pull requests would want to read.'
     )
-  } else if (opening.lines.some((line) => TLDR_PENDING.test(line))) {
+  } else if (opening.lines.some((line) => line.trim() === TLDR_PLACEHOLDER)) {
     problems.push(
-      'The body still carries the template\'s "Human TL;DR pending" marker, ' +
-        'so the author\'s one-sentence summary has not been written yet. The ' +
-        'marker is meant to fail this check rather than ship — replacing it ' +
-        'is the author\'s job, not the description-writer\'s.'
+      `The opening line is still the template's "${TLDR_PLACEHOLDER}" ` +
+        'placeholder. Replace it with the sentence itself; it renders, so ' +
+        'leaving it is visible to everyone who opens the pull request.'
     )
+  } else {
+    const words = countWords(opening.lines, opening.fenced)
+    if (words > SECTION_WORDS['']) {
+      problems.push(
+        `The opening is ${words} words against a ceiling of ` +
+          `${SECTION_WORDS['']}, which is one sentence with room to spare. ` +
+          'What does not fit belongs under "## Summary".'
+      )
+    }
   }
 
   const present = sections.map((section) => section.heading).filter(Boolean)
@@ -476,6 +496,7 @@ const checkPrBody = (body) => {
 module.exports = {
   REQUIRED_HEADINGS,
   DETAILS_HEADING,
+  TLDR_PLACEHOLDER,
   HIGH_LEVEL,
   MAX_WORDS,
   MAX_SECTION_WORDS,

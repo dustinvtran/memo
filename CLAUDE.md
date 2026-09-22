@@ -29,18 +29,19 @@ natural language: no file paths, no symbol names, no code, because a summary
 a reviewer has to read the diff to understand is not a summary. Artifact is
 the exception and is where the command, the output and the screenshot belong.
 
-**The opening sentence belongs to the pull request author.** Ask for it, or
-quote what they have already said about the change, and correct only spelling
-and grammar. Never write one for them: the template ships a visible
-`Human TL;DR pending` marker in its place, and a body still carrying that
-marker fails the check rather than shipping. If a description has to go up
-before the author has answered, leave the marker and say so.
+**Writing one needs nobody's help.** The opening line is a single sentence —
+what someone skimming a list of merged pull requests would want to read — and
+the Summary under it is not a longer retelling of it. The template ships the
+literal line `One-sentence summary of PR.` there, in plain text rather than in
+a comment, so that leaving it unfilled both fails the check and is visible to
+anyone who opens the pull request.
 
 `.github/workflows/pr_body.yml` checks the parts of this that have a
-mechanical test — the sections, the ceilings, the wrapping, the marker, and a
-Conventional Commit title — and `node scripts/check_pr_body.js draft.md` asks
-the same of a file before a pull request exists. The rest is taste. The
-numbers and the reasoning are at the top of `scripts/pr_body_rules.js`.
+mechanical test — the sections, the ceilings, the wrapping, the unfilled
+placeholders, and a Conventional Commit title — and
+`node scripts/check_pr_body.js draft.md` asks the same of a file before a pull
+request exists. The rest is taste. The numbers and the reasoning are at the
+top of `scripts/pr_body_rules.js`.
 
 ## Commits
 

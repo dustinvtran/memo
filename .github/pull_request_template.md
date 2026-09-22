@@ -21,7 +21,7 @@ so it is natural language: no file paths, no symbol names, no code. Artifact is
 the exception and is meant to carry them, because it is evidence.
 -->
 
-> **Human TL;DR pending:** PR author, replace this line with your one-sentence summary before review.
+One-sentence summary of PR.
 
 ## Summary
 
