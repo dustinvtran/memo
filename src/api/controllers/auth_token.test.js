@@ -510,3 +510,107 @@ test('the Authorization header wins over the cookie', options, async () => {
   assert.equal(response.statusCode, 200)
   assert.equal((await claimsOf(JSON.parse(response.body).token)).sub, 'auth0|the-header')
 })
+
+///////////////////////////////////////////////////////////////////////////////
+// The site-wide security headers, on the responses that build their own
+
+/* #403. Every response `utils/responses.js` builds has carried the set since
+   #300, and the handlers here build their own header objects instead — for
+   the `Location`, `Cache-Control` and `Set-Cookie` none of those constructors
+   take — so the set never reached them. Netlify answered them with its own
+   bare `max-age=31536000` in place of the `includeSubDomains` the rest of the
+   origin sends, and under RFC 6797 §8.1 a `Strict-Transport-Security` header
+   replaces the policy a browser has stored for the host rather than merging
+   with it: a reader who had learned `includeSubDomains` anywhere on the site
+   unlearned it on following the login redirect.
+
+   The reason that survived #300 is the reason these tests exist: nothing had
+   ever looked at a hand-built response's headers. `handleLogin`'s redirect is
+   the one of the five not reachable from here, and is asserted in
+   `auth_bad_request.test.js`, where the stand-in for Auth0 lives. */
+
+/**
+ * `_headers`' `/*` values, typed out rather than read from
+ * `responses.SECURITY_HEADERS`. Spread from the constant these would agree
+ * with whatever it holds, including holding nothing — which is the state they
+ * are here to rule out. If this block and that one disagree, `_headers` says
+ * which of them is the site.
+ */
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
+}
+
+/* Asserted header by header rather than against the whole object, because
+   each of these responses carries something of its own beside them — a route
+   to redirect to, a cache rule, a cookie holding a token minted a moment ago.
+   The headers those set are asserted above; what is missing there is that the
+   shared set arrived as well. */
+const assertSecurityHeaders = (headers) => {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    assert.equal(headers[name], value)
+  }
+}
+
+test('the callback redirect carries the site-wide security headers', options, async () => {
+  const state = Buffer.from(
+    JSON.stringify({ route: '/films/nil', nonce: 'a-nonce' }),
+  ).toString('base64')
+
+  const response = await handleCallback(callbackEvent(state))
+
+  assert.equal(response.statusCode, 302)
+  assertSecurityHeaders(response.headers)
+  /* And still says where it was going and not to store it. The set is spread
+     in ahead of these, so a name it ever grew that collided with one of them
+     would lose to the response's own — which is the way round that keeps a
+     login working. */
+  assert.equal(response.headers.Location, '/films/nil')
+  assert.equal(response.headers['Cache-Control'], 'no-cache')
+  assert.equal(response.multiValueHeaders['Set-Cookie'].length, 2)
+})
+
+test('so does the 200 of a renewal', options, async () => {
+  const response = await handleRenew(asEvent(await sign()))
+
+  assert.equal(response.statusCode, 200)
+  assertSecurityHeaders(response.headers)
+  assert.equal(response.headers['Cache-Control'], 'no-store')
+  assert.equal(response.headers['Content-Type'], 'application/json')
+  assert.match(response.headers['Set-Cookie'], /^nf_jwt=/)
+})
+
+test('and both of the 401s a renewal can answer', options, async (t) => {
+  /* `_headers` counted one, and there are two objects: a request with no token
+     to renew, which is turned away before anything is verified, and a session
+     that has run past its cap, which is cleared on the way out. Neither goes
+     near `responses.js`. */
+  await t.test('nothing to renew', async () => {
+    const response = await handleRenew(asEvent(undefined))
+
+    assert.equal(response.statusCode, 401)
+    assertSecurityHeaders(response.headers)
+    assert.equal(response.headers['Cache-Control'], 'no-store')
+  })
+
+  await t.test('a session past its cap', async () => {
+    const response = await handleRenew(asEvent(await sign({
+      sessionStartedAt: now() - sessionToken.MAX_SESSION_SECONDS - 1,
+    })))
+
+    assert.equal(response.statusCode, 401)
+    assertSecurityHeaders(response.headers)
+    // The cleared cookie is the whole of what this response is for.
+    assert.equal(response.headers['Set-Cookie'], cleared('nf_jwt'))
+  })
+})
+
+test('and the logout redirect, which is where a reader is sent to Auth0', options, async () => {
+  const response = await handleLogout()
+
+  assert.equal(response.statusCode, 302)
+  assertSecurityHeaders(response.headers)
+  assert.match(response.headers.Location, /\/v2\/logout\?/)
+  assert.equal(response.headers['Set-Cookie'], cleared('nf_jwt'))
+})

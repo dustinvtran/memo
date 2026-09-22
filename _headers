@@ -108,18 +108,13 @@
 # same origin with two different policies depending only on the path asked
 # for. #300 sends them from the API instead: `SECURITY_HEADERS` in
 # `src/api/utils/responses.js` is `nosniff`, the referrer policy and this
-# file's HSTS, spread into every response that file builds and into
-# `export.js`'s `asText`, the one response in the tree that builds its own
-# headers. Both are asserted by the API suite, on a success, on an error and
-# on the export route's two content types.
-#
-# The exceptions are `auth.js`'s five hand-built responses — the two login
-# redirects, the logout redirect, and the 401 and 200 of a token renewal —
-# which set `Cache-Control` and `Set-Cookie` themselves and go nowhere near
-# `responses.js`. Its error paths do, so what is left uncovered is a redirect
-# carrying no body and the renewal pair. That is a smaller thing than the
-# route this was about and a separate change; it is written down here so that
-# "every response" above is read as the sentence it is.
+# file's HSTS, spread into every response that file builds and into each
+# response in the tree that builds its own headers — `export.js`'s `asText`,
+# and `auth.js`'s five, which #403 finished: the two login redirects, the
+# logout redirect, and the 401 and 200 of a token renewal. The constant is
+# spread rather than copied, so there is one list and not four. All of it is
+# asserted by the API suite, on a success, on an error, on the export route's
+# two content types and on each of the hand-built five.
 #
 # So the two files now say the same thing in two places and neither can check
 # the other — nothing bundles this file into a function, and nothing hands a
