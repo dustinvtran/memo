@@ -1,4 +1,4 @@
-const { getUserName, setBio } = Netlify
+const { getUserName, setBio, isLoggedIn } = Netlify
 const { html, css, raw, escapeHtml } = Utils
 const { icon } = Icons
 const { el, onClick } = Dom
@@ -24,6 +24,11 @@ const Biography = (userdata) => initComponent({
     <hr>
   `,
   initializer: () => {
+    // The edit pencil is the owner's, so a reader with no token has nothing to
+    // learn from asking who they are — the request can only answer 401, and on
+    // a profile page it was the second one of those. See #397.
+    if (!isLoggedIn()) return
+
     getUserName()
       .map(({ username }) => {
         if (username === userdata.username) {

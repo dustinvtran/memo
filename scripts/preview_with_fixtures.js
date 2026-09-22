@@ -215,8 +215,27 @@ const api = (url, method, res) => {
   // `/name` is the signed-in user; 401 here is what makes `isOwner` false and
   // hides the edit buttons. `/name/:name` wraps its answer in `data`, and a
   // bare `{}` renders Error404.
+  //
+  // It answers as the owner whatever the browser sends, with no `nf_jwt`
+  // cookie and no `Authorization` header, which is deliberate — the edit
+  // affordances are most of what there is to look at — and is the one place
+  // the preview is unlike production, where no cookie means 401. So what a
+  // logged-out reader sees is not what this route shows; the thing to watch
+  // for #397 is whether the request is made at all.
   if (route === "name" && rest.length === 0) return send(res, 200, { username: USERNAME });
   if (route === "name") return send(res, 200, { data: { username: rest[0] } });
+
+  // `/user/:name` is the profile page's first request and everything on that
+  // page is inside it, so without this route the whole page was one error
+  // line — the menu and the biography included, which is where #397's second
+  // 401 came from. Only the public half of the document: `userId` and the
+  // stats blob are deliberately not in the answer (#105), and a name nobody
+  // has taken is a bare `{}`, which is what the page turns into Error404.
+  if (route === "user") {
+    return send(res, 200, rest[0] === USERNAME
+      ? { data: { username: USERNAME, biography: "Fixtures, mostly.\n\n## A heading\n\nMarkdown, because the biography is rendered through `marked`." } }
+      : {});
+  }
 
   // A **raw array**, not an envelope.
   if (route === "entries" && method === "GET") return send(res, 200, entries[rest[0]] ?? []);

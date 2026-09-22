@@ -33,15 +33,23 @@ const Menu = () => initComponent({
       String(html`<li>${menuAuthLink}</li>`)
     )
 
-    Netlify.getUserName()
-      .map(({ username }) => {
-        if (username) {
-          el('#home-menu-item')?.insertAdjacentHTML('afterend', String(html`
-            <li id="profile-menu-item"><a href="/profile/${encodeURIComponent(username)}">Profile</a></li>
-          `))
-        }
-      })
-      .mapErr(console.log)
+    // Only a logged-in reader is ever shown the Profile item, and only the
+    // cookie above decides that — so asking the server who this is when there
+    // is no cookie is a request whose one possible answer is 401, for a menu
+    // item nobody is going to be given. Unguarded that was a function
+    // invocation and a red console line for every logged-out visitor of every
+    // page `Base` draws, which is the home page and the profile. See #397.
+    if (isLoggedIn) {
+      Netlify.getUserName()
+        .map(({ username }) => {
+          if (username) {
+            el('#home-menu-item')?.insertAdjacentHTML('afterend', String(html`
+              <li id="profile-menu-item"><a href="/profile/${encodeURIComponent(username)}">Profile</a></li>
+            `))
+          }
+        })
+        .mapErr(console.log)
+    }
   },
   style: () => css`
     #menu-logo {
