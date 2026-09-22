@@ -72,14 +72,15 @@ const load = () => {
   });
 
   const exports = vm.runInContext(
-    `(() => {\n${source}\n;return ({ BUCKETS, toChartOptions, aggregateStats, GlobalStats, once })\n})()`,
+    `(() => {\n${source}\n;return ({ BUCKETS, toChartOptions, aggregateStats, GlobalStats, once, totalRated, meanScore, stdev })\n})()`,
     context
   );
 
   return { ...exports, state };
 };
 
-const { BUCKETS, toChartOptions, aggregateStats } = load();
+const { BUCKETS, toChartOptions, aggregateStats, totalRated, meanScore, stdev } =
+  load();
 
 /** A full tally, one entry in each bucket, so a dropped bucket is visible. */
 const oneOfEach = () =>
@@ -187,6 +188,59 @@ test("the timestamp beside the scores is not counted as a fifth type", () => {
     totals(stats),
     Object.fromEntries(BUCKETS.map((b) => [b, 4]))
   );
+});
+
+///////////////////////////////////////////////////////////////////////////////
+// The three numbers under the chart. Each is a string by the time it is
+// interpolated, so they cross out of the vm without the realm trouble an
+// array or an object would bring with it.
+
+test("a profile with nothing rated reads as nothing, not as NaN", () => {
+  // The bug, live at /profile/tam while logged out: `0 / 0` is `NaN` and
+  // `NaN.toFixed(2)` is the string "NaN", so both empty panels read
+  // `Total rated: 0 | Mean score: NaN | Stdev: 0`.
+  assert.equal(totalRated({}), 0);
+  assert.equal(meanScore({}), "-");
+  assert.equal(stdev({}), "-");
+});
+
+test("entries nobody has rated are not a rating of nothing", () => {
+  // The shape the two empty panels actually arrive in: the user has films,
+  // none of them rated. `unrated` is not a score and `toArrayOfScores`
+  // drops it, so the mean is still taken over an empty array.
+  const stats = { unrated: 12 };
+
+  assert.equal(totalRated(stats), 0);
+  assert.equal(meanScore(stats), "-");
+  assert.equal(stdev(stats), "-");
+});
+
+test("buckets written down as zeroes are still nothing rated", () => {
+  // A stats document can carry every key with a zero against it rather than
+  // leaving the key out, and `[...Array(0)]` is empty either way.
+  const stats = Object.fromEntries(BUCKETS.map((bucket) => [bucket, 0]));
+
+  assert.equal(meanScore(stats), "-");
+  assert.equal(stdev(stats), "-");
+});
+
+test("a tally with scores in it still reads as a mean to two places", () => {
+  // The guard is a guard, not a replacement: everything that read correctly
+  // before has to go on saying the same thing.
+  const stats = { 10: 1, 8: 1, unrated: 5 };
+
+  assert.equal(totalRated(stats), 2);
+  assert.equal(meanScore(stats), "9.00");
+  assert.equal(stdev(stats), "1.00");
+});
+
+test("a spread of zero is a measurement, and reads unlike no spread at all", () => {
+  // Which is why `stdev` no longer answers `0` to an empty tally: three
+  // sevens really do have no spread, and that number is worth being able to
+  // tell apart from a spread nothing could be computed from.
+  assert.equal(meanScore({ 7: 3 }), "7.00");
+  assert.equal(stdev({ 7: 3 }), "0.00");
+  assert.equal(stdev({}), "-");
 });
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -356,6 +356,17 @@ const onSearched = (table, text) => {
     .forEach((other) => other.setSearch(text))
 }
 
+/**
+ * What a mean over nothing reads as. The same answer, and for the same
+ * reason, as `NO_SCORES` in `components/profile/profile_stats.js`: the `-`
+ * a table cell with nothing in it already draws.
+ *
+ * The section stats used to divide by `scores.length || 1`, which made the
+ * mean of no scores `0.00`. On a 1-10 scale that is worse than the `NaN`
+ * the profile panel showed, because it is a score somebody could believe.
+ */
+const NO_SCORES = '-'
+
 const toStats = (entries, entryType) => {
   // Markup, so it is written as an `html` literal rather than a string: the
   // two templates below interpolate it, and an interpolated string is text.
@@ -363,8 +374,15 @@ const toStats = (entries, entryType) => {
   const totalEpsSeen = entries
     .map(e => e.progress ?? 0)
     .reduce((a,b) => a + b, 0)
-  const scores = entries.filter(e => e.score).map(e => e.score)
-  const meanScore = scores.reduce((a,b) => a+b, 0) / (scores.length || 1)
+  // `!= null` rather than truthiness, because a score of `0` is falsy and
+  // would be filtered out of its own mean. `scoreParser` in
+  // `api/utils/parsers/entries.js` refuses anything outside 1-10 and no
+  // stored entry carries a zero, so this is a latent hole, not a live one.
+  const scores = entries.filter(e => e.score != null).map(e => e.score)
+  const meanScore =
+    scores.length === 0
+      ? NO_SCORES
+      : (scores.reduce((a,b) => a+b, 0) / scores.length).toFixed(2)
   const entriesNoDropped = entries.filter((e) => e.status !== 'Dropped')
   const days =
     entryType === 'tv'
@@ -383,7 +401,7 @@ const toStats = (entries, entryType) => {
         .reduce((mins, e) => mins + (get(e, 'duration') ?? 0), 0)
       ) / 60 / 24
 
-  return html`Total entries: ${entries.length}${entryType === 'tv' ? html` ${separator} Episodes seen: ${totalEpsSeen}` : ''} ${separator} Days spent: ${days.toFixed(2)} ${separator} Mean score: ${meanScore.toFixed(2)}`
+  return html`Total entries: ${entries.length}${entryType === 'tv' ? html` ${separator} Episodes seen: ${totalEpsSeen}` : ''} ${separator} Days spent: ${days.toFixed(2)} ${separator} Mean score: ${meanScore}`
 }
 
 /**
