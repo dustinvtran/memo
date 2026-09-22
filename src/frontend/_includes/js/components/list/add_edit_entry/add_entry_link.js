@@ -54,8 +54,8 @@ const AddEntryModal = (type) => initComponent({
         btnLabel: "Search",
         onSubmit: (query) => {
           searchWorks(type, query)
-            .map((results) =>
-              setContent('#search-results', SearchResults(type, results))
+            .map((listing) =>
+              setContent('#search-results', SearchResults(type, listing))
             )
             .mapErr((err) => showNotification(errorMessage(err)))
         }

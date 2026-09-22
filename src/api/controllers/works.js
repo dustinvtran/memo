@@ -25,6 +25,13 @@ import * as workTypes from '../utils/work_types.js'
  *
  * The search term is whatever the user typed, so there is no shape to hold it
  * to — only the decoding to survive.
+ *
+ * The body is the adapter's listing as it stands: `{ results }`, and from the
+ * books adapter a `discarded` count beside them. That count is the whole of
+ * #387 — a volume Google holds no ISBN for cannot be filed under one and is
+ * left out, and until now the list said nothing about it. Nothing here reads
+ * either field; the adapters agree on the shape (see
+ * ../utils/external_api_adapters/types.js) so that this stays a pass-through.
  * @type {(event: Event) => Promise<Response>}
  */
 const searchForWork = (event) => respond(

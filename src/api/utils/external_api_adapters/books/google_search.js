@@ -12,7 +12,7 @@
  * search typed as "recursion blake crouch" found it at the top. #138. Google
  * ranks a bare keyword against the whole of a book's text, so a 2019 novel
  * loses to every monograph with the word in its index. Three things come of
- * that: `queriesFor`, `searchUrls` and the sort in `toSearchResults`.
+ * that: `queriesFor`, `searchUrls` and the sort in `toSearchListing`.
  */
 import { httpsUrl } from './google_mapping.js'
 
@@ -100,19 +100,35 @@ const byTitleMatch = (titleSearch, volumeInfos) =>
     .map(({ volumeInfo }) => volumeInfo)
 
 /**
- * The first of `xs` under each key, keys of `undefined` dropped — which is how
- * a volume Google holds no ISBN for leaves the results.
- * @type {<T>(xs: T[], key: (x: T) => any) => T[]}
+ * The first of `xs` under each key, and a count of what that cost: the ones
+ * the key answered `undefined` for, which is how a volume Google holds no ISBN
+ * for leaves the results, and the ones repeating a key already seen.
+ *
+ * The two are counted apart because they are not the same event. A repeat is
+ * the same edition arriving from both queries, and collapsing it is the whole
+ * point; a volume with no key is a book the search found and cannot offer. A
+ * single number would read as "9 results, 5 duplicates" either way. #387.
+ * @type {<T>(xs: T[], key: (x: T) => any) => { kept: T[], noKey: number, duplicate: number }}
  */
 const dedupedBy = (xs, key) => {
   const seen = new Set()
+  const kept = []
+  let noKey = 0
+  let duplicate = 0
 
-  return xs.filter((x) => {
+  for (const x of xs) {
     const k = key(x)
-    if (k === undefined || seen.has(k)) return false
-    seen.add(k)
-    return true
-  })
+    if (k === undefined) {
+      noKey += 1
+    } else if (seen.has(k)) {
+      duplicate += 1
+    } else {
+      seen.add(k)
+      kept.push(x)
+    }
+  }
+
+  return { kept, noKey, duplicate }
 }
 
 /**
@@ -152,25 +168,46 @@ const searchUrls = (titleSearch, urlSuffix = '') =>
   )
 
 /**
- * The search results for `pages` of Google volumes, in the order they should
- * be shown: the books whose title is what was typed, then the ones whose title
- * starts with it, then the rest, each group in the order Google gave it.
+ * What a search found: the rows to offer, and what was left out getting to
+ * them.
  *
- * That sort is what puts Blake Crouch's "Recursion" on screen. It is 23rd of
- * the title-restricted results, behind twenty books called "Recursion Theory"
- * and the like, and an exact title match outranks every one of them.
+ * The rows are in the order they should be shown — the books whose title is
+ * what was typed, then the ones whose title starts with it, then the rest,
+ * each group in the order Google gave it. That sort is what puts Blake
+ * Crouch's "Recursion" on screen. It is 23rd of the title-restricted results,
+ * behind twenty books called "Recursion Theory" and the like, and an exact
+ * title match outranks every one of them.
  *
- * A volume with no ISBN is dropped rather than shown, because `retrieve` looks
- * a book up by its ISBN and there would be nothing to fetch. Volumes are
- * deduplicated by it too — the same edition comes back from both queries.
- * @type {(titleSearch: string, pages: any[][]) => object[]}
+ * A volume with no ISBN is still dropped rather than shown, because for a book
+ * the ISBN *is* the ref — `retrieve` looks one up by it and a row offering
+ * anything else would be filed under an `apiRef` no other book here carries.
+ * What changed with #387 is that the dropping is now reported: `discarded.noRef`
+ * counts them, so "Google has four editions" and "Google has nine and five
+ * cannot be filed" are different answers rather than the same list of four.
+ *
+ * Nothing about the *count* makes a book selectable, which is the point of
+ * keeping it a count: two populations lose their editions this way for reasons
+ * that have nothing to do with the book — anything printed before ISBNs
+ * existed, and anything Google holds a scan of rather than a publisher's
+ * record — and knowing that one of them is what a search hit is the difference
+ * between a missing edition and a missing feature. #343 is where that was paid
+ * for: the edition a book had to be linked to was not in the candidate list,
+ * and nothing said so.
+ *
+ * `discarded.duplicateRef` is the other half and is deliberately separate: the
+ * same edition arrives from both queries, and collapsing it is what the dedupe
+ * is *for*.
+ * @type {(titleSearch: string, pages: any[][]) => { results: object[], discarded: { noRef: number, duplicateRef: number } }}
  */
-const toSearchResults = (titleSearch, pages) =>
-  byTitleMatch(
-    titleSearch,
+const toSearchListing = (titleSearch, pages) => {
+  const { kept, noKey, duplicate } =
     dedupedBy(pages.flat().map((volume) => volume?.volumeInfo), isbnOf)
-  )
-    .map(toSearchResult)
+
+  return {
+    results: byTitleMatch(titleSearch, kept).map(toSearchResult),
+    discarded: { noRef: noKey, duplicateRef: duplicate },
+  }
+}
 
 export {
   BASE_URL,
@@ -183,5 +220,5 @@ export {
   searchUrls,
   titleOf,
   toSearchResult,
-  toSearchResults,
+  toSearchListing,
 }

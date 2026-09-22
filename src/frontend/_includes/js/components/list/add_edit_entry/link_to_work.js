@@ -136,8 +136,8 @@ const SearchPanel = (type, data, parentId) => initComponent({
         defaultValue: el('#title')?.value ?? '',
         onSubmit: (query) => {
           searchWorks(type, query)
-            .map((results) =>
-              setContent(`#${parentId}-results`, Results(type, data, parentId, results))
+            .map((listing) =>
+              setContent(`#${parentId}-results`, Results(type, data, parentId, listing))
             )
             .mapErr((err) => showNotification(errorMessage(err)))
         },
@@ -159,8 +159,8 @@ const SearchPanel = (type, data, parentId) => initComponent({
  * to be, since `entry_form.js` destructures `LinkToWork` when it loads. By the
  * time anything below runs, every file in the bundle has.
  */
-const Results = (type, data, parentId, results) =>
-  Components.List.SearchResults(type, results, ({ ref }) => {
+const Results = (type, data, parentId, listing) =>
+  Components.List.SearchResults(type, listing, ({ ref }) => {
     retrieveWork(type, ref)
       .map((work) =>
         setContent(`#${parentId}-results`, Comparison(type, data, parentId, work))

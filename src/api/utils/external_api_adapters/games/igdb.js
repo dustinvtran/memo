@@ -92,15 +92,21 @@ const search = (titleSearch) => ResultAsync.fromPromise(
       .search(titleSearch)
       .request('/games')
 
-    return req.data.map(({ name, id, release_dates, cover, platforms }) => {
-      const earliest_date = earliestReleaseDate(release_dates) * 1000
-      return {
-        title: name + ` [${platforms?.map((p) => p.abbreviation ?? '?')?.join(', ') ?? '?'}]`,
-        ref: id,
-        year: earliest_date ? (new Date(earliest_date)).toISOString().substring(0, 4) : undefined,
-        imageUrl: cover?.url ? 'https:' + cover.url : undefined,
-      }
-    })
+    // Wrapped in a listing for the reason ../tmdb_adapter.js gives: the books
+    // adapter sends a count of what it could not offer alongside its rows, and
+    // every adapter answers in that shape so nothing downstream has to ask
+    // which type it is holding. IGDB offers every game it finds. #387.
+    return {
+      results: req.data.map(({ name, id, release_dates, cover, platforms }) => {
+        const earliest_date = earliestReleaseDate(release_dates) * 1000
+        return {
+          title: name + ` [${platforms?.map((p) => p.abbreviation ?? '?')?.join(', ') ?? '?'}]`,
+          ref: id,
+          year: earliest_date ? (new Date(earliest_date)).toISOString().substring(0, 4) : undefined,
+          imageUrl: cover?.url ? 'https:' + cover.url : undefined,
+        }
+      })
+    }
   }),
   toError('searching for games')
 )
