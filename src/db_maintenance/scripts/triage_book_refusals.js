@@ -49,6 +49,24 @@
  * `../metadata_refresh_plan.js` is what keeps the two apart. They are carried
  * into the summary as their own number and never added into a bucket.
  *
+ * ## `--limit` does not size a sweep to a budget, and CLAUDE.md is stale here
+ *
+ * A refusal used to leave a work undated, which sorted it to the head of
+ * `selectForRefresh`'s longest-unchecked-first queue — CLAUDE.md's data trap
+ * still says so, and says a 96% refusal rate in the first progress line is
+ * expected. #333 and #352 inverted that deliberately: a refusal is a stable
+ * property of a pair rather than weather, so it is `touch`ed like any other
+ * answer, and a refused work now sorts as recently-checked. The 2026-09-21 run
+ * measured the consequence — every one of 324 due books carried a
+ * `metadataUpdatedDate`, the first 150 produced **no refusals at all**, and
+ * all 97 were in the last 174.
+ *
+ * So `--limit` cuts the head of the queue, which is where the refusals are
+ * not. A sweep limited to a budget spends the budget and reports nothing
+ * wrong, which reads exactly like a library with nothing wrong with it. Run
+ * the sweep whole, or hand it a `--from-report` from a backfill that already
+ * ran; `--limit` is for capping the *classification* that follows.
+ *
  * Usage:
  *   node scripts/triage_book_refusals.js --from-report=refresh.json
  *   node scripts/triage_book_refusals.js --out=/tmp/triage.json

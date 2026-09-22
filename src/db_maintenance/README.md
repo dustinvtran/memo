@@ -966,6 +966,14 @@ node scripts/triage_book_refusals.js --retry=triage.json
 Flags: `--from-report=path`, `--out=path`, `--markdown=path`, `--limit=N`,
 `--retry=path`, `--delay-ms=N`.
 
+**`--limit` will not size a sweep to a budget here.** A refusal is `touch`ed
+since #333, so a refused work sorts as recently-checked rather than to the head
+of the queue: on 2026-09-21 the first 150 of 324 due books produced no
+refusals at all and all 97 were in the last 174. A limited sweep therefore
+spends its calls and reports a clean library. Run the sweep whole, or give it a
+`--from-report` from a backfill that already ran, and keep `--limit` for
+capping the classification that follows.
+
 **There is no `--apply`, and not because one has not been written yet.** The
 script classifies and explains; the three existing repair scripts do the
 writing, from rows a person approved, each re-checking its own claims against
@@ -989,6 +997,25 @@ author as a spelled-out one — `J.D. Salinger` and `Jerome David Salinger` — 
 that leniency is deliberate: agreement can only ever move a row out of the
 repoint bucket and into one where a person looks, which is the cheaper of the
 two mistakes.
+
+**One thing is read before even the author, and the first production run is
+why.** A work whose own name is not in the Latin alphabet is stored with an
+English gloss after it — `人間失格 (No Longer Human)`, `雪国 (Snow Country)` —
+and `comparableTitle` drops a trailing parenthetical, so the only half of the
+title a Google Books answer could match never reaches the comparison. The
+author then decides, and the author is `Osamu Dazai` against `太宰治`: one
+person, two scripts, no string comparison that bridges them. Three such books
+were filed as a different book entirely and proposed for a repoint. So a
+bracketed gloss that compares **exactly equal** to the title the ISBN answered
+with settles the row before anything else is asked. Equality and never
+containment: most of these brackets hold `(Series, #1)` rather than a title.
+
+The same run found two more spellings of one name reaching the author check as
+a conflict, and both are now answered: the same words in the other order
+(`Dav Pilkey` against `Pilkey Dav`), and a catalogue's parenthetical on the end
+of one (`Isaac Asimov (Schriftsteller)`, which is how #385's own flagship
+translation — `Foundation` under *Fondation* — came to be filed as a different
+book).
 
 ### The two buckets the issue does not name
 
