@@ -273,6 +273,43 @@ test("_headers is the mechanism, and it reaches the publish directory", () => {
   );
 });
 
+test("the /* rule refuses a frame rather than reporting one", () => {
+  // `frame-ancestors 'none'` has been in the policy since #173 and has never
+  // refused anything, because the policy it sits in is report-only: #418 is a
+  // page on another origin framing `/films/nil` and getting the whole table.
+  // Comments are stripped first for the usual reason and one more — the prose
+  // above the rule block names this header, and a check a sentence can satisfy
+  // is not a check.
+  const declared = read(HEADERS)
+    .replace(/^\s*#.*$/gm, "")
+    .split(/\r?\n/);
+  const start = declared.findIndex((line) => line.trim() === "/*");
+
+  assert.notEqual(start, -1, "_headers declares no /* rule at all");
+
+  const rest = declared.slice(start + 1);
+  const end = rest.findIndex((line) => /^\S/.test(line));
+  const block = (end === -1 ? rest : rest.slice(0, end)).join("\n");
+
+  assert.match(
+    block,
+    /^\s+X-Frame-Options:\s*DENY\s*$/m,
+    "the /* rule sends no X-Frame-Options, so the only thing on this site " +
+      "saying who may frame it is a directive inside a Report-Only header, " +
+      "which logs and allows"
+  );
+
+  // The two have to say the same thing for the handover to be free: a browser
+  // that understands both prefers the CSP, so dropping `-Report-Only` one day
+  // swaps this rule out for that directive rather than raising a conflict.
+  assert.match(
+    block,
+    /frame-ancestors\s+'none'/,
+    "frame-ancestors no longer refuses every origin, so it and the " +
+      "X-Frame-Options beside it would disagree the day the policy is enforced"
+  );
+});
+
 test("components/index.js comes before the files that populate it", () => {
   // It is the file that creates the `Components` global and the `Components.UI`
   // / `.Home` / `.Profile` / `.List` objects every other component assigns

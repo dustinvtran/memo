@@ -61,6 +61,20 @@
 # real page load — logged in, on a list, on the profile charts and in the
 # entry form — before switching the header name to `Content-Security-Policy`.
 #
+# `frame-ancestors` is the one directive that was never waiting on any of
+# that, and #418 is what came of leaving it in the report-only header
+# anyway: a page on another origin framed a list, the frame fired `load`,
+# and the whole table rendered inside it. The reason to report rather than
+# enforce is that a wrong guess about what a page *loads* would blank the
+# site, and that reason does not reach a directive about who may *embed*
+# the document — being wrong there refuses a frame, which is the point, and
+# cannot blank anything. So the rule below carries it in enforced form as
+# `X-Frame-Options: DENY`, which is the same claim in the header that
+# predates CSP. There is nothing to reconcile the day this policy loses
+# `-Report-Only`: a browser that understands both prefers `frame-ancestors`
+# and ignores the other, so the CSP takes over for free and the line below
+# stays as the answer for a browser that never had it.
+#
 # `style-src` needs `'unsafe-inline'`: `components/index.js` appends a
 # `<style id="component-styles">` and every component writes its rules into it
 # at runtime, and litepicker and apexcharts inject their own on top of that.
@@ -150,6 +164,7 @@
 
 /*
   Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
+  X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Strict-Transport-Security: max-age=31536000; includeSubDomains
