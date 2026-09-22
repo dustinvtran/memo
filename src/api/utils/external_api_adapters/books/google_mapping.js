@@ -29,6 +29,27 @@ const httpsUrl = (url) =>
   typeof url === 'string' ? url.replace(/^http:\/\//i, 'https://') : undefined
 
 /**
+ * A book's title as this adapter states it, subtitle included.
+ *
+ * **Both halves of the adapter have to agree on this, and until now they did
+ * not.** `google_search.js` joined the subtitle so that a result list is
+ * pickable — Google files `Sapiens` and `A Brief History of Humankind`
+ * separately, and eight identical `Sapiens` rows are not a list anyone can
+ * choose from. The retrieve mapped `volumeInfo.title` alone. So a book stored
+ * from a search result carried the joined name, and every later retrieve of
+ * the same ISBN answered with the bare one — `mergeWork`'s title guard saw
+ * two different titles and refused, for ever. Thirteen books were frozen that
+ * way, `The Idea Factory: Bell Labs and the Great Age of American Innovation`
+ * retrieving as `The Idea Factory` among them, and no repoint could help
+ * because the write refused whichever ISBN it was pointed at. CLAUDE.md
+ * records the asymmetry; this is the one definition that removes it. #385.
+ * @type {(volumeInfo: any) => string | undefined}
+ */
+const titleOf = (volumeInfo) =>
+  [volumeInfo?.title, volumeInfo?.subtitle].filter((part) => part).join(': ') ||
+  undefined
+
+/**
  * The work stored for the volume Google answered an ISBN lookup with.
  *
  * `apiRefs` is built from the ISBN asked for rather than from anything in the
@@ -39,7 +60,7 @@ const httpsUrl = (url) =>
 const toBook = (ref, volumeInfo) => ({
   entryType: 'Book',
   publishers: volumeInfo.publisher ? [volumeInfo.publisher] : undefined,
-  englishTranslatedTitle: volumeInfo.title,
+  englishTranslatedTitle: titleOf(volumeInfo),
   releaseYear: parseInt(volumeInfo.publishedDate?.substring(0, 4)) || undefined,
   duration: volumeInfo.pageCount,
   imageUrl: httpsUrl(volumeInfo?.imageLinks?.thumbnail),
@@ -52,5 +73,6 @@ const toBook = (ref, volumeInfo) => ({
 
 export {
   httpsUrl,
+  titleOf,
   toBook,
 }

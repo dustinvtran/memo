@@ -14,7 +14,7 @@
  * loses to every monograph with the word in its index. Three things come of
  * that: `queriesFor`, `searchUrls` and the sort in `toSearchListing`.
  */
-import { httpsUrl } from './google_mapping.js'
+import { httpsUrl, titleOf } from './google_mapping.js'
 
 /**
  * Google caps a response at 20 volumes however large `maxResults` is — the
@@ -39,16 +39,6 @@ const isbnOf = (volumeInfo) =>
   volumeInfo?.industryIdentifiers
     ?.find((identifier) => identifier?.type?.includes('ISBN'))
     ?.identifier
-
-/**
- * A book's title as it is shown and matched on. The subtitle is in it because
- * a search now answers with enough books that "Sapiens" eight times over is
- * not a list anyone can pick from, and Google files "A Brief History of
- * Humankind" separately.
- * @type {(volumeInfo: any) => string}
- */
-const titleOf = (volumeInfo) =>
-  [volumeInfo?.title, volumeInfo?.subtitle].filter((part) => part).join(': ')
 
 /** @type {(volumeInfo: any) => object} */
 const toSearchResult = (volumeInfo) => ({
