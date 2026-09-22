@@ -14,6 +14,7 @@ const {
   unlinkRefusalReason,
   unlinkUpdate,
   staleAfterRepoint,
+  staleAfterWidening,
   isWidening,
 } = require("./work_ref_repair");
 
@@ -632,4 +633,65 @@ test("a retitle to the same name is not a widening", () => {
 test("isWidening is true only when the stored title is the new one plus something", () => {
   const work = { _id: "w1", englishTranslatedTitle: "Portal 2: Coop" };
   assert.equal(isWidening(work, "Portal 2"), true);
+});
+
+test("staleAfterWidening is the source-protected duration and nothing else", () => {
+  // A books year and page count belong to an edition, and a widening does not
+  // change the edition — #333's Robinson Crusoe 1719 -> 2019 is what clearing
+  // them would invite.
+  assert.deepEqual([...staleAfterWidening(BOOKS)], []);
+  assert.deepEqual([...staleAfterWidening(GAMES)], ["duration", "durationSource"]);
+  assert.deepEqual([...staleAfterWidening(FILMS)], []);
+});
+
+test("widening a book clears nothing, because the edition did not change", () => {
+  // `A Comprehensive Introduction to Differential Geometry, Vol. 1` renamed to
+  // the whole work, under the same ISBN: 489 pages is still that ISBN's.
+  const work = {
+    _id: "w1",
+    apiRefs: ["ISBN__1"],
+    englishTranslatedTitle: "A Comprehensive Introduction to Differential Geometry, Vol. 1",
+    releaseYear: 1999,
+    duration: 489,
+  };
+  const { cleared } = refUpdate(
+    work,
+    "ISBN__1",
+    "A Comprehensive Introduction to Differential Geometry",
+    undefined,
+    BOOKS
+  );
+  assert.deepEqual([...cleared], []);
+});
+
+test("widening a game still clears the playtime measured for the part", () => {
+  const work = {
+    _id: "w1",
+    apiRefs: [],
+    englishTranslatedTitle: "Resident Evil 4: Assignment Ada",
+    duration: 60,
+    durationSource: "igdb",
+  };
+  const { cleared } = refUpdate(work, "igdb__2", "Resident Evil 4", undefined, GAMES);
+  assert.deepEqual([...cleared], ["duration", "durationSource"]);
+});
+
+test("repointing a book still clears its edition fields", () => {
+  // The distinction: here the identity changed, so 2018 and 419 describe a
+  // book nobody is looking at any more.
+  const work = { _id: "w1", apiRefs: ["ISBN__old"], releaseYear: 2018, duration: 419 };
+  const { cleared } = refUpdate(work, "ISBN__new", undefined, "ISBN__old", BOOKS);
+  assert.deepEqual([...cleared], ["releaseYear", "duration"]);
+});
+
+test("a repoint that is also a widening clears the repoint's wider list", () => {
+  const work = {
+    _id: "w1",
+    apiRefs: ["ISBN__old"],
+    englishTranslatedTitle: "Some Book, Vol. 1",
+    releaseYear: 2018,
+    duration: 419,
+  };
+  const { cleared } = refUpdate(work, "ISBN__new", "Some Book", "ISBN__old", BOOKS);
+  assert.deepEqual([...cleared], ["releaseYear", "duration"]);
 });

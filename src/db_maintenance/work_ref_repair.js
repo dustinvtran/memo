@@ -238,9 +238,36 @@ const refusalReason = ({ collection, work, ref, retitleWorkTo, replacesRef, retr
 const staleAfterRepoint = (collection) => [
   ...new Set([
     ...(collection?.fillOnlyFields ?? []),
-    ...(collection?.type === "games" ? ["duration", "durationSource"] : []),
+    ...staleAfterWidening(collection),
   ]),
 ];
+
+/**
+ * The narrower list, for a work whose **scope** changed while its identity did
+ * not — a rename from a part to the whole, with the same id throughout.
+ *
+ * Only the source-protected duration. A `fillOnlyFields` field is deliberately
+ * **not** here, and the difference is which thing stopped being true.
+ *
+ * A repoint changes the edition, so an edition's year and page count now
+ * describe a book nobody is looking at. A widening does not: the id is
+ * untouched, so those values still belong to the id that produced them, and
+ * clearing them would invite the next refresh to fill them from that same
+ * edition — which for books is exactly the drift `fillOnlyFields` exists to
+ * stop. #333 measured it: of seven year changes a 60-book dry run proposed,
+ * six replaced a stored year with a reprint's, `Robinson Crusoe` 1719 to 2019
+ * among them.
+ *
+ * A games duration is different, and is why this list is not empty. It is
+ * protected by source rather than by presence, and the number was measured for
+ * whatever the title named when it was taken — an hour for `Resident Evil 4:
+ * Assignment Ada`, nine for one game of a twenty-five hour trilogy. Widening
+ * the title is precisely what makes it wrong, and no refresh will replace it.
+ * Both of ../../CLAUDE.md's widening examples are games, and both are playtime.
+ * @type {(collection: any) => string[]}
+ */
+const staleAfterWidening = (collection) =>
+  collection?.type === "games" ? ["duration", "durationSource"] : [];
 
 /**
  * Whether a retitle is widening the work rather than correcting its spelling.
@@ -269,10 +296,20 @@ const isWidening = (work, retitleTo) => {
 const refUpdate = (work, ref, retitleTo, replacesRef, collection) => {
   // A field only needs clearing if it is there; listing an absent one would
   // make a dry run claim to be dropping a value the work does not have.
-  const cleared =
-    replacesRef || isWidening(work, retitleTo)
-      ? staleAfterRepoint(collection).filter((f) => work?.[f] !== undefined)
+  // Two different events with two different answers. A repoint replaces the
+  // identity, so everything scoped to the old one is stale. A widening keeps
+  // it and changes only what the work claims to cover, which makes a
+  // source-protected measurement wrong and leaves the edition's own fields
+  // right — see `staleAfterWidening`.
+  const stale = replacesRef
+    ? staleAfterRepoint(collection)
+    : isWidening(work, retitleTo)
+      ? staleAfterWidening(collection)
       : [];
+
+  // A field only needs clearing if it is there; listing an absent one would
+  // make a dry run claim to be dropping a value the work does not have.
+  const cleared = stale.filter((f) => work?.[f] !== undefined);
 
   return {
   cleared,
@@ -376,6 +413,7 @@ module.exports = {
   refusalReason,
   refUpdate,
   staleAfterRepoint,
+  staleAfterWidening,
   isWidening,
   unlinkRefusalReason,
   unlinkUpdate,
