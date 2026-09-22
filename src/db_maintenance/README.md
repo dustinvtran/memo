@@ -26,6 +26,7 @@ The scripts, and the section below that explains each:
 | `dedupe_works.js` | Merges works that duplicate each other, repoints the entries and deletes the leftovers. | `--apply` |
 | `clear_unusable_work_fields.js` | `$unset`s work fields whose stored value is present and unusable — `publishers: {}`, `externalUrls: [[]]`, `directors: [""]` — so the next backfill can fill them. | `--apply` |
 | `propose_book_refs.js` | Proposes English editions for the books whose ISBN names another title, filtered hard and ranked, to a file a person approves; then repoints the refs that were approved. Never picks a candidate itself. | `--apply` |
+| `triage_book_refusals.js` | Sorts the books the refresh guard refuses into which of the four things each one is — another edition, a translation, another book, a longer name — and writes them out with the evidence, for a person to approve and hand to the repair script each row names. | no `--apply` |
 | `prune_orphan_reviews.js` | Deletes reviews whose entry no longer exists, and so which nothing can reach. | `--apply` |
 | `prune_unreachable_documents.js` | Deletes cached works no entry in any collection points at, and review documents holding the empty string. Two halves, run separately with `--only=works` / `--only=reviews`. | `--apply` |
 | `clear_noop_overrides.js` | `$unset`s the `overrides.<field>` keys holding a byte-identical copy of the work's own value, so a corrected work can reach the page again. Leaves every different value, every `null`, and every entry with no work. | `--apply` |
@@ -859,6 +860,94 @@ are not. `--from-report=<a backfill --json report>` reuses the refusals a
 backfill run has already found and skips the sweep; `--limit` stops the sweep
 as well as the proposing, so a run sized to a budget spends its calls on the
 books it will actually propose for.
+
+## Which of the four a refused book is
+
+`propose_book_refs.js` above answers one question — what English edition could
+this book be repointed at — and it is the right question for most of the
+refusals. It is not the right question for all of them. #385 is the 74 books a
+`--missing-only --only=books` backfill still refuses, and **an ISBN names an
+edition, not a work**, so they are not one problem:
+
+1. **A different edition of the right book.** `Numerical Analysis` under
+   *INTRODUCTORY METHODS OF NUMERICAL ANALYSIS, FIFTH EDITION*. The id is
+   arguably right and the stored title is the owner's, so `link_entry.js`'s
+   `workTitle` is the repair.
+2. **A translation.** `Foundation (Foundation, #1)` under *Fondation*. This is
+   #344's population and wants a fresh ISBN, not a rename.
+3. **A different book entirely.** `ノルウェイの森` under *Haruki Murakami and
+   His Early Work*, which is a book about Murakami rather than by him. That is
+   #290, and it wants `set_work_ref.js`'s `replacesRef`.
+4. **A shorter or longer title for the same thing.** `Howl and Other Poems`
+   under *Howl*. A rename again.
+
+Getting these confused is expensive in both directions: renaming a work whose
+ISBN names a different book leaves the wrong id in place, and repointing one
+whose ISBN is right throws away a correct id.
+
+```
+node scripts/triage_book_refusals.js --from-report=refresh.json
+node scripts/triage_book_refusals.js --out=/tmp/triage.json
+node scripts/triage_book_refusals.js --retry=triage.json
+```
+
+Flags: `--from-report=path`, `--out=path`, `--markdown=path`, `--limit=N`,
+`--retry=path`, `--delay-ms=N`.
+
+**There is no `--apply`, and not because one has not been written yet.** The
+script classifies and explains; the three existing repair scripts do the
+writing, from rows a person approved, each re-checking its own claims against
+the API. The rename rows deliberately leave `entryTitle` blank —
+`link_entry.js` refuses a `workTitle` without one, and that guard is the reason
+it is allowed near `*Entries` at all.
+
+### What decides a bucket
+
+`../book_refusal_triage.js`, pure and tested with no install, no database and
+no API key. The evidence is the stored title, the title the ISBN answers with,
+the two author lists, and `volumeInfo.language` — the last two being why the
+run costs one Google Books call per refused book even when `--from-report` has
+already supplied both titles for free.
+
+The author is read before the language and before the titles. A translation and
+a re-edition share an author and a different book almost never does, and
+reading the script of the titles first would call `こゝろ (Kokoro)` under
+*会津のこころ* a translation of itself. An abbreviated name counts as the same
+author as a spelled-out one — `J.D. Salinger` and `Jerome David Salinger` — and
+that leniency is deliberate: agreement can only ever move a row out of the
+repoint bucket and into one where a person looks, which is the cheaper of the
+two mistakes.
+
+### The two buckets the issue does not name
+
+**`needs-human`.** A shared author with two unrelated titles cannot be resolved
+from here: *Dressing the Man* really is `The Fundamentals of Style` retitled,
+and `Kafka on the Shore` really is not `Norwegian Wood`, and the two look
+identical from outside. Those rows say so and carry both readings rather than
+picking one.
+
+**`subtitle-trap`, which is a code problem and not a data one.**
+`google_search.js`'s `titleOf` joins title and subtitle as `"Title: Subtitle"`
+while `google.js`'s retrieve maps `englishTranslatedTitle: volumeInfo.title`
+alone, so a book stored under its full subtitled name matches the search
+candidate that put it there and then fails `titlesAgree` when the same ISBN is
+retrieved — `The Idea Factory: Bell Labs and the Great Age of American
+Innovation` retrieves as `The Idea Factory`. The ISBN is right and the stored
+title is right. Repointing does not help and renaming would discard a subtitle
+to work around a bug, so these carry no repair at all.
+
+### A lookup that did not answer is not a finding
+
+Google Books starts answering 429 partway through a crawl and a refused page
+comes back empty, which is indistinguishable from one that found nothing. A
+book whose lookup did not land is counted per item, reported under "not
+searched", and **never** put in a bucket; `--retry` asks again and merges the
+answers back in. The same line the rest of this folder draws.
+
+Separately, the 54 **failures** a `--only=books` backfill reports are not these
+74. They are quota on the retrieve, not frozen works, and `frozenWorks` in
+`../metadata_refresh_plan.js` is what keeps the two apart. The triage carries
+them into its summary as their own number and never adds them into a bucket.
 
 ## Playtimes
 
