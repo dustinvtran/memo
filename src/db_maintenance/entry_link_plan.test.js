@@ -9,6 +9,7 @@ const {
   overrideIsRedundant,
   workTitleRefusalReason,
   workTitleUpdate,
+  renderedAfterRename,
 } = require("./entry_link_plan");
 
 const games = { type: "games", retrievePrefix: "igdb" };
@@ -462,3 +463,132 @@ test("renaming a work writes nothing that belongs to an entry", () => {
   assert.equal("apiRefs" in set, false);
 });
 
+
+////////////////////////////////////////////////////////////////////////////////
+// entryOriginalTitle — the native name a rename would otherwise delete (#385)
+////////////////////////////////////////////////////////////////////////////////
+
+test("entryOriginalTitle sets overrides.originalTitle", () => {
+  const { set, unset } = linkUpdate({
+    entry: { _id: "e1", overrides: {} },
+    workId: "w1",
+    entryOriginalTitle: "人間失格",
+  });
+  assert.equal(set["overrides.originalTitle"], "人間失格");
+  assert.deepEqual({ ...unset }, {});
+  // The English half is untouched: it was not asked about.
+  assert.equal(set["overrides.englishTranslatedTitle"], undefined);
+});
+
+test("leaving entryOriginalTitle out changes nothing about it", () => {
+  const { set, unset } = linkUpdate({
+    entry: { _id: "e1", overrides: { originalTitle: "雪国" } },
+    workId: "w1",
+    entryTitle: "Snow Country",
+  });
+  assert.equal(set["overrides.originalTitle"], undefined);
+  assert.equal(unset["overrides.originalTitle"], undefined);
+});
+
+test("an empty entryOriginalTitle unsets it, but only if it is there", () => {
+  const present = linkUpdate({
+    entry: { _id: "e1", overrides: { originalTitle: "雪国" } },
+    workId: "w1",
+    entryOriginalTitle: "",
+  });
+  assert.equal(present.unset["overrides.originalTitle"], "");
+
+  const absent = linkUpdate({
+    entry: { _id: "e2", overrides: {} },
+    workId: "w1",
+    entryOriginalTitle: "",
+  });
+  assert.equal(absent.unset["overrides.originalTitle"], undefined);
+});
+
+test("both titles can be set in one operation", () => {
+  const { set } = linkUpdate({
+    entry: { _id: "e1", overrides: {} },
+    workId: "w1",
+    entryTitle: "No Longer Human",
+    entryOriginalTitle: "人間失格",
+  });
+  assert.equal(set["overrides.englishTranslatedTitle"], "No Longer Human");
+  assert.equal(set["overrides.originalTitle"], "人間失格");
+});
+
+test("renderedAfterRename composes the two fields the way the table does", () => {
+  assert.equal(
+    renderedAfterRename("人間失格", "No Longer Human"),
+    "人間失格 (No Longer Human)"
+  );
+  assert.equal(renderedAfterRename(undefined, "No Longer Human"), null);
+  assert.equal(renderedAfterRename("   ", "No Longer Human"), null);
+});
+
+test("a workTitle is allowed with no entryTitle when the parts reconstruct the old name", () => {
+  const work = { _id: "w1", englishTranslatedTitle: "人間失格 (No Longer Human)" };
+  const refusal = workTitleRefusalReason({
+    work,
+    workTitle: "No Longer Human",
+    entryOriginalTitle: "人間失格",
+    retrieved: { englishTranslatedTitle: "No Longer Human" },
+  });
+  assert.equal(refusal, undefined);
+});
+
+test("a native title that does not reconstruct the old name is still refused", () => {
+  const work = { _id: "w1", englishTranslatedTitle: "人間失格 (No Longer Human)" };
+  const refusal = workTitleRefusalReason({
+    work,
+    // Right book, wrong native string — the old name is not recoverable from
+    // these two, so the guard has to keep saying so.
+    workTitle: "No Longer Human",
+    entryOriginalTitle: "斜陽",
+    retrieved: { englishTranslatedTitle: "No Longer Human" },
+  });
+  assert.match(refusal, /written down nowhere/);
+});
+
+test("entryOriginalTitle does not excuse a rename that loses a plain English name", () => {
+  const work = { _id: "w1", englishTranslatedTitle: "Portal 2: Coop" };
+  const refusal = workTitleRefusalReason({
+    work,
+    workTitle: "Portal 2",
+    entryOriginalTitle: "Portal 2",
+    retrieved: { englishTranslatedTitle: "Portal 2" },
+  });
+  assert.match(refusal, /written down nowhere/);
+});
+
+test("a gloss differing only in case still reconstructs the old name", () => {
+  // The stored Quixote gloss says "of La Mancha"; Google Books says
+  // "of la Mancha". One letter's case is not a name written down nowhere.
+  const work = {
+    _id: "w1",
+    englishTranslatedTitle:
+      "El Ingenioso Hidalgo Don Quijote de la Mancha (The Ingenious Nobleman Mister Quixote of La Mancha)",
+  };
+  const refusal = workTitleRefusalReason({
+    work,
+    workTitle: "The Ingenious Nobleman Mister Quixote of la Mancha",
+    entryOriginalTitle: "El Ingenioso Hidalgo Don Quijote de la Mancha",
+    retrieved: {
+      englishTranslatedTitle: "The Ingenious Nobleman Mister Quixote of la Mancha",
+    },
+  });
+  assert.equal(refusal, undefined);
+});
+
+test("the title the work will actually get decides, not the one asserted", () => {
+  // `workTitleUpdate` writes `displayTitle(retrieved)`, so a `workTitle` that
+  // merely agrees with the API is not what the row ends up rendering.
+  const work = { _id: "w1", englishTranslatedTitle: "雪国 (Snow Country)" };
+  const refusal = workTitleRefusalReason({
+    work,
+    workTitle: "SNOW COUNTRY",
+    entryOriginalTitle: "雪国",
+    retrieved: { englishTranslatedTitle: "Snow Country" },
+  });
+  assert.equal(refusal, undefined);
+});
