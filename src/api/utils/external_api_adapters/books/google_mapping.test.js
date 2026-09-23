@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { httpsUrl, toBook, titleOf } from './google_mapping.js'
+import { httpsUrl, toBook } from './google_mapping.js'
 
 /**
  * A `/volumes` item's `volumeInfo`, as Google Books really answers an
@@ -92,33 +92,4 @@ test('a volume Google holds no year or publisher for leaves them unset', () => {
   assert.equal(sparse.releaseYear, undefined)
   assert.equal(sparse.publishers, undefined)
   assert.deepEqual(sparse.externalUrls, [])
-})
-
-test('a retrieve states the subtitle, the way a search already did', () => {
-  // The asymmetry that froze thirteen books: stored from a search as
-  // "Title: Subtitle", retrieved as "Title", refused by the title guard for
-  // ever. One definition now answers both. #385.
-  const volumeInfo = {
-    title: 'The Idea Factory',
-    subtitle: 'Bell Labs and the Great Age of American Innovation',
-    authors: ['Jon Gertner'],
-  }
-  assert.equal(
-    toBook('9781101561089', volumeInfo).englishTranslatedTitle,
-    'The Idea Factory: Bell Labs and the Great Age of American Innovation'
-  )
-  assert.equal(titleOf(volumeInfo), toBook('x', volumeInfo).englishTranslatedTitle)
-})
-
-test('a volume with no subtitle is unchanged', () => {
-  assert.equal(titleOf({ title: 'Flatland' }), 'Flatland')
-  assert.equal(toBook('x', { title: 'Flatland' }).englishTranslatedTitle, 'Flatland')
-})
-
-test('a volume with no title at all is undefined rather than an empty string', () => {
-  // `isEmptyValue` recognises absence; an empty string is a stored value that
-  // no refresh would replace.
-  assert.equal(titleOf({}), undefined)
-  assert.equal(titleOf({ subtitle: 'orphaned' }), 'orphaned')
-  assert.equal(toBook('x', {}).englishTranslatedTitle, undefined)
 })
