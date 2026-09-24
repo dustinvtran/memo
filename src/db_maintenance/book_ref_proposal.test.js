@@ -638,6 +638,25 @@ test("clears the edition's values and keeps the work's", () => {
   assert.equal(Object.keys(EDITION_FIELDS).includes("releaseYear"), false);
 });
 
+test("the two repoint paths agree about what a new ISBN invalidates", () => {
+  // Two scripts repoint a book — this one and scripts/set_work_ref.js — and
+  // until #385 they disagreed: this list kept `releaseYear` on purpose while
+  // the other cleared every fill-only field, so the same repair wrote
+  // different things depending on which script ran it. Nineteen correct
+  // first-publication years were replaced by reprints before that was noticed.
+  const books = COLLECTIONS.find((c) => c.type === "books");
+  const shared = Object.keys(EDITION_FIELDS).filter(
+    (field) => field !== "metadataUpdatedDate" && field !== "imageUrl"
+  );
+  assert.deepEqual([...shared], [...books.editionFields]);
+
+  // The two differences that remain, both deliberate. `metadataUpdatedDate` is
+  // bookkeeping that `refUpdate` unsets on every repoint anyway, and the cover
+  // is not fill-only, so the next refresh replaces it without being asked.
+  assert.equal(Object.keys(EDITION_FIELDS).includes("metadataUpdatedDate"), true);
+  assert.equal(books.editionFields.includes("imageUrl"), false);
+});
+
 test("does not report a field the book does not have as a value removed", () => {
   const plan = planRepoint(
     books,
