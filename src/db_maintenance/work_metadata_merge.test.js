@@ -11,6 +11,7 @@ const {
   isMissingPlaytimeLink,
   completeness,
   fillOnlyFields,
+  authorsAgree,
 } = require("./work_metadata_merge");
 
 const games = COLLECTIONS.find((c) => c.type === "games");
@@ -592,4 +593,119 @@ test("a book's series suffix survives a refresh", () => {
 
   assert.equal(updates.releaseYear, 1987);
   assert.equal("englishTranslatedTitle" in updates, false);
+});
+
+///////////////////////////////////////////////////////////////////////////////
+// #439: two real books can share a title, so the title guard agrees and the
+// author is the only field that disagrees. The cases below are the measured
+// population from a --force dry run over 199 books, not invented examples.
+
+test("two different books under one title are caught by their authors", () => {
+  const different = (ours, theirs) =>
+    assert.equal(authorsAgree(ours, theirs), false, `${ours} / ${theirs}`);
+
+  // Four mathematics textbooks, which is not a coincidence — the genre is full
+  // of canonical books sharing a name.
+  different(["Ivan Niven"], ["G. H. Hardy", "E. M. Wright", "Joseph Silverman"]);
+  different(["Allen Hatcher"], ["William Fulton"]);
+  different(["Jürgen Neukirch"], ["Serge Lang"]);
+  different(["Ravi Vakil"], ["André Weil"]);
+
+  // A manga adaptation, two critical studies, a study-guide publisher and a
+  // French scholarly edition, each filed under the work it is about.
+  different(["John Milton"], ["Rina Yagami"]);
+  different(["William Shakespeare"], ["Yan Brailowsky"]);
+  different(["Toni Morrison"], ["fichesdelecture.com", "Hubert Viteux"]);
+  different(["Bram Stoker"], ["Claude Fierobe"]);
+  different(["Euripides"], ["Pascal Quignard"]);
+  different(["Amy Goodman"], ["Alan Pierce"]);
+});
+
+test("one person spelled two ways is not a finding", () => {
+  // 118 of the 138 proposed replacements were this, which is why the test is
+  // a shared surname rather than a matching list.
+  const same = (ours, theirs) =>
+    assert.equal(authorsAgree(ours, theirs), true, `${ours} / ${theirs}`);
+
+  same(["G. H. Hardy"], ["Godfrey Harold Hardy"]);
+  same(["Hardy, G. H."], ["G. H. Hardy"]);
+  same(["Allen Hatcher"], ["Allen Hatcher", "Cambridge University Press"]);
+  same(["Jürgen Neukirch"], ["Jurgen Neukirch"]);
+
+  // One catalogue carries the generational suffix and the other does not. A
+  // live dry run reported this pair as two different people before `Jr` was
+  // dropped, which is what the suffix list is for.
+  same(["John L. Parker Jr."], ["John L. Parker"]);
+  same(["Dale Carnegie Sr"], ["Dale Carnegie"]);
+});
+
+test("a transliteration is a known false positive, and is why this reports", () => {
+  // `Dostoyevsky` against `Dostoevsky` is one man, and no surname test tells
+  // it from `Hatcher` against `Fulton`. It is reported too, which is the cost
+  // of a watch and the reason this is not a refusal yet.
+  assert.equal(
+    authorsAgree(["Fyodor Dostoyevsky"], ["Fyodor Dostoevsky"]),
+    false
+  );
+});
+
+test("a name in another script is abstained on, not reported", () => {
+  // Seven of the twenty non-sharing pairs were a Japanese author in kanji
+  // against the same author in romaji. No string test bridges that, so the
+  // answer is `undefined` rather than a finding nobody can act on.
+  assert.equal(authorsAgree(["村上春樹"], ["Haruki Murakami"]), undefined);
+  assert.equal(authorsAgree(["夏目漱石"], ["Natsume Soseki"]), undefined);
+  assert.equal(authorsAgree(["森見登美彦"], ["Tomihiko Morimi"]), undefined);
+
+  // Both sides in the same script is an ordinary comparison again.
+  assert.equal(authorsAgree(["村上春樹"], ["夏目漱石"]), false);
+});
+
+test("nothing to compare is not a disagreement", () => {
+  assert.equal(authorsAgree([], ["Allen Hatcher"]), undefined);
+  assert.equal(authorsAgree(["Allen Hatcher"], undefined), undefined);
+  assert.equal(authorsAgree(undefined, undefined), undefined);
+});
+
+test("a merge that replaces authors with a stranger's says so and still writes", () => {
+  // Reported, not refused. The first pass watches so the population can be
+  // counted before a guard is enforced on it — #327's lesson, applied early.
+  const hatcher = {
+    _id: "t",
+    entryType: "Book",
+    englishTranslatedTitle: "Algebraic Topology",
+    authors: ["Allen Hatcher"],
+    apiRefs: ["ISBN__9780521795401"],
+  };
+  const { updates, notes, refused } = mergeWork(books, hatcher, {
+    entryType: "Book",
+    englishTranslatedTitle: "Algebraic Topology",
+    authors: ["William Fulton"],
+  });
+
+  assert.equal(refused, undefined);
+  assert.deepEqual([...updates.authors], ["William Fulton"]);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /no name in common/);
+  assert.match(notes[0], /Allen Hatcher -> William Fulton/);
+});
+
+test("an ordinary author refresh is silent", () => {
+  const { notes } = mergeWork(
+    books,
+    {
+      _id: "t",
+      entryType: "Book",
+      englishTranslatedTitle: "Algebraic Topology",
+      authors: ["A. Hatcher"],
+      apiRefs: ["ISBN__9780521795401"],
+    },
+    {
+      entryType: "Book",
+      englishTranslatedTitle: "Algebraic Topology",
+      authors: ["Allen Hatcher"],
+    }
+  );
+
+  assert.deepEqual([...notes], []);
 });

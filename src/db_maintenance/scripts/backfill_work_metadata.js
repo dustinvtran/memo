@@ -407,7 +407,21 @@ const backfillCollection = async (db, collection) => {
       `${unrefreshable.length} without a ${collection.retrievePrefix}__ ref`
   );
 
+  // Counted on its own line because this one is a watch rather than a result:
+  // the authors were written, and the number is what says whether the guard
+  // behind it is ready to refuse instead of report. #439.
+  const strangers = changes.filter((change) =>
+    change.notes.some((note) => note.startsWith("authors replaced with no name"))
+  );
+  if (strangers.length > 0) {
+    console.log(
+      `  ${strangers.length} had authors replaced with no name in common — ` +
+        `a shared title may be two different books`
+    );
+  }
+
   return {
+    authorMismatches: strangers.length,
     works: works.length,
     due: due.length,
     processed: selected.length,
