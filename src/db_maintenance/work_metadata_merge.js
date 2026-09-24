@@ -251,8 +251,100 @@ const mergeWork = (collection, work, fresh, { missingOnly = false } = {}) => {
     updates.entryType = collection.entryType;
   }
 
+  // Two different books can share a title, and when they do the title guard
+  // agrees and the author is the only field that disagrees. Reported rather
+  // than refused: see `authorsAgree` for why the first pass only watches.
+  if ("authors" in updates && authorsAgree(work.authors, updates.authors) === false) {
+    notes.push(
+      `authors replaced with no name in common: ${describeAuthors(work.authors)}` +
+        ` -> ${describeAuthors(updates.authors)}`
+    );
+  }
+
   return { updates, notes };
 };
+
+/**
+ * Whether two author lists name anybody in common, by surname.
+ *
+ * The title guard is the only thing between a wrong ISBN and a work, and two
+ * real books can share a name — Hatcher's `Algebraic Topology` and Fulton's,
+ * Niven's `An Introduction to the Theory of Numbers` and Hardy & Wright's.
+ * The guard agrees on those, the refresh writes, and nothing reports it
+ * because `authors` is a replace field and the author is the only thing that
+ * differs. A `--force` dry run over 199 of the 648 books proposed 138 author
+ * replacements, of which ten were a different book's authors entirely (#439).
+ *
+ * Surnames and not whole names, because 118 of those 138 were one person
+ * spelled two ways — an initial expanded, a middle name added, a comma moved.
+ * The surname is what survives that, and a shared one is enough: an API that
+ * lists three authors where we hold one is the ordinary case.
+ *
+ * `undefined` where the two lists are in different scripts, which is the
+ * comparison no string test bridges — `村上春樹` against `Haruki Murakami` is
+ * the same person and seven of the twenty non-sharing pairs were that shape.
+ * Abstaining is not a gap to close later; it is the answer.
+ *
+ * Reported and not refused on this pass, deliberately. The false positives
+ * above are knowable but the script cases are not, and #327 is the standing
+ * lesson about enforcing a guard whose population has not been counted. When
+ * the reports have been read and the rate is known, this becomes a refusal.
+ * @type {(stored: unknown, fresh: unknown) => boolean | undefined}
+ */
+const authorsAgree = (stored, fresh) => {
+  const ours = surnamesOf(stored);
+  const theirs = surnamesOf(fresh);
+  if (ours.length === 0 || theirs.length === 0) return undefined;
+  if (isLatin(ours) !== isLatin(theirs)) return undefined;
+  return ours.some((name) => theirs.includes(name));
+};
+
+/**
+ * The surname out of each name, folded the way `comparableTitle` folds a
+ * title: lowercased, diacritics decomposed away, punctuation dropped. So
+ * `Jürgen Neukirch` and `Jurgen Neukirch` are one name, and a name written in
+ * one script keeps its own characters and simply fails to match one written
+ * in another — which is what `isLatin` notices before that counts as a
+ * finding.
+ *
+ * Three things decide which word the surname is, because a catalogue writes a
+ * name either way round and does not always write the same parts of it. A
+ * comma means the inverted listing, so the surname is what precedes it:
+ * `Hardy, G. H.` is Hardy. Otherwise it is the last word, skipping initials
+ * and a generational suffix, so `G. H. Hardy` and `John L. Parker Jr.` are
+ * Hardy and Parker. The suffix is not pedantry: one catalogue listing `John
+ * L. Parker Jr.` against another's `John L. Parker` was reported as two
+ * different people until it was dropped.
+ */
+const surnamesOf = (value) =>
+  (Array.isArray(value) ? value : [])
+    .map((name) => {
+      const folded = String(name ?? "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/\p{Mark}/gu, "");
+      const [beforeComma] = folded.split(",");
+      const words = beforeComma
+        .replace(/[^\p{Letter}\p{Number}\s]/gu, " ")
+        .trim()
+        .split(/\s+/)
+        .filter((word) => word);
+      const named = words.filter(
+        (word) => word.length > 1 && !NAME_SUFFIXES.has(word)
+      );
+      return (named.length ? named : words).pop() ?? "";
+    })
+    .filter((name) => name);
+
+/** Generational suffixes, which are part of a listing rather than of a name. */
+const NAME_SUFFIXES = new Set(["jr", "jnr", "sr", "snr", "ii", "iii", "iv"]);
+
+/** Whether every surname in a list is written in Latin script. */
+const isLatin = (surnames) => surnames.every((name) => /^[\p{Script=Latin}\d]+$/u.test(name));
+
+/** An author list as a reader should see it in a note. */
+const describeAuthors = (value) =>
+  (Array.isArray(value) ? value : []).join(", ") || "(none)";
 
 /**
  * Existing refs are kept. A ref the API now reports under a name we already
@@ -304,6 +396,7 @@ module.exports = {
   isMissingPlaytimeLink,
   hasGaps,
   mergeWork,
+  authorsAgree,
   mergeApiRefs,
   mergeExternalUrls,
   completeness,
