@@ -93,3 +93,28 @@ test('a volume Google holds no year or publisher for leaves them unset', () => {
   assert.equal(sparse.publishers, undefined)
   assert.deepEqual(sparse.externalUrls, [])
 })
+
+/**
+ * #442, and the reason #436 was reverted by #437. The search joins a
+ * subtitle so the picker can tell eight "Sapiens" apart; the retrieve stores
+ * the bare title so a later refresh compares bare against bare. Making the
+ * two agree looks obviously right and was measured to be wrong — it took the
+ * refusals from 13 to 79, because Google splits `title` and `subtitle`
+ * inconsistently across editions, so joining swaps which books disagree
+ * rather than making them agree.
+ *
+ * The assertion is here rather than in a comment because a comment is what
+ * #436 read past.
+ */
+test('the retrieve stores the bare title, and the search joins the subtitle', async () => {
+  const { titleOf } = await import('./google_search.js')
+  const volumeInfo = { title: 'The Bell Jar', subtitle: 'A Novel' }
+
+  assert.equal(toBook('9780571081783', volumeInfo).englishTranslatedTitle, 'The Bell Jar')
+  assert.equal(titleOf(volumeInfo), 'The Bell Jar: A Novel')
+
+  // A volume with no subtitle is the same string either way, which is why the
+  // divergence is invisible for most books and was left to a data pass to find.
+  const plain = { title: 'Recursion' }
+  assert.equal(toBook('9781524759797', plain).englishTranslatedTitle, titleOf(plain))
+})
