@@ -103,6 +103,17 @@ const SCRIPT_FIELDS = {
     // replace them — see `fillOnlyFields` in ./work_metadata_merge.js, which
     // is where the measurement behind this line is written down.
     fillOnlyFields: ["releaseYear", "duration"],
+    // The half of the above that a **repoint** invalidates, which is not the
+    // same question. A page count is an edition's and nothing else's — there
+    // is no sense in which a work is 96 pages long — so under a new ISBN the
+    // stored one is simply wrong. A first-publication year is the *work's*,
+    // which is why it is fill-only at all: `Alice in Wonderland` is 1865
+    // whichever printing the ref names. Clearing it invites the next refresh
+    // to refill it from the new edition, which is the drift #333 measured and
+    // `fillOnlyFields` exists to stop. See `staleAfterRepoint` in
+    // ./work_ref_repair.js, and #385, where clearing this list's other half
+    // replaced nineteen correct years with reprints.
+    editionFields: ["duration"],
     // The unauthenticated Google Books API rate limits aggressively.
     defaultDelayMs: 1000,
     // The only daily cap of the four — roughly a thousand calls — and the only

@@ -6,6 +6,7 @@
  */
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { COLLECTIONS } = require("./work_collections");
 const {
   refCandidates,
   chooseRef,
@@ -551,12 +552,26 @@ test("an unlink leaves metadataUpdatedDate alone", () => {
 // A repoint clears what a refresh would not replace (CLAUDE.md's repoint rule)
 ////////////////////////////////////////////////////////////////////////////////
 
-const BOOKS = { type: "books", fillOnlyFields: ["releaseYear", "duration"] };
+const BOOKS = {
+  type: "books",
+  fillOnlyFields: ["releaseYear", "duration"],
+  editionFields: ["duration"],
+};
+
+test("the fixture above is the descriptor the scripts actually load", () => {
+  // Hand-built fixtures are how a rule quietly stops describing production.
+  const real = COLLECTIONS.find((c) => c.type === "books");
+  assert.deepEqual([...real.fillOnlyFields], [...BOOKS.fillOnlyFields]);
+  assert.deepEqual([...real.editionFields], [...BOOKS.editionFields]);
+});
 const GAMES = { type: "games" };
 const FILMS = { type: "films" };
 
 test("staleAfterRepoint names the fields each type will not replace", () => {
-  assert.deepEqual([...staleAfterRepoint(BOOKS)], ["releaseYear", "duration"]);
+  // #385: `releaseYear` is fill-only but is not the edition's, so a repoint
+  // leaves it. Clearing it let the next refresh refill it from the new
+  // printing, which replaced nineteen correct first-publication years.
+  assert.deepEqual([...staleAfterRepoint(BOOKS)], ["duration"]);
   assert.deepEqual([...staleAfterRepoint(GAMES)], ["duration", "durationSource"]);
   assert.deepEqual([...staleAfterRepoint(FILMS)], []);
 });
@@ -571,17 +586,18 @@ test("a replacesRef repoint clears the stale fields it finds", () => {
   };
   const { set, unset, cleared } = refUpdate(work, "ISBN__new", undefined, "ISBN__old", BOOKS);
   assert.deepEqual([...set.apiRefs], ["ISBN__new"]);
-  assert.deepEqual([...cleared], ["releaseYear", "duration"]);
-  assert.equal(unset.releaseYear, "");
+  assert.deepEqual([...cleared], ["duration"]);
   assert.equal(unset.duration, "");
   assert.equal(unset.metadataUpdatedDate, "");
+  // The year survives the repoint, and is the whole of #385's correction.
+  assert.equal("releaseYear" in unset, false);
 });
 
 test("a field the work does not carry is not reported as cleared", () => {
-  const work = { _id: "w1", apiRefs: ["ISBN__old"], releaseYear: 2018 };
+  const work = { _id: "w1", apiRefs: ["ISBN__old"], duration: 419, imageUrl: "x" };
   const { cleared, unset } = refUpdate(work, "ISBN__new", undefined, "ISBN__old", BOOKS);
-  assert.deepEqual([...cleared], ["releaseYear"]);
-  assert.equal(unset.duration, undefined);
+  assert.deepEqual([...cleared], ["duration"]);
+  assert.equal(unset.imageUrl, undefined);
 });
 
 test("a games repoint takes durationSource with the duration", () => {
@@ -676,12 +692,13 @@ test("widening a game still clears the playtime measured for the part", () => {
   assert.deepEqual([...cleared], ["duration", "durationSource"]);
 });
 
-test("repointing a book still clears its edition fields", () => {
-  // The distinction: here the identity changed, so 2018 and 419 describe a
-  // book nobody is looking at any more.
+test("repointing a book clears the page count and keeps the year", () => {
+  // The distinction: 419 pages describes a printing nobody is looking at any
+  // more, while 2018 is when the book was written and does not move with the
+  // ISBN. #385 is what clearing it cost.
   const work = { _id: "w1", apiRefs: ["ISBN__old"], releaseYear: 2018, duration: 419 };
   const { cleared } = refUpdate(work, "ISBN__new", undefined, "ISBN__old", BOOKS);
-  assert.deepEqual([...cleared], ["releaseYear", "duration"]);
+  assert.deepEqual([...cleared], ["duration"]);
 });
 
 test("a repoint that is also a widening clears the repoint's wider list", () => {
@@ -693,5 +710,5 @@ test("a repoint that is also a widening clears the repoint's wider list", () => 
     duration: 419,
   };
   const { cleared } = refUpdate(work, "ISBN__new", "Some Book", "ISBN__old", BOOKS);
-  assert.deepEqual([...cleared], ["releaseYear", "duration"]);
+  assert.deepEqual([...cleared], ["duration"]);
 });

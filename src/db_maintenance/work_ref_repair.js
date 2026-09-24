@@ -216,18 +216,30 @@ const refusalReason = ({ collection, work, ref, retitleWorkTo, replacesRef, retr
  * The fields a refresh will **not** replace on its own, so that one left in
  * place after a repoint keeps describing the work the old ref named.
  *
- * Two mechanisms, one consequence. A `fillOnlyFields` field is written when
- * absent and never replaced — books carry `releaseYear` and `duration` there
- * because an ISBN names an edition rather than a book (#333). And a games
- * `duration` is only ever refreshed by the source that wrote it, since an IGDB
- * median and a HowLongToBeat one are medians over very different samples; the
- * `durationSource` that records which travels with it.
+ * Two mechanisms, one consequence. A collection's `editionFields` are the ones
+ * scoped to the identity itself — a book's page count belongs to a printing
+ * and to nothing else. And a games `duration` is only ever refreshed by the
+ * source that wrote it, since an IGDB median and a HowLongToBeat one are
+ * medians over very different samples; the `durationSource` that records which
+ * travels with it.
  *
  * Both rules assume the stored value is about the same work. After a repoint it
  * is not, and ../../CLAUDE.md says so: two games repointed in 2026-09 kept
  * playtimes from the wrong game through the next refresh, which reported
  * `kept the stored duration 780 (source unrecorded); igdb offered 1115` and
  * said nothing else about it.
+ *
+ * **`editionFields` and not every `fillOnlyFields` field**, which is #385's
+ * correction and the reason the two lists exist separately. Fill-only says a
+ * refresh must never replace a value; it does not say the value belongs to the
+ * edition. A book's first-publication year is the work's — `Alice in
+ * Wonderland` is 1865 under any ISBN — and clearing it hands the next refresh
+ * permission to refill it from whatever printing the new ref names. That is
+ * exactly the drift fill-only exists to prevent, and running it proved the
+ * point: of the years cleared by a repoint pass, nineteen came back as
+ * reprints, `Alice` as 2017 and `Anne of Green Gables` as 2021, and all
+ * nineteen had been right. `staleAfterWidening` below already reasons this
+ * way; this is the same reasoning arriving at the repoint case.
  *
  * The title fields are deliberately **not** here even though they are
  * fill-only. Clearing a title leaves the work untitled until a refresh lands,
@@ -237,7 +249,7 @@ const refusalReason = ({ collection, work, ref, retitleWorkTo, replacesRef, retr
  */
 const staleAfterRepoint = (collection) => [
   ...new Set([
-    ...(collection?.fillOnlyFields ?? []),
+    ...(collection?.editionFields ?? []),
     ...staleAfterWidening(collection),
   ]),
 ];
@@ -294,8 +306,6 @@ const isWidening = (work, retitleTo) => {
 };
 
 const refUpdate = (work, ref, retitleTo, replacesRef, collection) => {
-  // A field only needs clearing if it is there; listing an absent one would
-  // make a dry run claim to be dropping a value the work does not have.
   // Two different events with two different answers. A repoint replaces the
   // identity, so everything scoped to the old one is stale. A widening keeps
   // it and changes only what the work claims to cover, which makes a
