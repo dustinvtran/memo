@@ -398,8 +398,15 @@ the bug that comes of confusing "absent" with "empty". It is that
 `updateEntry_` writes the document again on the next save whether or not it is
 there, and that `getReview`, the export and `changedFields` all treat the two
 states alike — verified, and pinned by tests in
-`src/api/controllers/entries.test.js`. **That half has not been applied**; its
-works half, which writes only to the work collections, needs no exception.
+`src/api/controllers/entries.test.js`. **That half was applied on 2026-09-24**,
+against snapshot `snapshot-2026-09-24T17-52-50-913Z` (verified with
+`verify_backup.js --live` first: manifest counts, file counts, SHA-256s and
+live `countDocuments()` agreed across all 14 collections). It deleted four
+empty reviews — two `filmReviews`, two `tvShowReviews` — out of 1,975; the
+other 1,971 hold a note somebody wrote and none was orphaned. Afterwards every
+other collection count was unchanged, no review pointed at a missing entry and
+no entry at a missing work. Its works half, which writes only to the work
+collections, needs no exception.
 
 Both read `*Entries` and neither writes to them. Two other scripts do write
 outside the work collections. `clear_noop_overrides.js` reaches an override,
