@@ -233,7 +233,9 @@ const normalizeTitle = (title) =>
  *     only, because a parenthetical anywhere else is part of the name:
  *     `Kizumonogatari (傷物語) (Monogatari, #3)` has one of each. A title that
  *     is *nothing but* a parenthetical keeps it — `[REC]` and `(Poetry)` are
- *     both real films here, and the alternative is no title at all.
+ *     both real films here, and the alternative is no title at all. A bracket
+ *     holding a bare number is kept too, because there it is a volume and not
+ *     a note — `VOLUME_INDEX`, and #438.
  *   - **A leading English article.** This is #327's headline: 69 works are
  *     stored as `Truman Show` under the id for `The Truman Show` and have been
  *     unrefreshable ever since. Only `the`, `a` and `an`, and only with
@@ -270,17 +272,45 @@ const LEADING_ARTICLE = /^(?:the|a|an)\s+(?=\S)/;
 /**
  * One trailing `(...)` or `[...]` at a time, so `Title (Series, #1) (1996)`
  * loses both. The original is kept rather than returning nothing when the
- * title is a parenthetical and nothing else.
+ * title is a parenthetical and nothing else, and stripping stops early at a
+ * volume index — see `VOLUME_INDEX`.
  */
 const withoutTrailingParentheticals = (text) => {
   let title = text.trim();
   for (;;) {
+    if (VOLUME_INDEX.test(title)) return title;
     const shorter = title.replace(/[([][^()[\]]*[)\]]\s*$/, "").trim();
     if (shorter === title) return title;
     if (shorter === "") return title;
     title = shorter;
   }
 };
+
+/**
+ * A trailing bracket holding a bare number, which is the one parenthetical
+ * that names a *different work* rather than the same work differently.
+ *
+ * Japanese publishers number a series inside brackets, so `狼と香辛料(6)` and
+ * `狼と香辛料(16)` both reduce to `狼と香辛料` and the guard cannot tell volume
+ * six from volume sixteen — six works sat on Japanese ISBNs that way, each
+ * refreshing cleanly and writing some other volume's page count and cover
+ * onto itself, with no refusal possible because the comparison had already
+ * thrown away the only distinguishing part (#438).
+ *
+ * Keeping *every* trailing bracket is not the fix and was measured not to be:
+ * of the 161 book identities sampled, 27 came back carrying some bracket, and
+ * treating a difference there as a disagreement newly refused ten works —
+ * every one of them a false alarm, two catalogues spelling one series marker
+ * differently (`(Goosebumps, #27)` against `(Classic Goosebumps #12)`, `(The
+ * Lord of the Rings, #1)` against `(…, Book 1)`). That is #327's measurement
+ * arriving at the same answer a second time.
+ *
+ * A bare number is the narrow shape that does not do this: **zero** of those
+ * 161 answers carried one, and one work in the whole library of 3,709. Three
+ * digits at most, because four in brackets at the end of a title is a year —
+ * an edition note of exactly the kind the stripping exists to forgive.
+ */
+const VOLUME_INDEX = /[([]\s*\d{1,3}\s*[)\]]\s*$/;
 
 /** Words for the numbers a sequel or a headline count is spelled with. */
 const NUMBER_WORDS = new Map(

@@ -142,6 +142,39 @@ test("a parenthetical that is not trailing is part of the name", () => {
   );
 });
 
+test("a bracketed bare number is a volume and is kept", () => {
+  // #438: six works sat on Japanese ISBNs whose volume number is a trailing
+  // parenthetical, so every volume of 狼と香辛料 compared equal to every other
+  // and each refreshed some other volume's metadata onto itself unrefused.
+  assert.notEqual(comparableTitle("狼と香辛料(6)"), comparableTitle("狼と香辛料(16)"));
+  assert.notEqual(comparableTitle("狼と香辛料(6)"), comparableTitle("狼と香辛料"));
+  assert.equal(comparableTitle("狼と香辛料(6)"), comparableTitle("狼と香辛料（6）"));
+});
+
+test("a bracketed year is an edition note, not a volume", () => {
+  // Four digits is the line. A year is exactly the kind of note the stripping
+  // exists to forgive, and keeping it would refuse the work it names.
+  assert.equal(comparableTitle("Nosferatu (1922)"), comparableTitle("Nosferatu"));
+  assert.equal(
+    comparableTitle("Title (Series, #1) (1996)"),
+    comparableTitle("Title")
+  );
+});
+
+test("stripping stops at a volume index rather than reaching past it", () => {
+  // The loop runs right to left, so a title ending in an index keeps whatever
+  // sits to the left of it too — there is no way to read those brackets as a
+  // note once the rightmost one is known to be part of the name.
+  assert.notEqual(
+    comparableTitle("狼と香辛料 (Spice and Wolf) (6)"),
+    comparableTitle("狼と香辛料")
+  );
+  assert.notEqual(
+    comparableTitle("狼と香辛料 (Spice and Wolf) (6)"),
+    comparableTitle("狼と香辛料 (Spice and Wolf) (7)")
+  );
+});
+
 test("an article is only dropped when something follows it", () => {
   assert.equal(comparableTitle("The"), "the");
   assert.equal(comparableTitle("A.I."), "ai");
