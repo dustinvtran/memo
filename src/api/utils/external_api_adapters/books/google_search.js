@@ -45,6 +45,25 @@ const isbnOf = (volumeInfo) =>
  * a search now answers with enough books that "Sapiens" eight times over is
  * not a list anyone can pick from, and Google files "A Brief History of
  * Humankind" separately.
+ *
+ * **This is for the picker, and the retrieve deliberately does not do it.**
+ * ./google_mapping.js stores `volumeInfo.title` alone, so a work's stored name
+ * is the bare one and a later refresh compares bare against bare. Only the row
+ * a person reads carries the subtitle.
+ *
+ * Making the two agree is the obvious change and it is wrong. #436 moved this
+ * join into the shared mapping so both halves would use it, and a sweep of all
+ * 648 books reverted it in #437:
+ *
+ *     before   97 refused, 13 of them the subtitle shape
+ *     after    85 refused, 79 of them the subtitle shape
+ *
+ * Google splits a volume into `title` and `subtitle` inconsistently across
+ * editions, so joining on retrieve does not make the two halves agree — it
+ * swaps which books disagree, and the new ones had all been refreshing fine
+ * ("The Bell Jar" stored against "The Bell Jar: A Novel" answered). The guard
+ * cannot be loosened to cover it either: `comparableTitle` refuses containment
+ * on purpose, because that bucket is where the real misfilings live (#327).
  * @type {(volumeInfo: any) => string}
  */
 const titleOf = (volumeInfo) =>

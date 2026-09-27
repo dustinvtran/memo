@@ -39,6 +39,10 @@ const httpsUrl = (url) =>
 const toBook = (ref, volumeInfo) => ({
   entryType: 'Book',
   publishers: volumeInfo.publisher ? [volumeInfo.publisher] : undefined,
+  // The bare title, **not** joined with `volumeInfo.subtitle` the way
+  // ./google_search.js's `titleOf` joins it. The two are deliberately
+  // different and the difference has been measured: see the note on
+  // `titleOf` for why joining here made things six times worse.
   englishTranslatedTitle: volumeInfo.title,
   releaseYear: parseInt(volumeInfo.publishedDate?.substring(0, 4)) || undefined,
   duration: volumeInfo.pageCount,
