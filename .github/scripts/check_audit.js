@@ -30,16 +30,21 @@
  * no longer appears in the report fails too.
  */
 
-/** Package name -> why an advisory against it does not stop the build today. */
-const ACCEPTED = {
-  uuid:
-    'Under better-queue, under apicalypse, under igdb-api-node. This ' +
-    'entry used to say node-themoviedb, which has never depended on ' +
-    'either — the path was wrong before #261 and is unchanged by it. ' +
-    'apicalypse 1.0.5 is what cleared the nested axios, but it still ' +
-    'pins better-queue ^3.8.10, so this one has no forward fix: npm ' +
-    'offers only a downgrade to igdb-api-node@3.1.7. #182.',
-}
+/**
+ * Package name -> why an advisory against it does not stop the build today.
+ *
+ * Empty, and that is the point rather than an oversight. The last entry was
+ * `uuid`, under better-queue, under apicalypse, under igdb-api-node, and it
+ * said the advisory had no forward fix — true, and still true: better-queue
+ * 3.8.12 is the latest and it still declares `uuid@^9.0.0`. What cleared it
+ * was going around the declared range instead of waiting for it, with an
+ * `overrides` entry in package.json pinning uuid to the patched 11.1.1.
+ *
+ * The check below is what made that a deletion rather than a stale note: an
+ * entry whose advisory has stopped being reported fails the build, so an
+ * accepted advisory cannot outlive its fix.
+ */
+const ACCEPTED = {}
 
 /** Severities that stop the build. Matches `--audit-level=high`. */
 const BLOCKING = new Set(['high', 'critical'])
