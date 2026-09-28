@@ -80,6 +80,56 @@ PR. So an all-green PR with no `build`/`test` rows is not passing, it is
 unmergeable. Check `mergeable` before concluding CI is broken; the other cause
 of no run at all is a GitHub Actions outage, and rebasing fixes only the first.
 
+## Clean up after yourself
+
+**A merged pull request's branch and worktree are rubbish, and removing them
+is part of merging rather than a chore for later.** On 2026-09-27 this
+checkout held 16 local branches and 7 worktrees; 14 of the branches were
+merged pull requests and the other 2 had nothing in them that `main` lacked.
+None of it was doing anything except making `git branch` unreadable and hiding
+the two branches that *do* still hold unmerged work.
+
+So, when a pull request merges:
+
+```
+gh pr merge <n> --squash --delete-branch     # takes the remote branch with it
+git worktree remove <path>                   # if the work had one
+git branch -D <branch>                       # squash-merged, so -d refuses
+git remote prune origin                      # drop the stale tracking refs
+```
+
+`-D` and not `-d` is the part worth knowing. A squash merge rewrites the
+commits, so git cannot see the branch as merged and `-d` refuses every one of
+them — which reads like a warning about unmerged work and is nothing of the
+kind.
+
+**`--no-merged` lies here for the same reason**, so don't use it to decide
+what is safe to delete. After a squash merge the branch is not an ancestor of
+`main` and `git diff main...branch` still prints its whole diff. The question
+that actually answers it is whether the branch had a pull request and whether
+that pull request merged:
+
+```
+gh pr list --state all --limit 100 --json headRefName,state,number
+```
+
+A branch with a merged pull request is safe. A branch with no pull request at
+all is the one to look at rather than delete — `origin/chore/140-ci-build` and
+`origin/chore/143-unused-deps` are two of those, from 2026-08, and they are
+still there deliberately.
+
+**Check a worktree before removing it, not after.** `git -C <path> status
+--porcelain` is the whole check, and `git worktree remove` refuses a dirty one
+anyway unless forced. Never pass `--force` to get past that: it is uncommitted
+work, and the reason it is uncommitted is usually that somebody was in the
+middle of it.
+
+The same applies to anything else a task leaves lying around — a scratch
+script, a proposal file, a local copy of the repo made for `npm ci`. Snapshots
+under `src/db_maintenance/backups/` are the exception and are kept
+deliberately; `backup_database.js` prunes them on its own schedule, so leave
+them alone.
+
 ## npm and Google Drive
 
 **`node_modules` in the Drive-synced working copy is unusable.** Drive's
