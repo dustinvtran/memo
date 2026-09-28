@@ -10,7 +10,7 @@
  */
 
 /** @typedef {(
- * 'filmEntries' | 'gameEntries' | 'tvShowEntries' | 'bookEntries' | 'users' | 'tvShows' | 'films' | 'games' | 'books' | 'bookReviews' | 'gameReviews' | 'tvShowReviews' | 'filmReviews' | 'entryRevisions'
+ * 'filmEntries' | 'gameEntries' | 'tvShowEntries' | 'bookEntries' | 'users' | 'tvShows' | 'films' | 'games' | 'books' | 'bookReviews' | 'gameReviews' | 'tvShowReviews' | 'filmReviews' | 'entryRevisions' | 'apiTokens'
  * )} ValidCollection */
 
 /** @type {Record<ValidCollection, Validator<any>>} */
@@ -25,6 +25,7 @@ export { tvShowEntries, tvShows } from './tvShows.js'
 export { bookEntries, books } from './books.js'
 export { users } from './users.js'
 export { entryRevisions } from './revisions.js'
+export { apiTokens } from './apiTokens.js'
 export {
   reviews as filmReviews,
   reviews as gameReviews,
