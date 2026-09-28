@@ -33,9 +33,9 @@ const credits = {
     { job: 'Producer', name: 'Toshio Suzuki' },
   ],
   cast: [
-    { name: 'Billed First', popularity: 4 },
-    { name: 'Billed Second', popularity: 30 },
-    { name: 'Billed Third', popularity: 12 },
+    { name: 'Billed First', order: 0, popularity: 4 },
+    { name: 'Billed Second', order: 1, popularity: 30 },
+    { name: 'Billed Third', order: 2, popularity: 12 },
   ],
 }
 
@@ -95,44 +95,50 @@ test('a season without a usable count is skipped, not added as NaN', () => {
   ]), 10)
 })
 
-test('the notable actors are filtered before they are cut to ten', () => {
-  // Slicing first dropped an eleventh-billed actor who cleared the bar.
-  const cast = [
-    ...Array.from({ length: 10 }, (_, i) => ({ name: `Unpopular ${i}`, popularity: 1 })),
-    { name: 'Popular But Eleventh', popularity: 40 },
-  ]
-
-  assert.deepEqual(notableActors(cast), ['Popular But Eleventh'])
+test('popularity does not decide the cast, billing does', () => {
+  // #454. The old rule kept `popularity > 6` and TMDB rescaled the metric, so
+  // a 177-person cast answered with one name. Fame this week is also not what
+  // the column is for: these three are the first three billed whatever their
+  // scores say.
+  assert.deepEqual(notableActors(credits.cast), ['Billed First', 'Billed Second', 'Billed Third'])
 })
 
-test('at most ten actors survive, most popular first', () => {
+test('at most ten actors survive, top-billed first', () => {
   const cast = Array.from({ length: 15 }, (_, i) => ({
     name: `Actor ${i}`,
-    popularity: 10 + i,
+    order: i,
+    popularity: 15 - i,
   }))
   const actors = notableActors(cast)
 
   assert.equal(actors.length, MAX_ACTORS)
-  assert.equal(actors[0], 'Actor 14')
-  assert.equal(actors.at(-1), 'Actor 5')
+  assert.equal(actors[0], 'Actor 0')
+  assert.equal(actors.at(-1), 'Actor 9')
 })
 
-test('a cast where only some clear the bar keeps only those', () => {
-  assert.deepEqual(notableActors(credits.cast), ['Billed Second', 'Billed Third'])
+test('a cast member with no billing sorts last rather than first', () => {
+  // `order` missing must not read as 0, which would put an uncredited extra
+  // above the lead.
+  const cast = [
+    { name: 'Unbilled' },
+    { name: 'Lead', order: 0 },
+  ]
+
+  assert.deepEqual(notableActors(cast), ['Lead', 'Unbilled'])
 })
 
-test('the popularity bar is exclusive and non-numbers do not clear it', () => {
-  assert.deepEqual(notableActors([{ name: 'Exactly Six', popularity: 6 }]), [])
-  assert.deepEqual(notableActors([{ name: 'No Number', popularity: 'lots' }]), [])
-  assert.deepEqual(notableActors([{ name: 'None At All' }]), [])
+test('a nameless credit is dropped, and a missing cast is empty', () => {
+  assert.deepEqual(notableActors([{ order: 0 }]), [])
+  assert.deepEqual(notableActors([{ name: 42, order: 0 }]), [])
   assert.deepEqual(notableActors(undefined), [])
+  assert.deepEqual(notableActors('not a cast'), [])
 })
 
 test('the cast TMDB sent is left in the order it arrived in', () => {
-  // `sort` reorders in place; the sort here runs on the array `filter` built.
+  // `sort` reorders in place; the sort here runs on a copy.
   const cast = [
-    { name: 'First', popularity: 10 },
-    { name: 'Second', popularity: 30 },
+    { name: 'First', order: 1 },
+    { name: 'Second', order: 0 },
   ]
   notableActors(cast)
 
@@ -247,7 +253,7 @@ test('a film maps to a film work', () => {
     imageUrl: POSTER_IMAGE_URL_PREFIX + '/poster.jpg',
     genres: ['Animation', 'Fantasy'],
     directors: ['Hayao Miyazaki'],
-    actors: ['Billed Second', 'Billed Third'],
+    actors: ['Billed First', 'Billed Second', 'Billed Third'],
     apiRefs: ['tmdb__129'],
     externalUrls: [{ name: 'tmdb', url: 'https://www.themoviedb.org/movie/129' }],
   })
@@ -267,7 +273,7 @@ test('a show maps to a tv show work, episodes and all', () => {
     imageUrl: POSTER_IMAGE_URL_PREFIX + '/poster.jpg',
     genres: ['Crime'],
     directors: ['Hayao Miyazaki', 'Adam Bernstein'],
-    actors: ['Billed Second', 'Billed Third'],
+    actors: ['Billed First', 'Billed Second', 'Billed Third'],
     apiRefs: ['tmdb__60622'],
     externalUrls: [{ name: 'tmdb', url: 'https://www.themoviedb.org/tv/60622' }],
     episodes: 20,

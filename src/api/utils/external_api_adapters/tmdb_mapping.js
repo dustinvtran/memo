@@ -18,9 +18,8 @@
 const SEARCH_IMAGE_URL_PREFIX = 'https://www.themoviedb.org/t/p/w116_and_h174_face'
 const POSTER_IMAGE_URL_PREFIX = 'https://www.themoviedb.org/t/p/w300_and_h450_bestv2'
 
-/** "The top ten notable actors": at most this many, none less popular than this. */
+/** "The top ten billed actors": at most this many, in the order TMDB bills them. */
 const MAX_ACTORS = 10
-const MIN_ACTOR_POPULARITY = 6
 
 /**
  * The crew jobs a director is filed under, per media type.
@@ -125,23 +124,36 @@ const showDirectors = (data, credits) => {
 }
 
 /**
- * The notable actors, most popular first.
+ * The top-billed cast, in billing order.
  *
- * The filter runs before the slice. Sorting, slicing and then filtering — what
- * this did — drops an eleventh-billed actor who clears the bar, and answers
- * with three names for a cast where only three clear it. Neither is "the top
- * ten notable actors", which is what the two constants read as together.
+ * **This used to keep only people above a fixed `popularity` of 6, and TMDB
+ * rescaled that metric out from under it (#454).** Measured against the live
+ * API: `Return of the Jedi` lists 177 cast members and exactly one clears 6,
+ * the runner-up scoring 5.36. Over a 40-film sample the rule answered with a
+ * mean of 1.2 names and reduced 34 of the 40 to two or fewer, and since
+ * `actors` is a replace field every refresh wrote that over whatever was
+ * there — 565 of 1420 films were already down to two names or fewer.
  *
- * The sort is in place on the array `filter` just built rather than on TMDB's
- * own, which `[...credits.cast]` was there to protect.
+ * So the threshold is gone rather than retuned. Any absolute number against a
+ * vendor's own popularity score drifts again the next time they reweigh it,
+ * and nothing in this repository would say when; `order` is a property of the
+ * credit rather than a measurement of the week, and does not move.
+ *
+ * **Billing rather than popularity**, which the same sample settles. Both
+ * restore a mean of 9.8 names, but they are not the same names: billing gives
+ * `Beauty and the Beast` its Belle and its Beast, where popularity gives the
+ * supporting voice cast, and gives `Sleeping Beauty` its Aurora where
+ * popularity gives three bit parts. Popularity ranks who is famous now;
+ * billing ranks who is in the film, which is what a cast list is for.
+ *
+ * The sort is on a copy, so TMDB's own array is left as it was.
  * @type {(cast: any) => string[]}
  */
 const notableActors = (cast) =>
-  (Array.isArray(cast) ? cast : [])
-    .filter((person) => Number(person?.popularity) > MIN_ACTOR_POPULARITY)
-    .sort((a, b) => b.popularity - a.popularity)
+  [...(Array.isArray(cast) ? cast : [])]
+    .sort((a, b) => (a?.order ?? Number.MAX_SAFE_INTEGER) - (b?.order ?? Number.MAX_SAFE_INTEGER))
     .slice(0, MAX_ACTORS)
-    .map((person) => person.name)
+    .map((person) => person?.name)
     .filter((name) => typeof name === 'string')
 
 /**
@@ -242,7 +254,7 @@ export {
   SEARCH_IMAGE_URL_PREFIX,
   POSTER_IMAGE_URL_PREFIX,
   MAX_ACTORS,
-  MIN_ACTOR_POPULARITY,
+
   FILM_DIRECTOR_JOBS,
   SHOW_DIRECTOR_JOBS,
   FILM_MAPPING,
