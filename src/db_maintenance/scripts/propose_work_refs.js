@@ -24,6 +24,10 @@
  * Flags:
  *   --out=<stem>    writes <stem>.json and <stem>.md (default: work_refs)
  *   --only=a,b      restrict to these collections
+ *   --works=<file>  search these work ids instead of the ones with no ref:
+ *                   a work whose ref answers with a different work needs the
+ *                   same search, and cannot be found by querying the database
+ *                   (#448). Takes a bare list of ids or rows carrying `work`.
  *   --limit=N       stop after N works per collection, for a trial run
  *   --delay=MS      override the collection pause; Google Books needs more
  *                   than its usual 1000ms when several queries run per work
@@ -50,6 +54,17 @@ const main = async () => {
   // fifth variations are the loosest, and running them for every work is what
   // rate-limited Google Books on 64 of 76 books.
   const maxQueries = Number(args["max-queries"]) || 3;
+  // Ids to search *instead of* the works with no ref — see `targets` below.
+  // Reads a bare list of ids, or the rows this script's own output uses, or
+  // anything else carrying a `work` or `id` per row, so a worklist from
+  // another step can be handed over without a reshaping pass.
+  const named = args.works
+    ? new Set(
+        JSON.parse(fs.readFileSync(String(args.works), "utf8")).map((row) =>
+          String(typeof row === "string" ? row : (row.work ?? row.id))
+        )
+      )
+    : undefined;
   const collections = selectCollections(
     args.only === undefined || args.only === true
       ? undefined
@@ -80,22 +95,38 @@ const main = async () => {
         new Map()
       );
 
-      // Two populations, one question. A work with no identity ref exists and
-      // draws on the site but can never refresh; an entry with no workRef has
-      // no work at all and carries what was typed in its overrides. Both need
-      // somebody to name an id, so both are searched the same way.
+      // Three populations, one question. A work with no identity ref exists
+      // and draws on the site but can never refresh; an entry with no workRef
+      // has no work at all and carries what was typed in its overrides; and a
+      // work named by `--works` has a ref that answers with something else,
+      // which is #448's larger half. All three need somebody to name an id,
+      // so all three are searched the same way.
+      //
+      // The third is named rather than selected because "the ref is wrong"
+      // is not a thing a query can ask: it takes a retrieve per work to find
+      // out, which is what `audit_database.js --verify-titles` is for. This
+      // reads that answer rather than repeating it.
       const targets = [
         ...works
-          .filter((work) => !findApiRef(work.apiRefs, collection.retrievePrefix))
+          .filter((work) =>
+            named
+              ? named.has(String(work._id))
+              : !findApiRef(work.apiRefs, collection.retrievePrefix)
+          )
           .map((work) => ({
             kind: "work",
             id: String(work._id),
             doc: work,
             entries: counts.get(String(work._id)) ?? 0,
           })),
-        ...entries
-          .filter((entry) => entry.workRef == null || entry.workRef === "")
-          .map((entry) => ({ kind: "entry", id: String(entry._id), doc: entry, entries: 1 })),
+        // An entry with no work is not part of a `--works` run: that flag
+        // names works whose ref is wrong, and an entry with nothing to point
+        // at is a different repair with a different answer.
+        ...(named
+          ? []
+          : entries
+              .filter((entry) => entry.workRef == null || entry.workRef === "")
+              .map((entry) => ({ kind: "entry", id: String(entry._id), doc: entry, entries: 1 }))),
       ];
       const slice = limit === Infinity ? targets : targets.slice(0, limit);
 
