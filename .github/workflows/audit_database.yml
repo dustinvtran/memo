@@ -120,14 +120,24 @@ jobs:
       # `backup_database.yml` exists to avoid. A manual run that does ask for a
       # verify flag needs the matching key, and fails in the script naming the
       # one it wanted if it is not set.
+      #
+      # **And that one is the read-only credential, not `MONGODB_URL`.** The
+      # audit and the export measurement only read, so this job holds a user
+      # with Atlas's built-in `read` role on `memo` and nothing else, and a
+      # leak from it carries no write access. `refresh_metadata.yml` is the
+      # one job that writes, and the only one still holding the readWrite
+      # secret. The scripts read the variable `MONGODB_URL` as before; only
+      # the secret behind it differs. #487, and src/db_maintenance/README.md,
+      # "Which credential each workflow holds".
       - name: Check the credential is set
         env:
-          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+          MONGODB_URL_READONLY: ${{ secrets.MONGODB_URL_READONLY }}
         run: |
-          if [ -z "$MONGODB_URL" ]; then
-            echo "::error::Unset repository secret: MONGODB_URL"
+          if [ -z "$MONGODB_URL_READONLY" ]; then
+            echo "::error::Unset repository secret: MONGODB_URL_READONLY"
             echo "Set it under Settings > Secrets and variables > Actions." \
-                 "The value lives in the repository root's .env. See #338."
+                 "It is a read-only Atlas user, not the .env's MONGODB_URL." \
+                 "See src/db_maintenance/README.md and #487."
             exit 1
           fi
 
@@ -158,7 +168,7 @@ jobs:
       # `pipefail` so the step's status is the script's and not `tee`'s.
       - name: Audit
         env:
-          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+          MONGODB_URL: ${{ secrets.MONGODB_URL_READONLY }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
@@ -202,7 +212,7 @@ jobs:
       - name: Measure the export against its own ceiling
         if: always()
         env:
-          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+          MONGODB_URL: ${{ secrets.MONGODB_URL_READONLY }}
         run: |
           set -o pipefail
           node src/db_maintenance/scripts/check_export_size.js \
