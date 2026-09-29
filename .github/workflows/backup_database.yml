@@ -62,13 +62,24 @@ jobs:
       # connection string, which reads like a database fault rather than the
       # unset setting it is. Name only — a masked secret echoed into a log is
       # still a secret in a log. #338.
+      #
+      # **The read-only credential, not `MONGODB_URL`.** A snapshot and its
+      # verification only read, so this job holds a user with Atlas's built-in
+      # `read` role on `memo` and nothing else, and a leak from it carries no
+      # write access. `refresh_metadata.yml` is the one job that writes, and
+      # the only one still holding the readWrite secret. The scripts read the
+      # variable `MONGODB_URL` as before; only the secret behind it differs.
+      # #487, and src/db_maintenance/README.md, "Which credential each
+      # workflow holds".
       - name: Check the credential is set
         env:
-          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+          MONGODB_URL_READONLY: ${{ secrets.MONGODB_URL_READONLY }}
         run: |
-          if [ -z "$MONGODB_URL" ]; then
-            echo "::error::Unset repository secret: MONGODB_URL"
-            echo "Set it under Settings > Secrets and variables > Actions."                  "The value lives in the repository root's .env. See #338."
+          if [ -z "$MONGODB_URL_READONLY" ]; then
+            echo "::error::Unset repository secret: MONGODB_URL_READONLY"
+            echo "Set it under Settings > Secrets and variables > Actions." \
+                 "It is a read-only Atlas user, not the .env's MONGODB_URL." \
+                 "See src/db_maintenance/README.md and #487."
             exit 1
           fi
 
@@ -97,7 +108,7 @@ jobs:
       # of #303 is that an untested backup is a hope.
       - name: Snapshot the database, and verify the snapshot
         env:
-          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+          MONGODB_URL: ${{ secrets.MONGODB_URL_READONLY }}
         run: |
           node src/db_maintenance/scripts/backup_database.js             --out="$RUNNER_TEMP/backups" --no-prune
           node src/db_maintenance/scripts/verify_backup.js             --dir="$RUNNER_TEMP/backups" --live

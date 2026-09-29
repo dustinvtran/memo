@@ -666,6 +666,62 @@ it made failed, so a spent quota or a revoked key is a failure rather than a
 quiet success. That covers the crawl breaking. It does not cover the crawl
 never being started, which is the state the repository is in today.
 
+## Which credential each workflow holds
+
+Three scheduled workflows reach the database, and only one of them writes.
+Each holds the least access its job needs, so a leak from a job that only
+reads carries no write access (#487):
+
+| Workflow               | Repository secret      | Atlas role            |
+| ---------------------- | ---------------------- | --------------------- |
+| `refresh_metadata.yml` | `MONGODB_URL`          | `readWrite` on `memo` |
+| `backup_database.yml`  | `MONGODB_URL_READONLY` | `read` on `memo`      |
+| `audit_database.yml`   | `MONGODB_URL_READONLY` | `read` on `memo`      |
+
+The scripts read the environment variable `MONGODB_URL` whichever secret is
+behind it, so nothing under `scripts/` knows the difference. The `.env` keeps
+the readWrite `MONGODB_URL` for hand-run maintenance; the read-only one lives
+only in the repository's secrets.
+
+### Creating the read-only credential
+
+The owner's to do, once, and **before** the change that switched the two jobs
+over is merged — until the secret exists each job fails its first step naming
+it, which for the backup means a day with no off-machine copy.
+
+1. **Atlas → Security → Database Access → Add New Database User.**
+   Authentication: Password. A name that says what it is for, such as
+   `memo-actions-readonly`.
+2. **A long random password.** Atlas's *Autogenerate Secure Password*, or
+   `openssl rand -hex 32` — hex so that nothing in it needs percent-encoding
+   in a connection string. Keep it out of chat, issues and shell history.
+3. **Privileges: the built-in `read` role on database `memo`, and nothing
+   else.** Under *Database User Privileges*, *Specific Privileges* → *Add
+   Built-in Role* → `read`, database `memo`, collection left blank. Not *Only
+   read any database*, which is `readAnyDatabase` and reaches every database
+   on the cluster, `admin` included. Optionally restrict the user to this
+   cluster. Add the user.
+4. **Build its connection string**: the `MONGODB_URL` in the `.env` with this
+   user's name and password in place of the readWrite user's — same host,
+   same options. Do it in an editor, not on a command line.
+5. **Store it.**
+
+   ```
+   gh secret set MONGODB_URL_READONLY --repo dustinvtran/memo
+   ```
+
+   With no `--body` it prompts for the value and reads it without echoing, so
+   it reaches neither the terminal nor the shell history. `gh secret list
+   --repo dustinvtran/memo` should then show the name (never the value).
+6. **Merge, then run both jobs once by hand** rather than waiting for the
+   schedule: `gh workflow run backup_database.yml` and `gh workflow run
+   audit_database.yml`. Both green means the new user can read everything the
+   two jobs need — a missing privilege fails as an `Unauthorized` from the driver, not
+   as an empty result.
+
+Rotating it later is steps 2, 4 and 5 against the same user (*Edit* →
+*Edit Password*); nothing in the repository changes.
+
 ## How close the export is to its own ceiling
 
 `scripts/check_export_size.js` weighs every response `/api/export` would send
