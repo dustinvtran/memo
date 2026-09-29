@@ -114,9 +114,13 @@ gh pr list --state all --limit 100 --json headRefName,state,number
 ```
 
 A branch with a merged pull request is safe. A branch with no pull request at
-all is the one to look at rather than delete — `origin/chore/140-ci-build` and
-`origin/chore/143-unused-deps` are two of those, from 2026-08, and they are
-still there deliberately.
+all is the one to look at rather than delete, and *looking* means asking
+whether its work landed some other way. `origin/chore/140-ci-build` and
+`origin/chore/143-unused-deps` were two, from 2026-08, with no pull request
+and a diff against `main` of 282 files: five weeks of `main` moving on, not
+unique work. What they set out to do — a `build` job in CI, the webpack and
+babel packages gone — had both already landed by other routes, so they were
+deleted on 2026-09-29.
 
 **Check a worktree before removing it, not after.** `git -C <path> status
 --porcelain` is the whole check, and `git worktree remove` refuses a dirty one
@@ -628,6 +632,16 @@ affected; strings and numbers cross realms fine.
   scales with other users — discussion, profile comments, likes, a global feed,
   "trending this week" all multiply by a number that is currently 1. Features
   useful at N=1 are a different question and stand on their own merits.
+
+  **"Effectively" is not "entirely", and the gap is where a data repair goes
+  wrong.** The second account holds 41 entries (2026-09), so two entries on
+  one work can be two people rather than one person's duplicate. #448's
+  `Ocarina of Time` had a completed 2011 entry and an in-progress 2022 one,
+  and the 2022 one was proposed for deletion before anybody read its
+  `userId` — it was the other account's. Read `userId` before calling two
+  entries a duplicate. `link_entry.js` already scopes its name-clash check
+  to the entry's own user, which is right; the analysis around it is the part
+  that has to remember.
 - **IGDB replaced `external_games.category`** with
   `external_games.external_game_source` (`1` = Steam). Querying the old field
   returns zero rows silently instead of erroring.
