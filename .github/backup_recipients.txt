@@ -1,0 +1,10 @@
+# age public keys that snapshot artifacts are encrypted to, one per line.
+# Public, and safe to be: a public key can only encrypt. The matching private
+# key is held by the owner, off GitHub, and is what a restore needs — see
+# src/db_maintenance/README.md, "Encrypted snapshot artifacts".
+#
+# `.github/scripts/encrypt_snapshot.sh` refuses to run until a line starting
+# with `age1` is here, so the backup fails rather than uploading plaintext.
+
+# The owner's key, 2026-09-29. Private half: MEMO_BACKUP_AGE_KEY in the .env.
+age142asw69smxsjzlp42exnyes63zw0lt9j8jle0jxanjtthutht4us90rrvh

@@ -140,9 +140,11 @@ main checkout, which is on local disk — the same disk as the code and the
 `.env`; in a hand-made copy on Google Drive that nothing updates, twelve days
 stale on that date; and in the workflow artifacts `backup_database.yml` and
 `refresh_metadata.yml` upload, the only current copies off this machine. The
-repository is public and so are those artifacts. Whether to add a scheduled
-off-machine copy, and where, is undecided — `src/db_maintenance/README.md`
-lists the options and is where the choice gets written down.
+repository is public and so are those artifacts, so each is encrypted with
+`age` to the key in `.github/backup_recipients.txt` before upload; the private
+half is `MEMO_BACKUP_AGE_KEY` in the `.env`, and without it no artifact can be
+restored. `src/db_maintenance/README.md`, "Encrypted snapshot artifacts", says
+how to decrypt one.
 
 ## npm and Google Drive
 

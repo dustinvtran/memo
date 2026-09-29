@@ -28,12 +28,9 @@
 # - A hand-made copy of that directory on Google Drive, updated by nobody on
 #   a schedule and twelve days stale on that date.
 # - The artifacts this workflow and refresh_metadata.yml upload, 90 days each.
-#   This repository is public, and so are its artifacts: anyone signed in to
-#   GitHub can download them, and a snapshot includes the `users` collection.
-#
-# Whether to keep a scheduled off-machine copy that does not depend on the
-# artifacts, and where, is undecided; src/db_maintenance/README.md lists the
-# options.
+#   This repository is public, and so are its artifacts, so each is encrypted
+#   to the owner's key before upload — see the step below, and
+#   src/db_maintenance/README.md, "Encrypted snapshot artifacts".
 name: Back up the database
 
 on:
@@ -105,9 +102,23 @@ jobs:
           node src/db_maintenance/scripts/backup_database.js             --out="$RUNNER_TEMP/backups" --no-prune
           node src/db_maintenance/scripts/verify_backup.js             --dir="$RUNNER_TEMP/backups" --live
 
+      # **This repository is public, so its artifacts are too**, and a snapshot
+      # is the whole database — `users`, `apiTokens`, every draft. So the
+      # artifact is ciphertext: encrypted to the public key in
+      # `.github/backup_recipients.txt`, whose private half is held off GitHub.
+      # The script deletes the plaintext and fails the run, before anything is
+      # uploaded, if there is no key to encrypt to. The `encrypted-` prefix
+      # tells these apart from the plaintext `snapshot-*` artifacts uploaded
+      # before this step existed.
+      - name: Encrypt the snapshot
+        run: |
+          sudo apt-get install -y --no-install-recommends age > /dev/null
+          .github/scripts/encrypt_snapshot.sh "$RUNNER_TEMP/backups" "$RUNNER_TEMP/snapshot.tar.gz.age"
+
       - name: Keep the snapshot
         uses: actions/upload-artifact@v4
         with:
-          name: snapshot-${{ github.run_id }}
-          path: ${{ runner.temp }}/backups
+          name: encrypted-snapshot-${{ github.run_id }}
+          path: ${{ runner.temp }}/snapshot.tar.gz.age
           retention-days: 90
+          if-no-files-found: error
