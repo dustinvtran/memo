@@ -21,6 +21,8 @@ import axios from 'axios'
 import { TIME_TO_BEATS_URL, timeToBeatQuery, toPlaytime } from './time_to_beat.js'
 import { earliestReleaseDate } from './release_dates.js'
 import { involvedCompanyIds, companyIdsToLookUp, companyQueryLimit, companyNames } from './companies.js'
+import { platformNames, searchTitle } from './platforms.js'
+import { unique } from '../unique.js'
 import { throwIt } from '../../general.js'
 import { callableDefault } from '../../interop.js'
 import { retrying, describeFailure, publicFailure, statusOf } from '../retry.js'
@@ -87,7 +89,7 @@ const search = (titleSearch) => ResultAsync.fromPromise(
     const client = await igdbClient()
 
     const req = await client
-      .fields(['name', 'cover.url', 'release_dates.*', 'platforms.abbreviation'])
+      .fields(['name', 'cover.url', 'release_dates.*', 'platforms.abbreviation', 'platforms.name'])
       .limit(50)
       .search(titleSearch)
       .request('/games')
@@ -100,7 +102,7 @@ const search = (titleSearch) => ResultAsync.fromPromise(
       results: req.data.map(({ name, id, release_dates, cover, platforms }) => {
         const earliest_date = earliestReleaseDate(release_dates) * 1000
         return {
-          title: name + ` [${platforms?.map((p) => p.abbreviation ?? '?')?.join(', ') ?? '?'}]`,
+          title: searchTitle(name, platforms),
           ref: id,
           year: earliest_date ? (new Date(earliest_date)).toISOString().substring(0, 4) : undefined,
           imageUrl: cover?.url ? 'https:' + cover.url : undefined,
@@ -116,7 +118,7 @@ const retrieve = (ref) => ResultAsync.fromPromise(
   retrying(async () => {
     const client = await igdbClient()
     const mainData = await client
-      .fields(['name', 'alternative_names.*', 'cover.url', 'release_dates.*', 'genres.name', 'platforms.abbreviation', 'involved_companies.*', 'url'])
+      .fields(['name', 'alternative_names.*', 'cover.url', 'release_dates.*', 'genres.name', 'platforms.abbreviation', 'platforms.name', 'involved_companies.*', 'url'])
       .where(`id = ${ref}`)
       .request('/games')
       .then(({ data }) => data[0])
@@ -183,8 +185,8 @@ const retrieve = (ref) => ResultAsync.fromPromise(
       // `duration` and `durationSource` together, or neither of them.
       ...playtime,
       imageUrl: mainData.cover?.url ? 'https:' + mainData.cover.url : '',
-      genres: mainData.genres?.map((g) => g.name) ?? [],
-      platforms: mainData.platforms?.map((p) => p.abbreviation ?? '?') ?? [],
+      genres: unique((mainData.genres ?? []).map((g) => g?.name).filter((name) => typeof name === 'string')),
+      platforms: platformNames(mainData.platforms),
       studios: studioNames,
       publishers: publisherNames,
       apiRefs: [`igdb__${mainData.id}`],

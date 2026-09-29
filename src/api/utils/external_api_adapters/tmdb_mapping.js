@@ -12,7 +12,12 @@
  * the three client calls each hands ./tmdb_adapter.js. Everything else was
  * duplicated between them until #112, which is how the film half went without
  * the `release_date` guard the tv half had.
+ *
+ * Every list below comes out without repeats (./unique.js): TMDB credits a
+ * person once per job or character, so a director who co-directed under two
+ * job titles, or an actor in two roles, would otherwise be stored twice. #481.
  */
+import { unique } from './unique.js'
 
 /** The poster sizes: the small one for a search row, the large one for a work. */
 const SEARCH_IMAGE_URL_PREFIX = 'https://www.themoviedb.org/t/p/w116_and_h174_face'
@@ -63,9 +68,11 @@ const releaseYear = (date) => {
 
 /** @type {(genres: any) => string[]} */
 const genreNames = (genres) =>
-  (Array.isArray(genres) ? genres : [])
-    .map((genre) => genre?.name)
-    .filter((name) => typeof name === 'string')
+  unique(
+    (Array.isArray(genres) ? genres : [])
+      .map((genre) => genre?.name)
+      .filter((name) => typeof name === 'string')
+  )
 
 /**
  * The names of everyone in the crew doing one of `jobs`.
@@ -83,10 +90,12 @@ const genreNames = (genres) =>
  * @type {(crew: any, jobs: string[]) => string[]}
  */
 const directorNames = (crew, jobs) =>
-  (Array.isArray(crew) ? crew : [])
-    .filter((person) => jobs.includes(person?.job))
-    .map((person) => person.name)
-    .filter((name) => typeof name === 'string')
+  unique(
+    (Array.isArray(crew) ? crew : [])
+      .filter((person) => jobs.includes(person?.job))
+      .map((person) => person.name)
+      .filter((name) => typeof name === 'string')
+  )
 
 /**
  * A show's creators, from `created_by` on the `/tv/{id}` details response.
@@ -94,9 +103,11 @@ const directorNames = (crew, jobs) =>
  * @type {(createdBy: any) => string[]}
  */
 const creatorNames = (createdBy) =>
-  (Array.isArray(createdBy) ? createdBy : [])
-    .map((person) => person?.name)
-    .filter((name) => typeof name === 'string')
+  unique(
+    (Array.isArray(createdBy) ? createdBy : [])
+      .map((person) => person?.name)
+      .filter((name) => typeof name === 'string')
+  )
 
 /**
  * Who goes in a show's Director column: its creators, or failing that whoever
@@ -147,14 +158,18 @@ const showDirectors = (data, credits) => {
  * billing ranks who is in the film, which is what a cast list is for.
  *
  * The sort is on a copy, so TMDB's own array is left as it was.
+ *
+ * Repeats go before the cut to ten rather than after, so an actor billed for
+ * two characters costs one place in the list and not two.
  * @type {(cast: any) => string[]}
  */
 const notableActors = (cast) =>
-  [...(Array.isArray(cast) ? cast : [])]
-    .sort((a, b) => (a?.order ?? Number.MAX_SAFE_INTEGER) - (b?.order ?? Number.MAX_SAFE_INTEGER))
-    .slice(0, MAX_ACTORS)
-    .map((person) => person?.name)
-    .filter((name) => typeof name === 'string')
+  unique(
+    [...(Array.isArray(cast) ? cast : [])]
+      .sort((a, b) => (a?.order ?? Number.MAX_SAFE_INTEGER) - (b?.order ?? Number.MAX_SAFE_INTEGER))
+      .map((person) => person?.name)
+      .filter((name) => typeof name === 'string')
+  ).slice(0, MAX_ACTORS)
 
 /**
  * How many episodes a show has, not counting its specials.
