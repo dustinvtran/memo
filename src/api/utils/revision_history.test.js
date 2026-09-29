@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { toSnapshot, changedFields, hasChanges, toVersionList, revisionsToPrune } from './revision_history.js'
+import { addedDateOf, toSnapshot, changedFields, hasChanges, toVersionList, revisionsToPrune } from './revision_history.js'
 test('a snapshot keeps the fields the user edits, and the review with them', () => {
   const entry = {
     _id: 'e1',
@@ -115,19 +115,79 @@ test('an entry with no history at all is just its current version', () => {
       createdDate: 1,
       snapshot: { status: 'Planned' },
       isCurrent: true,
+      isOriginal: false,
       changes: [],
     },
   ])
 })
 
-test('pruning keeps the newest versions and drops the rest', () => {
+test('pruning keeps the newest versions and the oldest, and drops between', () => {
   const revisions = [
     { _id: 'oldest', createdDate: 1 },
-    { _id: 'newest', createdDate: 3 },
+    { _id: 'newest', createdDate: 4 },
     { _id: 'middle', createdDate: 2 },
+    { _id: 'newer', createdDate: 3 },
   ]
 
-  assert.deepEqual(revisionsToPrune(revisions, 2), ['oldest'])
-  assert.deepEqual(revisionsToPrune(revisions, 3), [])
+  assert.deepEqual(revisionsToPrune(revisions, 3), ['middle'])
+  assert.deepEqual(revisionsToPrune(revisions, 2), ['newer', 'middle'])
+  assert.deepEqual(revisionsToPrune(revisions, 4), [])
   assert.deepEqual(revisionsToPrune(revisions, 50), [])
+})
+
+test('an entry was added in the second its ObjectId was minted', () => {
+  // 0x6500e8c0 is 1694558400, 2023-09-12T22:40:00Z.
+  assert.equal(addedDateOf('6500e8c0aaaaaaaaaaaaaaaa'), 1694558400000)
+  assert.equal(addedDateOf({ toString: () => '6500e8c0aaaaaaaaaaaaaaaa' }), 1694558400000)
+})
+
+test('an id that is not an ObjectId has no added date', () => {
+  assert.equal(addedDateOf('e1'), null)
+  assert.equal(addedDateOf(undefined), null)
+  assert.equal(addedDateOf('6500e8c0aaaaaaaaaaaaaaaaaa'), null)
+})
+
+test('the oldest version is the original when it dates from the moment of adding', () => {
+  const added = 1694558400000
+  const versions = toVersionList(
+    { id: 'current', createdDate: added + 90000, snapshot: { status: 'Completed' } },
+    // `updatedDate` is stamped just before the insert, the id just after, and
+    // the id only counts whole seconds.
+    [{ id: 'r1', createdDate: added + 420, snapshot: { status: 'Planned' } }],
+    added
+  )
+
+  assert.deepEqual(
+    versions.map(({ id, isOriginal }) => ({ id, isOriginal })),
+    [
+      { id: 'current', isOriginal: false },
+      { id: 'r1', isOriginal: true },
+    ]
+  )
+})
+
+test('an entry never edited is its own original', () => {
+  const added = 1694558400000
+  const [only] = toVersionList(
+    { id: 'current', createdDate: added + 1, snapshot: { status: 'Planned' } },
+    [],
+    added
+  )
+
+  assert.equal(only.isCurrent, true)
+  assert.equal(only.isOriginal, true)
+})
+
+test('a history that begins after the entry was added has no original', () => {
+  const added = 1694558400000
+  const versions = toVersionList(
+    { id: 'current', createdDate: added + 2e9, snapshot: { status: 'Completed' } },
+    [{ id: 'r1', createdDate: added + 1e9, snapshot: { status: 'InProgress' } }],
+    added
+  )
+  assert.deepEqual(versions.map(({ isOriginal }) => isOriginal), [false, false])
+
+  // No date on the version is no evidence either way.
+  const [undated] = toVersionList({ id: 'current', snapshot: {} }, [], added)
+  assert.equal(undated.isOriginal, false)
 })

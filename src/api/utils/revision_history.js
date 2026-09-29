@@ -30,6 +30,26 @@ const SIMPLE_FIELDS = REVISION_FIELDS.filter((field) => field !== 'overrides')
 const MAX_REVISIONS_PER_ENTRY = 50
 
 /**
+ * How far apart an entry's id and the date on its oldest version may be and
+ * still describe the same moment. The create path stamps `updatedDate` a
+ * moment before the insert that mints the id, and the id only counts whole
+ * seconds, so the two land within a second of each other; the rest is slack.
+ */
+const SAME_MOMENT_MS = 5000
+
+/**
+ * When an entry was added, read out of its id. Entries carry no creation date
+ * of their own, but an ObjectId begins with the second it was minted in, and
+ * the insert on the create path is what mints it. Anything that is not an
+ * ObjectId's 24 hex characters answers `null` rather than a guess.
+ * @type {(entryId: unknown) => number | null}
+ */
+const addedDateOf = (entryId) => {
+  const hex = String(entryId ?? '')
+  return /^[0-9a-f]{24}$/i.test(hex) ? parseInt(hex.slice(0, 8), 16) * 1000 : null
+}
+
+/**
  * @type {(entryData?: object, reviewText?: string) => object}
  */
 const toSnapshot = (entryData = {}, reviewText = undefined) => {
@@ -64,10 +84,15 @@ const hasChanges = (before, after) => changedFields(before, after).length > 0
  * list the history UI renders: newest first, each one carrying what it
  * changed relative to the version before it.
  *
+ * The oldest version is also marked `isOriginal` when it is the entry exactly
+ * as it was added — when its date is the moment the entry's id was minted.
+ * Otherwise the history begins partway through: the entry predates it, or
+ * predates `updatedDate`, and what it was added with is not known.
+ *
  * @typedef {{ id: string, createdDate?: number, snapshot: object }} Version
- * @type {(current: Version, revisions: Version[]) => (Version & { isCurrent: boolean, changes: string[] })[]}
+ * @type {(current: Version, revisions: Version[], addedDate?: number | null) => (Version & { isCurrent: boolean, isOriginal: boolean, changes: string[] })[]}
  */
-const toVersionList = (current, revisions) => {
+const toVersionList = (current, revisions, addedDate = null) => {
   const ordered = [
     { ...current, isCurrent: true },
     ...[...revisions].sort(byNewestFirst).map((revision) => ({
@@ -76,32 +101,41 @@ const toVersionList = (current, revisions) => {
     })),
   ]
 
-  return ordered.map((version, index) => ({
-    ...version,
-    // The oldest version we hold has nothing to be compared against: we don't
-    // know what the entry looked like before it, so it changed nothing.
-    changes:
-      index === ordered.length - 1
+  return ordered.map((version, index) => {
+    const isOldest = index === ordered.length - 1
+    return {
+      ...version,
+      isOriginal: isOldest && isSameMoment(version.createdDate, addedDate),
+      // The oldest version we hold has nothing to be compared against: we
+      // don't know what the entry looked like before it, so it changed
+      // nothing. Its whole state is what the UI shows instead.
+      changes: isOldest
         ? []
         : changedFields(ordered[index + 1].snapshot, version.snapshot),
-  }))
+    }
+  })
 }
 
 /**
- * The ids of the versions to drop once an entry has more than `max` of them,
- * oldest first. Keeping the newest is what matters: they are the ones an undo
- * is likely to reach for.
+ * The ids of the versions to drop once an entry has more than `max` of them.
+ * The newest are kept, because they are the ones an undo is likely to reach
+ * for, and so is the oldest: it is the entry as it was added, which is where
+ * the history is read from, and the one version no later save can recreate.
+ * What goes is the run just after it.
  * @type {(revisions: { _id: string, createdDate?: number }[], max?: number) => string[]}
  */
 const revisionsToPrune = (revisions, max = MAX_REVISIONS_PER_ENTRY) =>
-  [...revisions]
-    .sort(byNewestFirst)
-    .slice(max)
-    .map(({ _id }) => _id)
+  revisions.length <= max
+    ? []
+    : [...revisions]
+        .sort(byNewestFirst)
+        .slice(Math.max(max - 1, 0), -1)
+        .map(({ _id }) => _id)
 
 export {
   REVISION_FIELDS,
   MAX_REVISIONS_PER_ENTRY,
+  addedDateOf,
   toSnapshot,
   changedFields,
   hasChanges,
@@ -111,6 +145,11 @@ export {
 ///////////////////////////////////////////////////////////////////////////////
 
 const byNewestFirst = (a, b) => (b.createdDate ?? 0) - (a.createdDate ?? 0)
+
+const isSameMoment = (date, addedDate) =>
+  typeof date === 'number' &&
+  typeof addedDate === 'number' &&
+  Math.abs(date - addedDate) < SAME_MOMENT_MS
 
 /**
  * A field the form left empty, one the form cleared to null and one the

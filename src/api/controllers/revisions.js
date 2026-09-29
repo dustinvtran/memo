@@ -22,12 +22,13 @@ import * as db from '../utils/db/index.js'
 import * as parsers from '../utils/parsers/index.js'
 import { getUserId, getSegment, getReqBody, toEntryCollection, toEntryType, toReviewCollection } from './utils.js'
 import { triplet, toPromise, warn } from '../utils/general.js'
-import { toSnapshot, hasChanges, toVersionList, revisionsToPrune } from '../utils/revision_history.js'
+import { addedDateOf, toSnapshot, hasChanges, toVersionList, revisionsToPrune } from '../utils/revision_history.js'
 const COLLECTION = 'entryRevisions'
 
 /**
  * The whole version list of an entry, newest first, starting with the entry
- * as it stands now, each version carrying what it changed.
+ * as it stands now, each version carrying what it changed — and when the
+ * entry was added, which is known even where its first version is not.
  * @type {(event: Event) => Promise<Response>}
  */
 const getVersions = (event) =>
@@ -40,7 +41,10 @@ const getVersions = (event) =>
       findRevisions(entry._id),
     ])
 
+    const addedDate = addedDateOf(entry._id)
+
     return responses.ok({
+      addedDate,
       versions: toVersionList(
         {
           id: 'current',
@@ -52,7 +56,8 @@ const getVersions = (event) =>
           createdDate: revision.createdDate,
           supersededDate: revision.supersededDate,
           snapshot: revision.snapshot,
-        }))
+        })),
+        addedDate
       ),
     })
   })

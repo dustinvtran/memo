@@ -202,6 +202,69 @@ const WORKS = {
   },
 };
 
+/**
+ * An entry's history, built by the API's own `toVersionList` so its shape
+ * cannot drift from what `GET /api/revisions/:type/:ref` answers. The real
+ * route reads `addedDate` out of the entry's ObjectId; these dbRefs are not
+ * ObjectIds, so each case says its date outright. One case per way the
+ * timeline can end:
+ *
+ * - `e-linked` was added as Planned and edited twice since, so its oldest
+ *   version *is* the entry as added, and opens to show all of it.
+ * - `e-season` is older than its history: the oldest version dates from years
+ *   after the entry's id, so the timeline ends on a bare "Added" row.
+ * - every other entry has never been edited, and its only version is both
+ *   the current one and the one it was added with.
+ */
+const { toVersionList } = require("../src/api/utils/revision_history.js");
+
+const DAY = 24 * 60 * 60 * 1000;
+const HISTORIES = {
+  "e-linked": () => {
+    const added = Date.parse("2023-11-02T19:04:11Z");
+    return {
+      addedDate: added,
+      versions: toVersionList(
+        {
+          id: "current",
+          createdDate: Date.now() - 3 * DAY,
+          snapshot: { status: "Completed", score: 8, completedDate: Date.parse("2024-06-01"), workRef: dune._id, review: "Better the second time.\nThe sound alone." },
+        },
+        [
+          { id: "r1", createdDate: added + 300, snapshot: { status: "Planned", score: 9, workRef: dune._id } },
+          { id: "r2", createdDate: Date.parse("2024-06-01"), snapshot: { status: "Completed", score: 8, completedDate: Date.parse("2024-06-01"), workRef: dune._id, review: "Better the second time." } },
+        ],
+        added,
+      ),
+    };
+  },
+  "e-season": () => {
+    const added = Date.now() - 6 * 365 * DAY;
+    return {
+      addedDate: added,
+      versions: toVersionList(
+        { id: "current", createdDate: Date.now() - 30 * DAY, snapshot: { status: "Completed", score: 7 } },
+        [{ id: "r1", createdDate: Date.now() - 60 * DAY, snapshot: { status: "InProgress", score: 7 } }],
+        added,
+      ),
+    };
+  },
+};
+
+const versionsOf = (dbRef) => {
+  if (HISTORIES[dbRef]) return HISTORIES[dbRef]();
+  const entry = Object.values(entries).flat().find((row) => row.dbRef === dbRef);
+  const added = Date.now() - 12 * DAY;
+  return {
+    addedDate: added,
+    versions: toVersionList(
+      { id: "current", createdDate: added + 500, snapshot: { status: entry?.status ?? "Planned", score: entry?.score, overrides: entry?.overrides } },
+      [],
+      added,
+    ),
+  };
+};
+
 const send = (res, code, body, type = "application/json") => {
   res.writeHead(code, { "content-type": type });
   res.end(typeof body === "string" ? body : JSON.stringify(body));
@@ -269,7 +332,7 @@ const api = (url, method, res) => {
   // `versions[].changes` must be an array, or `chipsHtml` throws on its length
   // and the history panel sits on its loader for ever.
   if (route === "revisions" && rest[2] === "draft") return send(res, 200, { draft: null });
-  if (route === "revisions") return send(res, 200, { versions: [] });
+  if (route === "revisions") return send(res, 200, versionsOf(rest[1]));
 
   // A search answers with `{ results }` and **not** a bare array, and a books
   // search carries `discarded` beside it: the count of volumes Google lists no

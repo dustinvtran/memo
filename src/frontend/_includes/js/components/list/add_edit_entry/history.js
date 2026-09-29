@@ -1,9 +1,11 @@
 /**
  * @file The edit history of an entry, inside the edit form.
  *
- * A timeline of versions, newest first. Each row is one save, showing when it
- * happened and which fields it touched; opening a row shows the old and new
- * value of each, and a line diff of the comments. "Restore into form" puts a
+ * A timeline of versions, newest first, ending where the entry was added.
+ * Each row is one save, showing when it happened and which fields it touched;
+ * opening a row shows the old and new value of each, and a line diff of the
+ * comments. The last row has nothing before it to be compared with, so it
+ * shows the whole of what the entry held instead. "Restore into form" puts a
  * version back into the fields without saving, so restoring is an ordinary
  * edit that can be looked at before it is committed to, and is itself
  * undoable.
@@ -45,14 +47,14 @@ const EntryHistory = (type, data) => initComponent({
 
       setContent(`#${id}-body`, WithRemoteData({
         remoteData: getVersions(type, data.dbRef),
-        component: ({ versions }) => {
+        component: ({ versions, addedDate }) => {
           const past = (versions ?? []).length - 1
           const count = el(`#${id}-count`)
           if (count) {
             count.textContent =
               past === 0 ? 'no edits yet' : past === 1 ? '1 earlier version' : `${past} earlier versions`
           }
-          return Versions(type, data, versions ?? [])
+          return Versions(type, data, versions ?? [], addedDate)
         },
       }))
     })
@@ -63,25 +65,42 @@ Components.List.EntryHistory = EntryHistory
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const Versions = (type, data, versions) => initComponent({
-  content: ({ include }) =>
-    versions.length <= 1
-      ? html`
-        <div class="history-empty">
-          Nothing has been changed yet. The next time you save this entry, the
-          version you replaced will show up here.
-        </div>
-      `
-      : html`
-        <ol class="version-list">
-          ${include(
-            versions.map((version, index) =>
-              Version(type, data, version, versions[index + 1])
-            )
-          )}
-        </ol>
-      `,
-})
+/**
+ * When the oldest version is not the entry as it was added — the entry is
+ * older than its history — the moment it was added is still known, from its
+ * id, and closes the timeline as a row of its own with nothing to open.
+ */
+const Versions = (type, data, versions, addedDate) => {
+  const oldest = versions[versions.length - 1]
+  const addedApart = addedDate != null && !oldest?.isOriginal
+
+  return initComponent({
+    content: ({ include }) => html`
+      <ol class="version-list">
+        ${include(
+          versions.map((version, index) =>
+            Version(type, data, version, versions[index + 1])
+          )
+        )}
+        ${addedApart
+          ? html`
+            <li class="version is-added">
+              <div class="version-row is-static">
+                <span class="version-dot"></span>
+                <span class="version-when" title="${dateTime(addedDate)}">
+                  Added ${timeAgo(addedDate)}
+                </span>
+                <span class="version-chips">
+                  <span class="version-chip is-quiet">not recorded</span>
+                </span>
+              </div>
+            </li>
+          `
+          : ''}
+      </ol>
+    `,
+  })
+}
 
 const Version = (type, data, version, older) => initComponent({
   content: ({ id }) => html`
@@ -96,7 +115,7 @@ const Version = (type, data, version, older) => initComponent({
         ${icon('chevron-down', { id: `${id}-caret`, class: 'version-caret' })}
       </div>
       <div id="${id}-detail" class="version-detail" style="display: none;">
-        ${changesHtml(version, older)}
+        ${older ? changesHtml(type, version, older) : stateHtml(type, version)}
         ${version.isCurrent
           ? ''
           : html`
@@ -146,10 +165,13 @@ const Version = (type, data, version, older) => initComponent({
 
 /** The fields a version touched, as chips — the summary you scan. */
 const chipsHtml = (version, older) => {
+  if (!older) {
+    return version.isOriginal
+      ? html`<span class="version-chip is-added">added</span>`
+      : html`<span class="version-chip is-quiet">earliest recorded</span>`
+  }
   if (version.changes.length === 0) {
-    return html`<span class="version-chip is-quiet">${
-      older ? 'no change' : 'first version'
-    }</span>`
+    return html`<span class="version-chip is-quiet">no change</span>`
   }
 
   const shown = version.changes.slice(0, MAX_CHIPS)
@@ -160,13 +182,11 @@ const chipsHtml = (version, older) => {
   }`
 }
 
-const changesHtml = (version, older) => {
+const changesHtml = (type, version, older) => {
   if (version.changes.length === 0) {
-    return html`<div class="version-note">${
-      older
-        ? 'This save changed none of the fields kept in the history.'
-        : 'The earliest version recorded. What came before it is unknown.'
-    }</div>`
+    return html`<div class="version-note">
+      This save changed none of the fields kept in the history.
+    </div>`
   }
 
   const fields = version.changes.filter((field) => field !== 'review')
@@ -175,18 +195,73 @@ const changesHtml = (version, older) => {
   return html`${
     fields.length > 0
       ? html`<table class="field-changes">${
-          fields.map((field) => fieldRowHtml(field, version, older))
+          fields.map((field) => fieldRowHtml(type, field, version, older))
         }</table>`
       : ''
   }${hasReview ? reviewDiffHtml(version, older) : ''}`
 }
 
-const fieldRowHtml = (field, version, older) => html`
+/**
+ * The oldest version, whole: every field it held, since there is no version
+ * before it to show a change against. `workRef` is left out because it is an
+ * id, and the work it names is the cover and the title the form already shows.
+ */
+const stateHtml = (type, version) => {
+  const snapshot = version.snapshot ?? {}
+  const fields = STATE_FIELDS.filter((field) => !isBlank(snapshot[field]))
+  const overrides = Object.keys(snapshot.overrides ?? {})
+    .filter((field) => !isBlank(snapshot.overrides[field]))
+    .sort()
+    .map((field) => `overrides.${field}`)
+
+  return html`
+    <div class="version-note">${
+      version.isOriginal
+        ? 'The entry as it was first added.'
+        : 'The earliest version recorded. What came before it is unknown.'
+    }</div>
+    <table class="field-state">${
+      [...fields, ...overrides].map((field) => html`
+        <tr>
+          <td class="field-name">${
+            // What the form calls a Planned entry's score.
+            field === 'score' && snapshot.status === 'Planned' ? 'Preference' : fieldLabel(field)
+          }</td>
+          <td>${displayValue(type, field, valueOf(snapshot, field))}</td>
+        </tr>
+      `)
+    }</table>
+    ${isBlank(snapshot.review)
+      ? ''
+      : html`
+        <div class="review-diff">
+          <div class="review-diff-header">
+            <span class="field-name">Comments</span>
+          </div>
+          <div class="review-diff-body review-whole">${snapshot.review}</div>
+        </div>
+      `}
+  `
+}
+
+/** The personal fields, in the order the form lays them out. */
+const STATE_FIELDS = ['status', 'score', 'startedDate', 'completedDate', 'progress']
+
+const isBlank = (value) =>
+  value == null || value === '' || (Array.isArray(value) && !value.length)
+
+/** A status reads as the list names it: "To read", not "Planned". */
+const displayValue = (type, field, value) =>
+  field === 'status' && !isBlank(value)
+    ? Conversions.statusToTitle(type, value) ?? String(value)
+    : formatValue(field, value)
+
+const fieldRowHtml = (type, field, version, older) => html`
   <tr>
     <td class="field-name">${fieldLabel(field)}</td>
-    <td class="field-old">${formatValue(field, valueOf(older?.snapshot, field))}</td>
+    <td class="field-old">${displayValue(type, field, valueOf(older?.snapshot, field))}</td>
     <td class="field-arrow">${icon('arrow-right')}</td>
-    <td class="field-new">${formatValue(field, valueOf(version.snapshot, field))}</td>
+    <td class="field-new">${displayValue(type, field, valueOf(version.snapshot, field))}</td>
   </tr>
 `
 
@@ -345,12 +420,6 @@ const historyStyle = css`
   .history-header:hover .history-chevron {
     color: #0e9ce0;
   }
-  .history-empty {
-    color: #888;
-    font-size: 13px;
-    padding: 0 4px 16px;
-    max-width: 520px;
-  }
 
   .version-list {
     list-style: none;
@@ -436,6 +505,19 @@ const historyStyle = css`
     padding: 1px 8px;
     white-space: nowrap;
   }
+  .version-chip.is-added {
+    color: #0e9ce0;
+    background: #f2fafd;
+  }
+  .version-row.is-static {
+    cursor: default;
+  }
+  .version-row.is-static:hover {
+    background: transparent;
+  }
+  .version.is-added .version-when {
+    color: #888;
+  }
   .version-chip.is-quiet {
     color: #999;
     background: transparent;
@@ -465,6 +547,20 @@ const historyStyle = css`
   .field-changes {
     font-size: 13px;
     margin-bottom: 10px;
+  }
+  .field-state {
+    font-size: 13px;
+    margin: 8px 0 10px;
+  }
+  .field-state td {
+    padding: 2px 14px 2px 0;
+    vertical-align: top;
+  }
+  .review-whole {
+    padding: 6px 10px;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
   .field-changes td {
     padding: 2px 10px 2px 0;
