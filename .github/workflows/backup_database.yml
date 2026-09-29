@@ -13,14 +13,27 @@
 #
 # So the two stay separate and both keep running. They answer different
 # questions: that one asks "can I undo what I am about to do", this one asks
-# "is there a copy of the database that is not in the Google Drive folder
-# holding the code and the credentials".
+# "is there a copy of the database that is not on the machine holding the
+# code and the credentials".
 #
-# **This is the only backup that exists.** The cluster is Atlas M0, where
-# `Disaster Recovery` reads `Backups Inactive` — the free tier has no provider
-# backup at all, and its three-node replica set replicates a deletion as fast
-# as it replicates anything else. The artifact below and the `backups/`
-# directory on Drive are the two copies, and only one of them is off Drive.
+# **This is the only current copy off that machine.** The cluster is Atlas M0,
+# where `Disaster Recovery` reads `Backups Inactive` — the free tier has no
+# provider backup at all, and its three-node replica set replicates a deletion
+# as fast as it replicates anything else. Where snapshots live as of
+# 2026-09-29 (#482):
+#
+# - `src/db_maintenance/backups/` in the main checkout, which is on local disk
+#   now rather than Drive — the same disk as the code and the `.env`, so it
+#   does not survive whatever takes that disk out.
+# - A hand-made copy of that directory on Google Drive, updated by nobody on
+#   a schedule and twelve days stale on that date.
+# - The artifacts this workflow and refresh_metadata.yml upload, 90 days each.
+#   This repository is public, and so are its artifacts: anyone signed in to
+#   GitHub can download them, and a snapshot includes the `users` collection.
+#
+# Whether to keep a scheduled off-machine copy that does not depend on the
+# artifacts, and where, is undecided; src/db_maintenance/README.md lists the
+# options.
 name: Back up the database
 
 on:
@@ -62,13 +75,13 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The same Node as `netlify.toml`, `ci.yml` and the refresh.
       # `src/db_maintenance` is CommonJS and requires three modules out of
       # `src/api`, which is ESM, so this needs a Node where `require(esm)` is
       # unflagged — 22.12 and up. See CLAUDE.md.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -76,9 +89,9 @@ jobs:
       - run: npm ci --omit=dev
 
       # `--no-prune` because the retention policy in `backup_plan.js` is about
-      # the Drive directory's history, and this snapshot is not part of it —
-      # the runner's disk is thrown away either way. Retention here is the
-      # artifact's own 90 days.
+      # the `backups/` directory's history, and this snapshot is not part of
+      # it — the runner's disk is thrown away either way. Retention here is
+      # the artifact's own 90 days.
       #
       # `verify_backup.js --live` compares the manifest, the files, their
       # `sha256` and live `countDocuments()`, and exits non-zero when the first
@@ -93,7 +106,7 @@ jobs:
           node src/db_maintenance/scripts/verify_backup.js             --dir="$RUNNER_TEMP/backups" --live
 
       - name: Keep the snapshot
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: snapshot-${{ github.run_id }}
           path: ${{ runner.temp }}/backups

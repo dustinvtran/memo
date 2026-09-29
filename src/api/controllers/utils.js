@@ -178,6 +178,31 @@ const toEntryType = (entryCollection) =>
 const toReviewCollection = (entryCollection) =>
   /** @type any */ (workTypes.byEntryCollection(entryCollection)?.reviews)
 
+/**
+ * How many entries a caller asked for: a positive integer, or `undefined`
+ * when it did not ask. Anything else is a 400 that says so.
+ *
+ * Both routes that take one used to read it with `parseInt`, which is lenient
+ * in every direction that matters. `abc` and `0` came out falsy and meant the
+ * whole list; `-1` went through to `$limit`, which the driver refuses, so the
+ * entries route blamed the database for a typo and the export — which read
+ * that refusal as an empty list — answered 200 with nothing in it, and cached
+ * it. `12abc` and `1.5` came out as numbers nobody wrote. The test is on the
+ * text, not on what `parseInt` makes of it, for that last reason. #463.
+ *
+ * `null` is absent too: it is what Netlify hands a function whose url has no
+ * query string at all.
+ * @type {(text: string | null | undefined) => Result<number | undefined, Error>}
+ */
+const toLimit = (text) => {
+  if (text === undefined || text === null) return ok(undefined)
+
+  const limit = Number(text)
+  return /^[1-9][0-9]*$/.test(text) && Number.isSafeInteger(limit)
+    ? ok(limit)
+    : err(errors.req(undefined, `limit must be a positive integer, not "${text}"`))
+}
+
 export {
   getUserId,
   getSessionUserId,
@@ -189,6 +214,7 @@ export {
   toEntryCollection,
   toEntryType,
   toReviewCollection,
+  toLimit,
 }
 
 ///////////////////////////////////////////////////////////////////////////////

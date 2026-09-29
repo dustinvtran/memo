@@ -134,6 +134,16 @@ under `src/db_maintenance/backups/` are the exception and are kept
 deliberately; `backup_database.js` prunes them on its own schedule, so leave
 them alone.
 
+**Where snapshots live**, since the section below reads as though the answer
+were Drive. As of 2026-09-29 (#482): in `src/db_maintenance/backups/` of the
+main checkout, which is on local disk — the same disk as the code and the
+`.env`; in a hand-made copy on Google Drive that nothing updates, twelve days
+stale on that date; and in the workflow artifacts `backup_database.yml` and
+`refresh_metadata.yml` upload, the only current copies off this machine. The
+repository is public and so are those artifacts. Whether to add a scheduled
+off-machine copy, and where, is undecided — `src/db_maintenance/README.md`
+lists the options and is where the choice gets written down.
+
 ## npm and Google Drive
 
 **`node_modules` in the Drive-synced working copy is unusable.** Drive's
@@ -144,7 +154,8 @@ An install takes 10+ minutes and then doesn't work.
 Copy the repo to local disk (excluding `node_modules`, `.git`, `backups`
 and `.env`), `npm ci` there — about 9 seconds — and invoke scripts by their
 local path, pointing them back at the Drive copy's `.env` and `backups` so
-the credentials and the snapshots never leave Drive:
+neither is duplicated onto local disk (this is for a checkout that is on
+Drive; the main one is not any more, see above):
 
 ```
 MEMO_ENV_FILE=/path/on/drive/.env \

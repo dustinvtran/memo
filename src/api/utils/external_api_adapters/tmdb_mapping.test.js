@@ -350,3 +350,58 @@ test('a search that matched nothing is an empty list', () => {
   assert.deepEqual(toSearchResults(FILM_MAPPING, {}), [])
   assert.deepEqual(toSearchResults(FILM_MAPPING, undefined), [])
 })
+
+///////////////////////////////////////////////////////////////////////////////
+// No list stores one name twice, which is #481.
+
+test('an actor billed for two characters is listed once, at the first billing', () => {
+  const cast = [
+    { name: 'Lead', order: 0, character: 'Twin A' },
+    { name: 'Second', order: 1 },
+    { name: 'Lead', order: 2, character: 'Twin B' },
+  ]
+
+  assert.deepEqual(notableActors(cast), ['Lead', 'Second'])
+})
+
+test('a repeat does not cost the cast one of its ten places', () => {
+  // Removed before the cut to ten, not after, or a film with one doubled
+  // role would store nine names.
+  const cast = [
+    { name: 'Actor 0', order: 0 },
+    { name: 'Actor 0', order: 1 },
+    ...Array.from({ length: 12 }, (_, i) => ({ name: `Actor ${i + 1}`, order: i + 2 })),
+  ]
+  const actors = notableActors(cast)
+
+  assert.equal(actors.length, MAX_ACTORS)
+  assert.equal(new Set(actors).size, MAX_ACTORS)
+  assert.equal(actors.at(-1), 'Actor 9')
+})
+
+test('a director credited twice, a creator listed twice and a doubled genre are each kept once', () => {
+  assert.deepEqual(
+    directorNames([
+      { name: 'Co-Director', job: 'Director' },
+      { name: 'Co-Director', job: 'Series Director' },
+      { name: 'Other', job: 'Director' },
+    ], SHOW_DIRECTOR_JOBS),
+    ['Co-Director', 'Other'],
+  )
+  assert.deepEqual(creatorNames([{ name: 'Creator' }, { name: 'Creator' }]), ['Creator'])
+  assert.deepEqual(genreNames([{ name: 'Drama' }, { name: 'Drama' }, { name: 'Crime' }]), ['Drama', 'Crime'])
+})
+
+test('a work mapped from a response with repeats stores none of them', () => {
+  const work = toWork(FILM_MAPPING, '1', {
+    title: 'Film',
+    genres: [{ name: 'Drama' }, { name: 'Drama' }],
+  }, {
+    crew: [{ name: 'Director', job: 'Director' }, { name: 'Director', job: 'Director' }],
+    cast: [{ name: 'Lead', order: 0 }, { name: 'Lead', order: 1 }],
+  })
+
+  assert.deepEqual([...work.genres], ['Drama'])
+  assert.deepEqual([...work.directors], ['Director'])
+  assert.deepEqual([...work.actors], ['Lead'])
+})

@@ -809,6 +809,34 @@ test('a list read the database refuses is a 500, and says nothing more', options
   assert.deepEqual(body, { error: 'DBError', message: 'the database did not answer' })
 })
 
+test('a limit that is not a positive integer is a 400, not a database outage', options, async () => {
+  // `-1` went to `$limit` as it was, the driver refused it, and the caller was
+  // told the database did not answer. `abc` and `0` were the whole list. The
+  // database refuses every read of the list here, so the 400 has to be decided
+  // before it is asked. #463.
+  for (const limit of ['-1', '0', 'abc', '1.5', '12abc']) {
+    seedSavedEntry()
+    broken = { collection: 'filmEntries', op: 'aggregate' }
+
+    const { statusCode, body } = await call(entries, 'GET', `entries/films/nil/${limit}`)
+
+    assert.equal(statusCode, 400, limit)
+    assert.deepEqual(body, {
+      error: 'RequestError',
+      message: `limit must be a positive integer, not "${limit}"`,
+    })
+  }
+})
+
+test('a positive limit still reads the list', options, async () => {
+  seedSavedEntry()
+
+  const { statusCode, body } = await call(entries, 'GET', 'entries/films/nil/200')
+
+  assert.equal(statusCode, 200)
+  assert.equal(body[0].dbRef, 'e1')
+})
+
 test('a username nobody has taken is a 404, not an empty list', options, async () => {
   seedSavedEntry()
 

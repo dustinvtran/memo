@@ -295,6 +295,54 @@ test("an ordinary title renders a closed link and the placeholder cover", () => 
   );
 });
 
+// A list row draws its cover sixteen pixels wide, and a film or show stores a
+// 300×450 poster — until #483 on a host that answered each one with a
+// redirect first. The row asks TMDB's CDN for `w92` of the same file instead.
+// The comment panel reads `imageUrl` itself, so the full poster stays there.
+const coverOf = (imageUrl) =>
+  title({ englishTranslatedTitle: "Nil", imageUrl }).match(/src="([^"]*)"/)[1];
+
+test("a TMDB poster on the old host is drawn from the CDN at w92", () => {
+  assert.equal(
+    coverOf("https://www.themoviedb.org/t/p/w300_and_h450_bestv2/ve72.jpg"),
+    "https://image.tmdb.org/t/p/w92/ve72.jpg"
+  );
+});
+
+test("a TMDB poster already on the CDN is shrunk to w92", () => {
+  assert.equal(
+    coverOf("https://image.tmdb.org/t/p/w300_and_h450_bestv2/ve72.jpg"),
+    "https://image.tmdb.org/t/p/w92/ve72.jpg"
+  );
+});
+
+test("a cover on any other host is drawn from the url as stored", () => {
+  for (const url of [
+    "https://images.igdb.com/igdb/image/upload/t_thumb/co1r7f.jpg",
+    "https://books.google.com/books/content?id=x&printsec=frontcover",
+    "https://image.tmdb.org.evil.test/t/p/w300_and_h450_bestv2/ve72.jpg",
+    "/img/local.png",
+  ]) {
+    assert.equal(coverOf(url), url.replace(/&/g, "&amp;"));
+  }
+});
+
+test("a TMDB url that is not a poster path is left alone", () => {
+  const url = "https://www.themoviedb.org/movie/693134";
+  assert.equal(coverOf(url), url);
+});
+
+test("the thumbnail follows an imageUrl override, not the stored cover", () => {
+  const rendered = title(
+    {
+      englishTranslatedTitle: "Nil",
+      imageUrl: "https://image.tmdb.org/t/p/w300_and_h450_bestv2/stored.jpg",
+    },
+    { imageUrl: "https://www.themoviedb.org/t/p/original/mine.jpg" }
+  );
+  assert.ok(rendered.includes('src="https://image.tmdb.org/t/p/w92/mine.jpg"'));
+});
+
 test("a title cannot inject markup into a list", () => {
   const rendered = title({
     englishTranslatedTitle: '<img src=x onerror="alert(1)">',

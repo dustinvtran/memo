@@ -28,9 +28,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -53,6 +53,26 @@ jobs:
       # xargs still fails the step if any one of them exits non-zero.
       - name: Syntax check every JS file
         run: git ls-files '*.js' | xargs -n1 -P4 node --check
+
+      # `node --check` and esbuild both accept a comment holding a stray
+      # Windows-1252 byte, so an editor that saves in the wrong encoding
+      # breaks nothing that runs and only shows up as `�` on GitHub. #459 did
+      # that to two files (#469). `git grep -I` is git's own notion of a
+      # text file, so images and fonts are left out without a list of them.
+      - name: Every tracked text file is UTF-8
+        run: |
+          git grep -Iz --name-only -e '' | node -e '
+            const fs = require("fs")
+            const files = fs.readFileSync(0, "utf8").split("\0").filter(Boolean)
+            const decoder = new TextDecoder("utf-8", { fatal: true })
+            const bad = files.filter((file) => {
+              try { decoder.decode(fs.readFileSync(file)); return false }
+              catch { return true }
+            })
+            for (const file of bad) console.log(`not UTF-8: ${file}`)
+            console.log(`${files.length} tracked text files read, ${bad.length} not UTF-8`)
+            process.exit(bad.length ? 1 : 0)
+          '
 
   # `npm ci` is the only reader of `package-lock.json` that checks it against
   # `package.json` at all, and #396 is what happens when every reader in CI
@@ -94,7 +114,7 @@ jobs:
   lockfile:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Node 24 like every other job here, which is not only tidiness:
       # `scripts/check_function_dependencies.js` reads every `node-version:`
@@ -103,7 +123,7 @@ jobs:
       # Node 24, rather than had for free by running this job on the Node 22
       # that still bundles it. Which is the better shape anyway: the version
       # this job turns on is then asked for by name rather than inherited.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -166,14 +186,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Matches `netlify.toml`'s `NODE_VERSION`, and the script below asserts
       # it rather than leaving this comment to be believed. The point of
       # building here is to build the way Netlify does — and since Netlify
       # derives the functions runtime from the build, this number is also what
       # the deployed API runs on (#198).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm

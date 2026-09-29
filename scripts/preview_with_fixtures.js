@@ -91,13 +91,45 @@ const dune = {
   externalUrls: [{ name: "tmdb", url: "https://www.themoviedb.org/movie/693134" }],
 };
 
+/**
+ * A work with a real poster, stored the way every film and show written
+ * before #483 stored one: on `www.themoviedb.org`, which redirects, at
+ * 300×450. The list row should ask `image.tmdb.org` for `w92` of the same
+ * file, and the comment panel should still show this url.
+ */
+const spaceOdyssey = {
+  _id: "w-2001",
+  entryType: "Film",
+  apiRefs: ["tmdb__62"],
+  englishTranslatedTitle: "2001: A Space Odyssey",
+  originalTitle: "2001: A Space Odyssey",
+  releaseYear: 1968,
+  duration: 149,
+  imageUrl: "https://www.themoviedb.org/t/p/w300_and_h450_bestv2/ve72VxNqjGM69Uky4WTo2bK6rfq.jpg",
+  genres: ["Science Fiction", "Mystery", "Adventure"],
+  directors: ["Stanley Kubrick"],
+  actors: ["Keir Dullea", "Gary Lockwood"],
+  externalUrls: [{ name: "tmdb", url: "https://www.themoviedb.org/movie/62" }],
+};
+
+/**
+ * An entry's id is one of two shapes, and neither says when it was made: the
+ * UUID `_create` mints, or the 18-digit id an entry from before the move to
+ * Mongo kept from Fauna. So only an entry created since `addedDate` existed
+ * carries one, and the Fauna-id row here has none, as 3,164 of production's
+ * entries do not. #461.
+ */
+const LINKED = "0e4cb1bb-95c5-4f2e-9d7a-3b1c8e5a2f60";
+const SEASON = "361538496209371213";
+
 const entries = {
   films: [
     {
       // An ordinary linked entry with nothing overridden. No hint should show
       // on any field, and no link panel at all.
-      dbRef: "e-linked",
+      dbRef: LINKED,
       userId: "u1",
+      addedDate: Date.parse("2023-11-02T19:04:11Z"),
       status: "Completed",
       score: 8,
       completedDate: Date.parse("2024-06-01"),
@@ -106,10 +138,23 @@ const entries = {
       commonMetadata: dune,
     },
     {
+      // A film with a stored TMDB poster, for the list thumbnail (#483).
+      dbRef: "7d2a9e41-3c6b-4f80-a15e-9b8c0d4e6f23",
+      userId: "u1",
+      addedDate: Date.parse("2023-03-12T21:47:05Z"),
+      status: "Completed",
+      score: 9,
+      completedDate: Date.parse("2023-03-12"),
+      workRef: spaceOdyssey._id,
+      overrides: {},
+      commonMetadata: spaceOdyssey,
+    },
+    {
       // A Planned film. Its completed-date container is hidden, which is why
       // this is the status that carried an invisible date until #370.
-      dbRef: "e-planned",
+      dbRef: "f96cdd50-299b-4a8e-b1d2-6c0e7f3a9b14",
       userId: "u1",
+      addedDate: Date.parse("2026-09-17T08:30:00Z"),
       status: "Planned",
       score: null,
       completedDate: null,
@@ -120,8 +165,9 @@ const entries = {
     {
       // An entry with no work, written for something the databases did not
       // have yet. The link panel belongs on this one and on no other.
-      dbRef: "e-unlinked",
+      dbRef: "ecac07aa-0f8f-4d61-8e3b-2a9c5d7e1f08",
       userId: "u1",
+      addedDate: Date.parse("2026-01-12T20:15:00Z"),
       status: "Planned",
       score: null,
       completedDate: null,
@@ -146,7 +192,7 @@ const entries = {
     {
       // A season: the entry overrides a field of a real work, which is the
       // only shape that renders the override hint.
-      dbRef: "e-season",
+      dbRef: SEASON,
       userId: "u1",
       status: "Completed",
       score: 7,
@@ -203,25 +249,30 @@ const WORKS = {
 };
 
 /**
- * An entry's history, built by the API's own `toVersionList` so its shape
- * cannot drift from what `GET /api/revisions/:type/:ref` answers. The real
- * route reads `addedDate` out of the entry's ObjectId; these dbRefs are not
- * ObjectIds, so each case says its date outright. One case per way the
- * timeline can end:
+ * An entry's history, built by the API's own `addedDateOf` and
+ * `toVersionList` so its shape cannot drift from what
+ * `GET /api/revisions/:type/:ref` answers. One case per way the timeline can
+ * end today:
  *
- * - `e-linked` was added as Planned and edited twice since, so its oldest
+ * - `LINKED` was added as Planned and edited twice since, so its oldest
  *   version *is* the entry as added, and opens to show all of it.
- * - `e-season` is older than its history: the oldest version dates from years
- *   after the entry's id, so the timeline ends on a bare "Added" row.
+ * - `SEASON` has a Fauna id and no `addedDate`, so nothing says when it was
+ *   added and the timeline ends on "What came before it is unknown".
  * - every other entry has never been edited, and its only version is both
  *   the current one and the one it was added with.
+ *
+ * The bare "Added" row, for an entry whose history begins after it was added,
+ * has no case. An entry that knows its `addedDate` has had a history since
+ * then, and reaches that row only when a save that changed nothing moved its
+ * `updatedDate` on before the first real edit.
  */
-const { toVersionList } = require("../src/api/utils/revision_history.js");
+const { addedDateOf, toVersionList } = require("../src/api/utils/revision_history.js");
 
 const DAY = 24 * 60 * 60 * 1000;
+const rowOf = (dbRef) => Object.values(entries).flat().find((row) => row.dbRef === dbRef);
 const HISTORIES = {
-  "e-linked": () => {
-    const added = Date.parse("2023-11-02T19:04:11Z");
+  [LINKED]: () => {
+    const added = addedDateOf(rowOf(LINKED));
     return {
       addedDate: added,
       versions: toVersionList(
@@ -231,15 +282,15 @@ const HISTORIES = {
           snapshot: { status: "Completed", score: 8, completedDate: Date.parse("2024-06-01"), workRef: dune._id, review: "Better the second time.\nThe sound alone." },
         },
         [
-          { id: "r1", createdDate: added + 300, snapshot: { status: "Planned", score: 9, workRef: dune._id } },
+          { id: "r1", createdDate: added, snapshot: { status: "Planned", score: 9, workRef: dune._id } },
           { id: "r2", createdDate: Date.parse("2024-06-01"), snapshot: { status: "Completed", score: 8, completedDate: Date.parse("2024-06-01"), workRef: dune._id, review: "Better the second time." } },
         ],
         added,
       ),
     };
   },
-  "e-season": () => {
-    const added = Date.now() - 6 * 365 * DAY;
+  [SEASON]: () => {
+    const added = addedDateOf(rowOf(SEASON));
     return {
       addedDate: added,
       versions: toVersionList(
@@ -253,12 +304,12 @@ const HISTORIES = {
 
 const versionsOf = (dbRef) => {
   if (HISTORIES[dbRef]) return HISTORIES[dbRef]();
-  const entry = Object.values(entries).flat().find((row) => row.dbRef === dbRef);
-  const added = Date.now() - 12 * DAY;
+  const entry = rowOf(dbRef);
+  const added = addedDateOf(entry);
   return {
     addedDate: added,
     versions: toVersionList(
-      { id: "current", createdDate: added + 500, snapshot: { status: entry?.status ?? "Planned", score: entry?.score, overrides: entry?.overrides } },
+      { id: "current", createdDate: added, snapshot: { status: entry?.status ?? "Planned", score: entry?.score, overrides: entry?.overrides } },
       [],
       added,
     ),
@@ -269,6 +320,9 @@ const send = (res, code, body, type = "application/json") => {
   res.writeHead(code, { "content-type": type });
   res.end(typeof body === "string" ? body : JSON.stringify(body));
 };
+
+/** What `responses.fromError` answers for `errors.notFound()`. */
+const NOT_FOUND = { error: "NotFound", message: "not found" };
 
 const emptyTally = () =>
   Object.fromEntries([...Array(10)].map((_, i) => [String(i + 1), 0]).concat([["unrated", 0]]));
@@ -295,7 +349,8 @@ const api = (url, method, res) => {
 
   // `/name` is the signed-in user; 401 here is what makes `isOwner` false and
   // hides the edit buttons. `/name/:name` wraps its answer in `data`, and a
-  // bare `{}` renders Error404.
+  // name nobody has taken is a 404, which the list page draws as Error404 —
+  // a bare `{}` until #477.
   //
   // It answers as the owner whatever the browser sends, with no `nf_jwt`
   // cookie and no `Authorization` header, which is deliberate — the edit
@@ -304,18 +359,22 @@ const api = (url, method, res) => {
   // logged-out reader sees is not what this route shows; the thing to watch
   // for #397 is whether the request is made at all.
   if (route === "name" && rest.length === 0) return send(res, 200, { username: USERNAME });
-  if (route === "name") return send(res, 200, { data: { username: rest[0] } });
+  if (route === "name") {
+    return rest[0] === USERNAME
+      ? send(res, 200, { data: { username: USERNAME } })
+      : send(res, 404, NOT_FOUND);
+  }
 
   // `/user/:name` is the profile page's first request and everything on that
   // page is inside it, so without this route the whole page was one error
   // line — the menu and the biography included, which is where #397's second
   // 401 came from. Only the public half of the document: `userId` and the
   // stats blob are deliberately not in the answer (#105), and a name nobody
-  // has taken is a bare `{}`, which is what the page turns into Error404.
+  // has taken is a 404, which is what the page turns into Error404 (#477).
   if (route === "user") {
-    return send(res, 200, rest[0] === USERNAME
-      ? { data: { username: USERNAME, biography: "Fixtures, mostly.\n\n## A heading\n\nMarkdown, because the biography is rendered through `marked`." } }
-      : {});
+    return rest[0] === USERNAME
+      ? send(res, 200, { data: { username: USERNAME, biography: "Fixtures, mostly.\n\n## A heading\n\nMarkdown, because the biography is rendered through `marked`." } })
+      : send(res, 404, NOT_FOUND);
   }
 
   // A **raw array**, not an envelope.
@@ -327,7 +386,14 @@ const api = (url, method, res) => {
       updatedDate: Date.now(),
     });
   }
-  if (route === "reviews" && method === "GET") return send(res, 200, { data: { text: "" } });
+  // A dbRef no fixture has is a 404, as the real route answers since #477.
+  // The real one also 400s an id with punctuation in it, which no fixture can
+  // produce; `reviews.test.js` has that half.
+  if (route === "reviews" && method === "GET") {
+    return Object.values(entries).flat().some((row) => row.dbRef === rest[1])
+      ? send(res, 200, { data: { text: "" } })
+      : send(res, 404, NOT_FOUND);
+  }
 
   // `versions[].changes` must be an array, or `chipsHtml` throws on its length
   // and the history panel sits on its loader for ever.

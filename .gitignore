@@ -8,8 +8,11 @@
 /src/db_maintenance/backups
 /mongobackup
 
-# secrets and errors
+# secrets and errors. `.env.*` is for the copies a debugging session makes —
+# `.env.bak`, `.env.local` — which `env.js` never reads (#473).
 .env
+.env.*
+!.env.example
 /yarn-error.log
 
 # macOS related files

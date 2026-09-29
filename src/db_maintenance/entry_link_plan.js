@@ -40,6 +40,8 @@ const {
   normalizeTitle,
 } = require("./work_collections");
 const { filedAs } = require("../api/utils/entry_state");
+const { isBlankList } = require("./blank_override_check");
+const { isAddressable } = require("./blank_override_plan");
 
 /**
  * Why this entry cannot be attached here, or `undefined` if it can.
@@ -175,6 +177,20 @@ const deleteRefusalReason = ({ entry, otherEntries }) => {
  * a year, a director, the genres somebody typed — is theirs and none of it is
  * what this is changing.
  *
+ * **The one exception is an override list with nothing readable in it**, and
+ * linking is what turns it from harmless into damage. An entry with no work
+ * has nothing underneath for `[""]` to hide, which is why the audit counts
+ * those as undecided rather than masking; the moment it has a `workRef`, the
+ * `??` merge in `get` prefers that blank to the work's own directors and
+ * genres — the defect #395 and #428 removed from every linked entry. So a link
+ * unsets them in the same write, each key named in `blankFields` for the dry
+ * run to print. "Blank" is `isBlankList` from ./blank_override_check.js, the
+ * one definition in this folder, so this clears exactly what
+ * scripts/clear_blank_overrides.js would clear the day after. It holds no text
+ * anybody typed, which is the whole argument that separates it from the
+ * `entryTitle` rule below; a `null`, `[]` and a blank scalar are kept, as they
+ * are there. #479.
+ *
  * **`entryTitle` has three values, and the difference between two of them is
  * the whole reason this is written out.** A string sets the override. An empty
  * string removes it. *Leaving the field out* changes nothing — and that is the
@@ -203,11 +219,13 @@ const deleteRefusalReason = ({ entry, otherEntries }) => {
  *
  * @type {(args: {
  *   entry: any, workId: string, entryTitle?: string, entryOriginalTitle?: string,
- * }) => { set: object, unset: object }}
+ * }) => { set: object, unset: object, blankFields: string[] }}
  */
 const linkUpdate = ({ entry, workId, entryTitle, entryOriginalTitle }) => {
   const set = { workRef: String(workId) };
   const unset = {};
+  const blankFields = blankOverrideFields(entry);
+  for (const field of blankFields) unset[`overrides.${field}`] = "";
 
   if (entryTitle !== undefined) {
     const title = normalise(entryTitle);
@@ -225,7 +243,25 @@ const linkUpdate = ({ entry, workId, entryTitle, entryOriginalTitle }) => {
     }
   }
 
-  return { set, unset };
+  // A title set here wins over an unset of the same path: two operators on
+  // one path is a write MongoDB refuses outright.
+  for (const path of Object.keys(set)) delete unset[path];
+
+  return { set, unset, blankFields: blankFields.filter((field) => !(`overrides.${field}` in set)) };
+};
+
+/**
+ * The override keys holding a list with nothing readable in it, which a link
+ * unsets — see `linkUpdate`. A key whose name is not addressable as an
+ * `overrides.<field>` path is left, as ./blank_override_plan.js leaves it.
+ * @type {(entry: any) => string[]}
+ */
+const blankOverrideFields = (entry) => {
+  const overrides = entry?.overrides;
+  if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) return [];
+  return Object.keys(overrides).filter(
+    (field) => isAddressable(field) && isBlankList(overrides[field])
+  );
 };
 
 /**
@@ -360,6 +396,7 @@ module.exports = {
   workTitleUpdate,
   deleteRefusalReason,
   linkUpdate,
+  blankOverrideFields,
   nameAfter,
   overrideIsRedundant,
 };

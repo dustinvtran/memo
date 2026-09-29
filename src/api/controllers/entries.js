@@ -7,7 +7,7 @@ import * as responses from '../utils/responses.js'
 import * as errors from '../utils/errors.js'
 import { identity } from 'ramda'
 import { ResultAsync, okAsync } from 'neverthrow'
-import { getUserId, getSegment, getReqBody, findIdOfNameOrFail, toEntryCollection, toEntryType, toReviewCollection } from './utils.js'
+import { getUserId, getSegment, getReqBody, findIdOfNameOrFail, toEntryCollection, toEntryType, toReviewCollection, toLimit } from './utils.js'
 import { triplet, quad, toPromise, toAsync, throwIt } from '../utils/general.js'
 import * as db from '../utils/db/index.js'
 import * as updateParsers from '../utils/parsers/updates.js'
@@ -24,14 +24,19 @@ import * as workTypes from '../utils/work_types.js'
  * taken answered `200 []`, the same answer as a real user whose list is empty.
  * A name that is not a user is a 404, which is the distinction export.js draws
  * and explains. #253.
+ *
+ * The limit is read before anything is asked of the database, and a limit
+ * that is not a positive integer is a 400 rather than a `$limit` the driver
+ * refuses and this route reported as a database outage. #463.
  * @type {(event: Event) => Promise<Response>}
  */
 const getAllEntriesForUser = (event) => toPromise(
-  ResultAsync.combine(triplet([
-    findIdOfNameOrFail(getSegment(1, event)),
-    toAsync(toEntryCollection(getSegment(0, event))),
-    okAsync(getSegment(2, event))
-  ]))
+  toAsync(toLimit(getSegment(2, event)))
+    .andThen((limit) => ResultAsync.combine(triplet([
+      findIdOfNameOrFail(getSegment(1, event)),
+      toAsync(toEntryCollection(getSegment(0, event))),
+      okAsync(limit),
+    ])))
     .map(getUserEntries)
     .mapErr(responses.fromError)
 )
@@ -101,10 +106,10 @@ export {
  * the driver's stack, which names every host it tried. `fromError` is the one
  * place a `detail` is logged and then withheld, and it was the one thing being
  * skipped. #250, #105.
- * @type {([uid, col, limit]: [string, ValidCollection, string | undefined]) => Promise<Response>}
+ * @type {([uid, col, limit]: [string, ValidCollection, number | undefined]) => Promise<Response>}
  */
 const getUserEntries = ([uid, col, limit]) => toPromise(
-  db.findAllUserEntriesWithMetadata_(col, uid, parseInt(limit ?? '') || undefined)
+  db.findAllUserEntriesWithMetadata_(col, uid, limit)
     .map((rows) => rows.map(({ entry, work }) => ({
       ...entry,
       commonMetadata: work,
@@ -198,10 +203,16 @@ const createEntry = async ([userId, body, collection]) => {
         await workFor(collection, entryWithoutReview),
       )
       if (impossible) throwIt(errors.req(impossible, `This entry cannot be saved: ${impossible}.`))
+      // One clock reading for both. The history dates the version a save
+      // replaces by its `updatedDate`, so the entry as added is the version
+      // whose date is exactly its `addedDate`. After the body, so a client
+      // cannot choose either.
+      const now = Date.now()
       const created = await orThrow(db.create_(collection, {
         ...entryWithoutReview,
         userId,
-        updatedDate: Date.now(),
+        addedDate: now,
+        updatedDate: now,
       }, session))
 
       // Only when there is a note to write. `reviewParser` insists on a

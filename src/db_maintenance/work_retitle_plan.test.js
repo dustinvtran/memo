@@ -127,3 +127,49 @@ test("the write names one field, and never an entry's", () => {
   assert.deepEqual([...Object.keys(set)], ["englishTranslatedTitle"]);
   assert.deepEqual([...Object.keys(unset)], ["metadataUpdatedDate"]);
 });
+
+test("widening a game to the whole clears the playtime measured for the part", () => {
+  // #467. The row CLAUDE.md gives: nine hours of a twenty-five hour trilogy.
+  // A stored duration is only replaced by its own source, so a rename that
+  // left it would leave it for good.
+  const spyro = {
+    _id: "w2",
+    entryType: "Game",
+    englishTranslatedTitle: "Spyro Reignited Trilogy: Spyro 2",
+    apiRefs: ["igdb__103350"],
+    duration: 540,
+    durationSource: "igdb",
+  };
+  assert.equal(
+    retitleRefusalReason({
+      collection: games, work: spyro,
+      retitleTo: "Spyro Reignited Trilogy",
+      retrieved: { englishTranslatedTitle: "Spyro Reignited Trilogy" },
+    }),
+    undefined
+  );
+
+  const { set, unset, cleared } = retitleUpdate(spyro, "Spyro Reignited Trilogy", games);
+  assert.equal(set.englishTranslatedTitle, "Spyro Reignited Trilogy");
+  assert.deepEqual([...cleared], ["duration", "durationSource"]);
+  assert.deepEqual(
+    [...Object.keys(unset)],
+    ["metadataUpdatedDate", "duration", "durationSource"]
+  );
+});
+
+test("a widening clears only what the work has, and a respelling clears nothing", () => {
+  const noSource = {
+    _id: "w3",
+    englishTranslatedTitle: "Resident Evil 4: Assignment Ada",
+    apiRefs: ["igdb__974"],
+    duration: 60,
+  };
+  assert.deepEqual([...retitleUpdate(noSource, "Resident Evil 4", games).cleared], ["duration"]);
+
+  // Not a part becoming a whole: the stored title does not contain the new one.
+  const misspelt = { ...noSource, englishTranslatedTitle: "Resident Evil IV" };
+  const { cleared, unset } = retitleUpdate(misspelt, "Resident Evil 4", games);
+  assert.deepEqual([...cleared], []);
+  assert.deepEqual([...Object.keys(unset)], ["metadataUpdatedDate"]);
+});

@@ -16,12 +16,12 @@ The scripts, and the section below that explains each:
 | `check_export_size.js` | Measures every body `/api/export` would send, by driving the route itself, and reports each as a share of the ceiling that endpoint enforces on itself. | never |
 | `backup_database.js` | Takes a timestamped snapshot of every collection and prunes old ones to a retention policy. | to disk only |
 | `verify_backup.js` | Checks a snapshot against its own manifest — every file present, hashing to the `sha256` recorded for it, holding the documents claimed. `--live` also counts the database beside it. | never |
-| `propose_work_refs.js` | Searches each work with no identity ref, and each entry with no work, and writes a worklist of candidates to confirm. `--works=<file>` searches named works instead — the ones whose ref answers with a *different* work, which a query cannot select and `audit_database.js --verify-titles` finds (#448). Its own file is what `set_work_ref.js --from` reads. | never |
+| `propose_work_refs.js` | Searches each work with no identity ref, and each entry with no work, and writes a worklist of candidates to confirm. `--works=<file>` searches named works instead — the ones whose ref answers with a *different* work, which a query cannot select and `audit_database.js --verify-titles` finds (#448); it reads that audit's `--json` as it stands, refuses a row it cannot read an id from, and prints every id that matched no work (#468). Its own file is what `set_work_ref.js --from` reads. | never |
 | `set_work_ref.js` | Gives one work the identity ref it has none of, after asking the API whether that id really names it. Renames it to the API's title when a person has said which of the two is right. A row may name `alternates`, tried in order and each guarded the same way, since the first candidate of a search being wrong is ordinary. | `--apply` |
 | `retitle_work.js` | Renames a work whose ref is right and whose stored title is not, so the title guard stops refusing it. The new title must be exactly what the work's own ref answers with, so nothing is typed. The other half of `set_work_ref.js`, which renames only alongside an id change (#448). | `--apply` |
 | `upgrade_cover_urls.js` | Moves stored book covers from `http://` to `https://` — the scheme only, and only on hosts known to serve the same image over TLS (#394). | `--apply` |
 | `link_entry.js` | Attaches a named entry to the work it belongs on, moves one off a sub-work that should never have been a work, and deletes a duplicate row. Takes its operations from a file a person filled in. | `--apply` |
-| `restore_backup.js` | Puts a snapshot, or one collection of it, back — matching on `_id`. | `--apply` |
+| `restore_backup.js` | Puts a snapshot, or one collection of it, back — matching on `_id`. Needs `--target` naming the host it writes to, and `--production` too when that is production. Skips `apiTokens` unless `--only` names it. | `--apply` |
 | `ensure_indexes.js` | Creates the indexes the site's queries need. Re-running is a no-op. | `--apply` |
 | `backfill_work_metadata.js` | Re-runs the API adapters over cached works, filling gaps and refreshing stale metadata. | `--apply` |
 | `backfill_game_playtimes.js` | Fills in games with no playtime, from IGDB's `/game_time_to_beats`. | `--apply` |
@@ -48,7 +48,9 @@ reach, `prune_unreachable_documents.js --only=reviews` deletes review
 documents holding nothing, `clear_noop_overrides.js` removes the overrides
 that are copies of the work they override, `clear_blank_overrides.js` removes
 the ones holding a list with nothing readable in it, and `link_entry.js`
-writes an entry's `workRef` and the name it is filed under.
+writes an entry's `workRef` and the name it is filed under — and, in the same
+write, unsets that entry's lists of blanks, which hide nothing until the entry
+has a work and then hide the work's own value (#479).
 
 The last three are the ones that reach an override at all, and their
 exceptions are about the overrides rather than in spite of them, so each
@@ -605,9 +607,10 @@ It follows the same discipline as a hand-run `--apply`, in the same order:
 snapshot with `backup_database.js`, verify with `verify_backup.js --live`
 (which exits non-zero on a bad snapshot, so the run stops before it writes),
 then refresh, then audit. The snapshot is kept as a workflow artifact for 90
-days, which would also be the first copy of this database that is not in the
-Google Drive folder that holds the code and the credentials — a piece of #303,
-though not that issue's answer, and not yet a copy of anything.
+days. That, and the daily one `backup_database.yml` keeps, are the only
+current copies of this database away from the machine that holds the code
+and the credentials — see [Where snapshots live](#where-snapshots-live) for
+what that does and does not buy.
 
 **A scheduled run is a dry run until `METADATA_REFRESH_APPLY` is `true`.**
 Merging the workflow does not start a crawl of the whole library; turning it
@@ -1721,31 +1724,71 @@ is never deleted.
 
 **Scheduling.** The script has no state of its own, so `cron`, Task
 Scheduler or any runner works — just give it `MONGODB_URL` and a `--out` that
-is backed up itself (an external drive, a private bucket). Don't publish the
-snapshots: a full dump includes the `users` collection. In particular, don't
-upload them as GitHub Actions artifacts from this repo — artifacts of a public
-repo can be downloaded by anyone.
+is backed up itself. Don't publish the snapshots: a full dump includes the
+`users` collection. That is the rule `backup_database.yml` and
+`refresh_metadata.yml` do not follow today: this repository is public, its
+Actions artifacts are downloadable by anyone signed in to GitHub, and both
+workflows upload a full snapshot as one. See below.
 
 Daily is the cadence the retention policy was written for: "every snapshot
 from the last 14 days" assumes there is one most days. The snapshots taken
 before an `--apply` are not that — they are the trail of maintenance runs,
 and they leave the weeks with no maintenance in them empty.
 
-**Where a scheduled run should live.** The hook is already there:
+### Where snapshots live
+
+As of 2026-09-29 (#482) there are three places, and none of them is a
+scheduled copy off this machine that the owner controls:
+
+- **Local disk.** `src/db_maintenance/backups/` in the main checkout: 104
+  snapshots, 635 MB, pruned by the retention policy above. The checkout moved
+  off Google Drive, so this directory is now on the same disk as the code and
+  the `.env` — it survives a bad `--apply`, not a lost disk.
+- **A hand-made copy on Google Drive.** 67 snapshots, the newest from
+  2026-09-17: copied once by hand, updated by nothing, and twelve days stale
+  on that date. It is off the machine, but only as current as the last time
+  somebody remembered.
+- **Workflow artifacts.** `backup_database.yml` uploads one snapshot a day
+  and `refresh_metadata.yml` one before each applied crawl, each kept 90 days.
+  These are the only current copies away from this machine. They are also,
+  as above, readable by anyone signed in to GitHub, and they exist only as
+  long as the repository's Actions storage does.
+
+Atlas keeps nothing: the cluster is M0 and its `Disaster Recovery` page reads
+`Backups Inactive` (#303).
+
+**What is not decided** is whether to keep a scheduled off-machine copy that
+does not depend on the artifacts, and where. That is the owner's call, and
+this file does not make it. The options raised so far:
+
+- **Leave it at the artifacts.** Nothing new to run or pay for, and the
+  copies are already daily and verified. What it keeps is a public download
+  of the `users` collection, and a history that is 90 days deep and lives on
+  GitHub's account rather than the owner's.
+- **Encrypt the artifact before upload.** Same schedule and storage, with the
+  snapshot unreadable without a key held outside the repository. The key then
+  has to be kept somewhere a restore can reach, and a lost key is a lost
+  backup.
+- **An encrypted copy to a private bucket** — S3, R2, B2 or similar — pushed
+  by the scheduled workflow or by a host that is awake on the schedule. Real
+  retention under the owner's control, at the cost of one more account, one
+  more credential in the repository's secrets, and a small bill.
+- **The Drive folder, on a schedule** rather than by hand, from a machine that
+  can see it. Reuses storage that already exists, but a laptop that has to be
+  open is not a schedule, which is what the stale copy above is a picture of.
+
+Whichever is chosen, write it down here, next to the retention policy: which
+host, which cadence, where `--out` points, who holds any key, and who sees it
+fail.
+
+**Where a scheduled run could live.** The hook is already there:
 `MONGODB_URL` is read from the environment and dotenv never overwrites a
 variable that is already set, so `MONGODB_URL=... node scripts/backup_database.js
 --out=...` runs on a machine with no `.env`, no credentials on disk beyond
 what the runner holds, and no checkout of this repo beyond the scripts
-themselves. Two things decide where: it has to be **awake on the schedule** —
-a laptop that has to be open is not a schedule, which is what the current
-snapshot history is a picture of — and its `--out` should not be the same
-disk as the code and the `.env`, because the point of a backup is to survive
-whatever takes that disk out.
-
-Where it runs is the owner's call and nothing in this repo sets it up. When
-it is decided, write it down here: which host, which cadence, where `--out`
-points, and who sees it fail. **As of 2026-09-02 the answer is nowhere** —
-snapshots are taken by hand before `--apply` runs and at no other time.
+themselves. Two things decide where: it has to be **awake on the schedule**,
+and its `--out` should not be the same disk as the code and the `.env`,
+because the point of a backup is to survive whatever takes that disk out.
 
 **How anyone would notice it had stopped.** A backup job that fails silently
 is worse than no job at all, because it buys the confidence of a backup
@@ -1806,9 +1849,10 @@ it means a collection created after the snapshot has no backup in it at all.
 right *amount* of data"; the digest answers "is this the *same* data". They
 are not the same question, and only the second one catches a file that was
 re-serialised, hand-edited, half-written or truncated by a filesystem — and
-this repo already distrusts the filesystem these snapshots live on (the root
-`CLAUDE.md` on Google Drive, and a Drive checkout losing files during
-ordinary git operations). A snapshot whose counts match and whose digests
+this repo already distrusts Google Drive, where these snapshots used to live
+and a hand-made copy of them still does (the root `CLAUDE.md` on Google
+Drive, and a Drive checkout losing files during ordinary git operations). A
+snapshot whose counts match and whose digests
 don't is a snapshot you must not restore from.
 
 CLAUDE.md asks for a fresh snapshot to be verified — "manifest counts, file
@@ -1835,10 +1879,34 @@ whose files don't match its manifest, and it takes a fresh snapshot of the
 current data before writing anything.
 
 ```
-node scripts/restore_backup.js                           # dry run, newest snapshot
-node scripts/restore_backup.js --only=bookEntries,bookReviews
-node scripts/restore_backup.js --from=snapshot-2024-06-30T04-17-00-000Z --apply
+node scripts/restore_backup.js --target=<host> --production                  # dry run, newest snapshot
+node scripts/restore_backup.js --target=<host> --production --only=bookEntries,bookReviews
+node scripts/restore_backup.js --target=<host> --production --from=snapshot-2024-06-30T04-17-00-000Z --apply
 ```
+
+**It writes only where `--target` says, and never to production by
+default** (#466). `--target` is required, dry run included, and must be the
+host `MONGODB_URL` actually points at — the first line the script prints is
+that host, and a mismatch refuses before anything is read. The production
+host is whichever one the `.env` that `env.js` would load names, read from
+the file itself rather than from `process.env`, since an inline
+`MONGODB_URL=` override is exactly what would hide it. Restoring there needs
+`--production` as well, the same shape as `--apply`; `--production` aimed
+anywhere else is refused too, so the flag always means what it says. With no
+`MONGODB_URL` in that `.env` the script cannot tell which host is production
+and refuses outright — point `MEMO_ENV_FILE` at the one that names it. The
+comparison is on the host text: a `mongodb+srv://` name and the seed list it
+resolves to are one cluster and do not match, which is why the target has to
+equal the URL's own host as well. The rules are in `restore_plan.js`, pure
+and tested.
+
+**It skips `apiTokens` unless `--only` names it** (#465), and prints that it
+did. Restoring puts back what is missing, and a revoked token is exactly a
+document that is missing — so a default restore of a snapshot taken before a
+revocation would make that token valid again. The rest of this folder treats
+"a restore undoes it" as what makes a write safe; for this collection a
+restore puts back a credential rather than data. `--only=apiTokens` restores
+it when that really is the point, say after the collection itself was lost.
 
 A document in the snapshot is written over whatever the database holds under
 that id; a document the database has and the snapshot doesn't is left alone
@@ -1851,8 +1919,9 @@ identify a work (an apiRef, a title) do not: the database really does hold
 27 games sharing `hltb__N/A` and two seasons of Fargo under one tmdb id, so
 anything that grouped documents by those would merge unrelated records.
 
-Useful flags: `--dir=path`, `--from=name|path`, `--only=a,b`, `--prune`,
-`--no-safety-backup`, `--skip-verify`.
+Useful flags: `--target=host`, `--production`, `--dir=path`,
+`--from=name|path`, `--only=a,b`, `--prune`, `--no-safety-backup`,
+`--skip-verify`.
 
 ### The restore drill
 
@@ -1871,7 +1940,9 @@ about: a local `mongod`, or a throwaway Atlas cluster. And pass
 `MONGODB_URL` inline on the command, which beats the `.env` in this folder
 (dotenv never overwrites a variable that is already set — see "How a script
 finds it"), rather than editing the `.env` and hoping to remember to put it
-back.
+back. Since #466 the script checks this as well: `--target` must name the
+scratch host, and the production one is refused without `--production`, so a
+mistyped or unexported variable fails instead of restoring into production.
 
 1. **Verify the snapshot you are about to drill with**, so a failure later is
    the restore's fault and not the snapshot's.
@@ -1881,7 +1952,8 @@ back.
    ```
 
 2. **Point `MONGODB_URL` at the scratch deployment** and confirm what you are
-   aimed at before writing anything. An empty database is the clearest start:
+   aimed at before writing anything — the restore's first line, `Target:`,
+   is the host it will write to. An empty database is the clearest start:
    the counts afterwards should equal the manifest's exactly, with nothing to
    subtract.
 
@@ -1891,8 +1963,8 @@ back.
    would drop an empty snapshot into `backups/`.
 
    ```
-   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot>
-   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot> --apply --no-safety-backup
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --target=<scratch host> --from=<snapshot>
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --target=<scratch host> --from=<snapshot> --apply --no-safety-backup
    ```
 
 4. **Check the counts against the manifest**, which is what
@@ -1915,8 +1987,8 @@ back.
    scratch database, then put that collection back:
 
    ```
-   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot> --only=bookReviews
-   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot> --only=bookReviews --apply --no-safety-backup
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --target=<scratch host> --from=<snapshot> --only=bookReviews
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --target=<scratch host> --from=<snapshot> --only=bookReviews --apply --no-safety-backup
    ```
 
    The assertion is in the dry run: it should report exactly the number you

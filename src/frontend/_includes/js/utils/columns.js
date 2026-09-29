@@ -223,6 +223,35 @@ const get = (row, props) =>
   )
   
 
+/** The hosts TMDB serves a poster from: its image CDN, and the site that redirects to it. */
+const TMDB_IMAGE_HOSTS = ['image.tmdb.org', 'www.themoviedb.org']
+
+/**
+ * The url to draw a cover sixteen pixels wide from, given the stored one.
+ *
+ * A film or show stores a 300×450 poster, which is right for the comment
+ * panel and about seven times what a list row needs, and older rows store it
+ * on `www.themoviedb.org`, which answers every one with a redirect to
+ * `image.tmdb.org`. TMDB paths are `/t/p/<size>/<file>`, so asking the CDN
+ * for `w92` of the same file is the same poster, smaller. Any other host is
+ * left alone: IGDB's is already a thumbnail, and nothing else has a size
+ * segment to swap.
+ */
+const toThumbnailUrl = (imageUrl) => {
+  let url
+  try {
+    url = new URL(imageUrl)
+  } catch {
+    return imageUrl
+  }
+  const segments = url.pathname.split('/')
+  const isTmdbPoster = TMDB_IMAGE_HOSTS.includes(url.host) &&
+    segments.length === 5 && segments[1] === 't' && segments[2] === 'p'
+  if (!isTmdbPoster) return imageUrl
+  segments[3] = 'w92'
+  return `https://image.tmdb.org${segments.join('/')}`
+}
+
 const titleFormatter = (_, row) => {
   const { originalTitle, englishTranslatedTitle, imageUrl, externalUrls } =
     get(row, [
@@ -238,7 +267,8 @@ const titleFormatter = (_, row) => {
   // put in an `href` or a `src`; the title falls back to a Wikipedia search
   // and the cover to the placeholder, exactly as a missing one does.
   const url = toSafeUrl(externalUrls?.[0]?.url) || toWikipediaUrl(englishTranslatedTitle)
-  const cover = toSafeUrl(imageUrl) || '/img/mawaru.png'
+  const safeImageUrl = toSafeUrl(imageUrl)
+  const cover = safeImageUrl ? toThumbnailUrl(safeImageUrl) : '/img/mawaru.png'
   const anchorId = `entry-${row.dbRef}`
   // Lazily: a list is one row per work and every row carries a cover, so a
   // long one asked for a thousand full-size posters at once in order to draw

@@ -60,7 +60,7 @@ jobs:
     if: github.event.pull_request.user.type != 'Bot'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No `setup-node`: the rules are string handling with no dependency on a
       # Node version, so pinning one here would add a fourth number to keep in
