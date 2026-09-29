@@ -551,9 +551,9 @@ affected; strings and numbers cross realms fine.
   honoured it, and the edit form showed the work's value in its place, so the
   next save dropped it. All 1,477 in production were #317 leftovers. Since
   #478 the form refuses to save a field emptied over a work's value, the API
-  refuses a null override, and `clear_null_overrides.js` is the backlog. Code
-  reading overrides may still meet a null until that has been applied, and
-  should read it as absent.
+  refuses a null override, and `clear_null_overrides.js` cleared the backlog
+  on 2026-09-29 — zero left. A snapshot or backup from before that date still
+  carries them, so code reading old data should read a null as absent.
 - **A stored `duration` of `0` is not a duration.** It renders as `-` exactly
   as a missing one does, and since #318 `isEmptyValue` says so, so the audit
   reports it missing, `hasGaps` picks the work up and a `missingOnly` merge
