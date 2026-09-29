@@ -28,6 +28,9 @@ const entryParser = (specificWorkParser) => z.object({
   review: z.string().optional(),
   progress: z.number().nullable().optional(),
   updatedDate: z.number().optional(),
+  // When the entry was created, stamped by the create path. Optional because
+  // the entries made before it have none, and their ids do not say (#461).
+  addedDate: z.number().optional(),
 })
 
 /**
@@ -50,6 +53,10 @@ const entryParser = (specificWorkParser) => z.object({
  *   `commonMetadata: null` on every save; the work is joined on `workRef` and
  *   the field has no business on the entry at all.
  *
+ * It drops **`addedDate`** as well, which never came through the gap but
+ * would have: it is when the entry was created, so no later save may move
+ * it, and the history reads it to tell which version is the entry as added.
+ *
  * Partial, because an update is a partial document — a caller changing a score
  * sends a score. Otherwise it is `entryParser` exactly, so anything the create
  * path accepts this accepts too.
@@ -58,7 +65,7 @@ const entryParser = (specificWorkParser) => z.object({
  */
 const entryUpdateParser = (specificWorkParser) =>
   entryParser(specificWorkParser)
-    .omit({ userId: true, review: true })
+    .omit({ userId: true, review: true, addedDate: true })
     .partial()
 
 export {

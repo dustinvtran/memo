@@ -41,7 +41,7 @@ const getVersions = (event) =>
       findRevisions(entry._id),
     ])
 
-    const addedDate = addedDateOf(entry._id)
+    const addedDate = addedDateOf(entry)
 
     return responses.ok({
       addedDate,

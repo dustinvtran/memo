@@ -203,10 +203,16 @@ const createEntry = async ([userId, body, collection]) => {
         await workFor(collection, entryWithoutReview),
       )
       if (impossible) throwIt(errors.req(impossible, `This entry cannot be saved: ${impossible}.`))
+      // One clock reading for both. The history dates the version a save
+      // replaces by its `updatedDate`, so the entry as added is the version
+      // whose date is exactly its `addedDate`. After the body, so a client
+      // cannot choose either.
+      const now = Date.now()
       const created = await orThrow(db.create_(collection, {
         ...entryWithoutReview,
         userId,
-        updatedDate: Date.now(),
+        addedDate: now,
+        updatedDate: now,
       }, session))
 
       // Only when there is a note to write. `reviewParser` insists on a
