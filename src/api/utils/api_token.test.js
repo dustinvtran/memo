@@ -10,7 +10,13 @@ import {
   isApiToken,
   looksLikeApiToken,
   hashApiToken,
+  MAX_API_TOKEN_LIFETIME_SECONDS,
+  LAST_USED_RESOLUTION_MS,
+  expiresAtOf,
+  isExpired,
+  shouldRecordUse,
 } from './api_token.js'
+import { MAX_SESSION_SECONDS } from './session_token.js'
 
 test('a generated token is prefixed, the right length and never repeats', () => {
   const minted = new Set(Array.from({ length: 100 }, generateApiToken))
@@ -43,4 +49,29 @@ test('a mangled API token still looks like one, and is not one', () => {
   assert.equal(looksLikeApiToken(truncated), true)
   assert.equal(isApiToken(truncated), false)
   assert.equal(isApiToken(undefined), false)
+})
+
+test('a token may not outlive a session', () => {
+  assert.equal(MAX_API_TOKEN_LIFETIME_SECONDS, MAX_SESSION_SECONDS)
+})
+
+test('a stored expiresAt is the answer, and a missing one is the default from createdAt', () => {
+  assert.equal(expiresAtOf({ createdAt: 1000, expiresAt: 5000 }), 5000)
+  assert.equal(
+    expiresAtOf({ createdAt: 1000 }),
+    1000 + MAX_API_TOKEN_LIFETIME_SECONDS * 1000
+  )
+})
+
+test('a token is expired from its expiresAt onward', () => {
+  const stored = { createdAt: 0, expiresAt: 5000 }
+
+  assert.equal(isExpired(stored, 4999), false)
+  assert.equal(isExpired(stored, 5000), true)
+})
+
+test('a use is recorded the first time and then once per resolution', () => {
+  assert.equal(shouldRecordUse({}, 0), true)
+  assert.equal(shouldRecordUse({ lastUsedAt: 0 }, LAST_USED_RESOLUTION_MS - 1), false)
+  assert.equal(shouldRecordUse({ lastUsedAt: 0 }, LAST_USED_RESOLUTION_MS), true)
 })

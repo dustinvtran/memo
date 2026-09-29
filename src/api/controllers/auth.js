@@ -346,7 +346,7 @@ const generateNetlifyCookie = (netlifyToken) =>
     // cannot have yet: `Http.getToken` reads it from `document.cookie` and
     // `refreshTokenIfNecessary` parses its `exp` there, so hiding it means
     // moving the API to the cookie `getNetlifyJWTFromEvent` already accepts.
-    // Its own issue, not this one (#173).
+    // Its own issue, not this one (#173): #501.
     sameSite: "lax",
   })
 
