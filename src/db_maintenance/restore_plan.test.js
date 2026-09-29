@@ -54,15 +54,15 @@ test("a snapshot from before apiTokens existed plans as before", () => {
 
 test("hostsOf drops the credentials, the database and the options", () => {
   assert.equal(
-    hostsOf("mongodb+srv://user:p%40ss@Cluster0.ABC.mongodb.net/memo?retryWrites=true"),
-    "cluster0.abc.mongodb.net"
+    hostsOf("mongodb+srv://user:p%40ss@Cluster0.ABC.example.invalid/memo?retryWrites=true"),
+    "cluster0.abc.example.invalid"
   );
   assert.equal(hostsOf("mongodb://localhost:27017"), "localhost:27017");
 });
 
 test("hostsOf sorts a seed list so its order does not matter", () => {
   assert.equal(
-    hostsOf("mongodb://u:p@h2:27017,h1:27017/memo?replicaSet=rs0"),
+    hostsOf("mongodb://h2:27017,h1:27017/memo?replicaSet=rs0"),
     "h1:27017,h2:27017"
   );
 });
@@ -73,8 +73,8 @@ test("hostsOf rejects what is not a mongodb URL", () => {
   assert.equal(hostsOf("https://example.com"), undefined);
 });
 
-const PRODUCTION = "mongodb+srv://u:secret@prod.abc.mongodb.net/memo";
-const SCRATCH = "mongodb+srv://u:secret@scratch.xyz.mongodb.net/";
+const PRODUCTION = "mongodb+srv://u:secret@prod.abc.example.invalid/memo";
+const SCRATCH = "mongodb+srv://u:secret@scratch.xyz.example.invalid/";
 const ENV_FILE = "/repo/src/db_maintenance/.env";
 
 const check = (overrides) =>
@@ -86,37 +86,37 @@ const check = (overrides) =>
   });
 
 test("a target matching a scratch URL is allowed", () => {
-  assert.deepEqual(check({ target: "scratch.xyz.mongodb.net" }), {
-    host: "scratch.xyz.mongodb.net",
+  assert.deepEqual(check({ target: "scratch.xyz.example.invalid" }), {
+    host: "scratch.xyz.example.invalid",
     isProduction: false,
   });
 });
 
 test("the target is compared without regard to case", () => {
-  assert.equal(check({ target: "Scratch.XYZ.mongodb.net" }).refusal, undefined);
+  assert.equal(check({ target: "Scratch.XYZ.example.invalid" }).refusal, undefined);
 });
 
 test("no --target is refused, naming the host MONGODB_URL points at", () => {
   for (const target of [undefined, true, ""]) {
     const { refusal } = check({ target });
     assert.match(refusal, /--target=<host> is required/);
-    assert.match(refusal, /scratch\.xyz\.mongodb\.net/);
+    assert.match(refusal, /scratch\.xyz\.example\.invalid/);
   }
 });
 
 test("a target that is not where MONGODB_URL points is refused", () => {
   const { refusal } = check({
     connectionUrl: PRODUCTION,
-    target: "scratch.xyz.mongodb.net",
+    target: "scratch.xyz.example.invalid",
   });
-  assert.match(refusal, /--target says scratch\.xyz\.mongodb\.net/);
-  assert.match(refusal, /points at prod\.abc\.mongodb\.net/);
+  assert.match(refusal, /--target says scratch\.xyz\.example\.invalid/);
+  assert.match(refusal, /points at prod\.abc\.example\.invalid/);
 });
 
 test("the production host is refused without --production", () => {
   const { refusal } = check({
     connectionUrl: PRODUCTION,
-    target: "prod.abc.mongodb.net",
+    target: "prod.abc.example.invalid",
   });
   assert.match(refusal, /is the production host/);
   assert.match(refusal, /--production/);
@@ -126,16 +126,16 @@ test("the production host is allowed with --production", () => {
   assert.deepEqual(
     check({
       connectionUrl: PRODUCTION,
-      target: "prod.abc.mongodb.net",
+      target: "prod.abc.example.invalid",
       production: true,
     }),
-    { host: "prod.abc.mongodb.net", isProduction: true }
+    { host: "prod.abc.example.invalid", isProduction: true }
   );
 });
 
 test("--production aimed at another host is refused", () => {
   const { refusal } = check({
-    target: "scratch.xyz.mongodb.net",
+    target: "scratch.xyz.example.invalid",
     production: true,
   });
   assert.match(refusal, /is not the production host/);
@@ -143,8 +143,8 @@ test("--production aimed at another host is refused", () => {
 
 test("a seed list sharing one member with production counts as production", () => {
   const { refusal } = check({
-    connectionUrl: "mongodb://u:p@other:27017,prod:27017/",
-    productionUrl: "mongodb://u:p@prod:27017/",
+    connectionUrl: "mongodb://other:27017,prod:27017/",
+    productionUrl: "mongodb://prod:27017/",
     target: "prod:27017,other:27017",
   });
   assert.match(refusal, /is the production host/);
@@ -154,7 +154,7 @@ test("with no production URL in the .env the restore is refused outright", () =>
   for (const production of [false, true]) {
     const { refusal } = check({
       productionUrl: undefined,
-      target: "scratch.xyz.mongodb.net",
+      target: "scratch.xyz.example.invalid",
       production,
     });
     assert.match(refusal, /Cannot tell which host is production/);
@@ -171,8 +171,8 @@ test("no refusal ever prints a password", () => {
   const cases = [
     {},
     { target: "nope" },
-    { connectionUrl: PRODUCTION, target: "prod.abc.mongodb.net" },
-    { productionUrl: undefined, target: "scratch.xyz.mongodb.net" },
+    { connectionUrl: PRODUCTION, target: "prod.abc.example.invalid" },
+    { productionUrl: undefined, target: "scratch.xyz.example.invalid" },
   ];
   for (const overrides of cases) {
     assert.doesNotMatch(check(overrides).refusal, /secret/);
