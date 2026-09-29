@@ -181,6 +181,21 @@ const DESIRED_INDEXES = [
     key: { entryRef: 1, kind: 1, userId: 1 },
     why: "findDraft on every autosave, once every 2.5s while an edit form is open; findRevisions on every history read is served by its prefix",
   },
+  // Unique for the same reason as `users.username`, and more so: two tokens
+  // with one hash would authenticate as whichever the server found first.
+  // 256 random bits make that a collision nobody will see, so the index is
+  // there for the lookup and the uniqueness costs nothing.
+  {
+    collection: "apiTokens",
+    key: { tokenHash: 1 },
+    options: { unique: true },
+    why: "getUserId, on every request made with an API token",
+  },
+  {
+    collection: "apiTokens",
+    key: { userId: 1 },
+    why: "listApiTokens, and the per-user cap in createApiToken",
+  },
   // `apiRefs` is an array, so this is a **multikey** index — one index entry
   // per element. That is correct and is not something to "fix": findCachedWork
   // asks `{ apiRefs: "igdb__1234" }`, an equality match against one element,

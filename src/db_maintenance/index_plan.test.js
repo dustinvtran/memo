@@ -80,12 +80,13 @@ test("the list covers every field the issue names, and no field twice", () => {
   }
 });
 
-test("the unique indexes are the username and one per entry collection", () => {
+test("the unique indexes are the username, one per entry collection and the API token hash", () => {
   assert.deepEqual(
     uniqueIndexes(DESIRED_INDEXES).map((index) => index.collection),
-    ["users", "filmEntries", "tvShowEntries", "gameEntries", "bookEntries"]
+    ["users", "filmEntries", "tvShowEntries", "gameEntries", "bookEntries", "apiTokens"]
   );
   assert.deepEqual(uniqueIndexes(DESIRED_INDEXES)[0].key, { username: 1 });
+  assert.deepEqual(uniqueIndexes(DESIRED_INDEXES).at(-1).key, { tokenHash: 1 });
 });
 
 /**
@@ -96,7 +97,7 @@ test("the unique indexes are the username and one per entry collection", () => {
  * on a single null key and only the first would ever save.
  */
 test("the entry constraint is on the name as well as the work, and skips unlinked entries", () => {
-  for (const index of uniqueIndexes(DESIRED_INDEXES).slice(1)) {
+  for (const index of uniqueIndexes(DESIRED_INDEXES).slice(1, -1)) {
     assert.deepEqual(index.key, {
       userId: 1,
       workRef: 1,

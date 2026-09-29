@@ -161,6 +161,32 @@ budget is not lower than 5 MB on purpose: anything low enough to stop the
 4.76 MB response would also `413` the 2.94 MB games list, which is the url
 the `413` tells you to fetch instead.
 
+**Writing without a browser.** Every route that writes — adding an entry,
+scoring it, editing its note, deleting it — takes a personal API token in
+place of the session the site signs you in with, so a script or an agent can
+keep a list for you. A token is issued from a signed-in session and never
+from another token, is shown once, and is stored only as its SHA-256, so a
+lost one is revoked and replaced rather than recovered:
+
+```
+GET    /api/tokens                   # your tokens: id, name, createdAt
+POST   /api/tokens     { name }      # a new one; the answer carries `token`, once
+DELETE /api/tokens/:id               # revoke it
+```
+
+These three want the `nf_jwt` session. The quickest way to send it is from the
+browser console on the site while signed in, where the frontend's own request
+helper attaches it:
+
+```
+(await Http.post('/api/tokens', { name: 'claude' })).value.token
+```
+
+Then send the token as `Authorization: Bearer memo_pat_…` to any other route,
+exactly as the frontend sends its session. `POST /api/entries/:type` with the
+body the edit form builds adds an entry; `utils/api_token.js` says why a token
+is not a longer-lived JWT.
+
 The `<noscript>` block in `layouts/base.njk` is the only part of a page that
 is in its source, and it points at these urls, so a reader that fetches
 `/films/nil` and finds nothing is told where to look. `_redirects` maps

@@ -2,7 +2,7 @@
 /** @typedef {import('@netlify/functions').HandlerContext} Context */
 /** @typedef {import('../errors').Error} Error */
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
-import { Result, ResultAsync, err, ok } from 'neverthrow'
+import { Result, ResultAsync, err, errAsync, ok, okAsync } from 'neverthrow'
 import * as errors from '../utils/errors.js'
 import * as db from '../utils/db/index.js'
 import * as workTypes from '../utils/work_types.js'
@@ -10,8 +10,15 @@ import { validateExists } from '../utils/general.js'
 import { identity } from 'ramda'
 import { jwtVerify } from 'jose'
 import { tokenSecret, VERIFY_OPTIONS } from '../utils/session_token.js'
+import { hashApiToken, looksLikeApiToken } from '../utils/api_token.js'
 /**
- * The `sub` of the bearer token, or an unauthorized error.
+ * The user behind the bearer credential, or an unauthorized error.
+ *
+ * The credential is either a session token — the `nf_jwt` the frontend sends,
+ * whose `sub` is the answer — or a personal API token, told apart by its
+ * prefix and looked up by its hash; `utils/api_token.js` says why the two
+ * differ. Every route that takes one takes the other, except the ones that
+ * manage API tokens, which ask `getSessionUserId` below.
  *
  * `ResultAsync` rather than `Result` because verification is a promise from
  * jose v4 onward. That is the whole reason this returns what it returns, and
@@ -35,13 +42,30 @@ import { tokenSecret, VERIFY_OPTIONS } from '../utils/session_token.js'
  * @type {(event: Event) => ResultAsync<string, Error>}
  */
 const getUserId = (event) =>
-  validateExists(event.headers?.authorization)
-    .map((authString) => authString.replace('Bearer ', ''))
-    .asyncAndThen((jwt) =>
-      ResultAsync.fromPromise(jwtVerify(jwt, tokenSecret(), VERIFY_OPTIONS), identity)
+  getBearer(event)
+    .asyncAndThen((credential) =>
+      looksLikeApiToken(credential)
+        ? userIdOfApiToken(credential)
+        : userIdOfSession(credential)
     )
-    .map(({ payload }) => payload.sub)
-    .mapErr(errors.unauthorized)
+
+/**
+ * `getUserId` for the routes that manage API tokens, which take a session
+ * and nothing else. A token that could mint tokens would outlive its own
+ * revocation — whoever held it would make another first — and one that
+ * could list them would tell its holder what else to look for.
+ * @type {(event: Event) => ResultAsync<string, Error>}
+ */
+const getSessionUserId = (event) =>
+  getBearer(event)
+    .asyncAndThen((credential) =>
+      looksLikeApiToken(credential)
+        ? errAsync(errors.unauthorized(
+            undefined,
+            'API tokens are managed from a signed-in session, not with an API token'
+          ))
+        : userIdOfSession(credential)
+    )
 
 /** @type {(segmentIndex: number, event: Event) => string} */
 const getSegment = (segmentIndex, event) =>
@@ -156,6 +180,7 @@ const toReviewCollection = (entryCollection) =>
 
 export {
   getUserId,
+  getSessionUserId,
   getSegment,
   getUrlSegments,
   getReqBody,
@@ -184,3 +209,33 @@ const describeBody = (body) =>
   body === null ? 'null'
     : Array.isArray(body) ? 'an array'
     : `a ${typeof body}`
+/** @type {(event: Event) => Result<string, Error>} */
+const getBearer = (event) =>
+  validateExists(event.headers?.authorization)
+    .map((authString) => authString.replace('Bearer ', ''))
+    .mapErr(errors.unauthorized)
+
+/** @type {(jwt: string) => ResultAsync<string, Error>} */
+const userIdOfSession = (jwt) =>
+  ResultAsync.fromPromise(jwtVerify(jwt, tokenSecret(), VERIFY_OPTIONS), identity)
+    .map(({ payload }) => payload.sub)
+    .mapErr(errors.unauthorized)
+
+/**
+ * The owner of an API token, found by its hash. A token nobody holds — never
+ * issued, revoked, or mangled on the way — is a 401 like a bad session. A
+ * database that did not answer stays a `DBError`, and so a 500: a 401 would
+ * tell the caller their token is no good, and it may be fine.
+ *
+ * A miss carries no `detail`, for the reason `findOneByFieldOrFail_` gives: a
+ * bad token is the request a stranger makes on purpose, and `fromError` logs
+ * every `detail` it is handed.
+ * @type {(token: string) => ResultAsync<string, Error>}
+ */
+const userIdOfApiToken = (token) =>
+  db.findOneByField_('apiTokens', 'tokenHash', hashApiToken(token))
+    .andThen((stored) =>
+      stored?.userId
+        ? okAsync(stored.userId)
+        : errAsync(errors.unauthorized())
+    )
