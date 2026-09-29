@@ -51,3 +51,20 @@ updates:
         applies-to: version-updates
         dependency-type: development
         update-types: [minor, patch]
+
+  # The actions every workflow uses. Nothing proposed their bumps before
+  # #472, which is how they sat on Node 20 majors until GitHub began forcing
+  # them onto Node 24. Minors and patches come as one pull request; a major
+  # still arrives alone, for the same reason as above.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions:
+        applies-to: version-updates
+        update-types: [minor, patch]
