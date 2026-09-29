@@ -39,6 +39,23 @@ const RemoteFailure = (err) => Div(`Error: ${errorMessage(err)}`)
    read, and the `const` above is not initialised until it does. */
 Components.RemoteFailure = RemoteFailure
 
+/**
+ * For a page whose first request is "does this exist": a 404 is the page not
+ * being there, which is `Error404`, and anything else is a request that
+ * failed. The list and the profile pages ask `/api/name/:name` and
+ * `/api/user/:name`, which answer 404 for a name nobody has taken since #477
+ * rather than a `200 {}` for the page to look inside.
+ *
+ * `Components.Error404` read when a failure is drawn rather than destructured
+ * at the top: that would tie this file's place in the bundle to common.js's
+ * for the sake of one lookup.
+ */
+const NotFoundOrFailure = (err) => err?.status === 404
+  ? Components.Error404()
+  : RemoteFailure(err)
+
+Components.NotFoundOrFailure = NotFoundOrFailure
+
 const Loader = () => initComponent({
   content: () => html`
     <div class="loader-wrapper">

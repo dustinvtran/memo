@@ -102,7 +102,7 @@ const List = ({ username, entryType, entries, isOwner }) => initComponent({
     // `caret` rather than `icon`, which is what this was called: `icon` is the
     // helper this file destructures off `Icons` at the top, and a parameter of
     // that name shadows it exactly where the hint's own icon is built.
-    waitForEl('a.detail-icon').then((caret) => {
+    waitForEl('.detail-icon').then((caret) => {
       if (!caret || document.querySelector('#click-to-see-comments')) return
 
       setTimeout(() => {
