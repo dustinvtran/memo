@@ -46,6 +46,25 @@ const Menu = () => initComponent({
       String(html`<li>${menuAuthLink}</li>`)
     )
 
+    // A session lasts as long as it is used, so this is how one on a lost or
+    // shared device is ended. After the log-out link, so the one people
+    // usually want stays where it was. See `controllers/sessions.js`.
+    if (isLoggedIn) {
+      el('#home-menu-item')?.parentElement?.insertAdjacentHTML(
+        'beforeend',
+        String(html`<li><a href="#" id="logout-everywhere">Log out everywhere</a></li>`)
+      )
+      el('#logout-everywhere')?.addEventListener('click', (event) => {
+        event.preventDefault()
+        if (!window.confirm('Log out of memo on every device, this one included? API tokens keep working.')) return
+        Netlify.signOutEverywhere()
+          .map(() => { window.location.href = '/.netlify/functions/auth/logout' })
+          .mapErr((err) => Components.UI.showNotification(
+            `Could not log out everywhere: ${Http.errorMessage(err)}`
+          ))
+      })
+    }
+
     // Only a logged-in reader is ever shown the Profile item, and only the
     // cookie above decides that — so asking the server who this is when there
     // is no cookie is a request whose one possible answer is 401, for a menu

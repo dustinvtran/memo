@@ -1,7 +1,7 @@
 /**
  * @file The rules the `nf_jwt` session token is judged by: the key it is
- * signed and verified with, the terms it is verified on, and the bound on how
- * long one session may go on sliding.
+ * signed and verified with, the terms it is verified on, how long one lives,
+ * and when a signed-out-everywhere session stops counting.
  *
  * `controllers/auth.js` mints and renews the token, `controllers/utils.js`
  * reads the one on an incoming request, and the first two of those had a copy
@@ -13,22 +13,19 @@
  */
 
 /**
- * How long a session may go on renewing itself before Auth0 has to see the
- * user again.
+ * How long a session token lives, and so how long someone can stay away and
+ * come back still signed in. Every request renews it once it is past halfway,
+ * so someone who keeps using the site stays signed in for good — the policy
+ * Google, Anthropic and most sites have.
  *
- * The renewal path is the only place this is enforced, so the token in hand
- * when a session reaches the cap goes on working until its own `exp` — the
- * true bound is this plus at most one renewal interval. Clamping that last
- * token's `exp` down to the cap would leave it permanently past the halfway
- * mark at which the frontend renews, which is a renewal request per request
- * for the tail of every session; the untidy bound is much the cheaper of the
- * two.
- *
- * Ninety days rather than thirty because #81 was people being signed out too
- * often and this is a site with a handful of users. The point of the number
- * is that there is one at all — it is a one-line argument to have.
+ * 400 days because that is the longest Chrome lets any cookie live; asking for
+ * more would be quietly cut to it. A fixed cap on the whole session used to
+ * stand here (#177, 90 days), because nothing else could end a session: the
+ * token was readable from the page and there was no way to revoke one. #501
+ * made the token unreadable, and `sessionsValidAfter` — "sign out everywhere"
+ * — is the revocation, so the cap has nothing left to do.
  */
-const MAX_SESSION_SECONDS = 90 * 24 * 3600
+const SESSION_LIFETIME_SECONDS = 400 * 24 * 3600
 
 /**
  * The session cookie. `httpOnly`, so script on the page cannot read it and a
@@ -98,18 +95,13 @@ const tokenSecret = () => {
  * When the session behind a token began, in seconds.
  *
  * `session_started_at` is written at login and carried forward untouched by
- * every renewal, which is the whole of the mechanism: `iat` says when this
- * token was minted, and on a token that has been renewed for a year that is
- * a few days ago.
+ * every renewal: `iat` says when this token was minted, and on a session that
+ * has been renewed for a year that is a few days ago. It is what "sign out
+ * everywhere" is measured against, and the reason it survives renewal is that
+ * a signed-out session must not be able to renew its way back in.
  *
- * Falling back to `iat` is the lenient reading of a token minted before the
- * claim existed. It grants such a session one more full cap from wherever it
- * happens to be rather than cutting it short; treating the absence as an
- * expired session instead would log every signed-in user out on deploy, for
- * a bound that was not being enforced when their session started. The
- * fallback stops being reachable a fortnight after that deploy — every token
- * minted since carries the claim, and the ones that do not have expired on
- * their own by then.
+ * Falling back to `iat` is the reading of a token minted before the claim
+ * existed. Every token minted since carries it.
  *
  * @type {(claims: any) => number | undefined}
  */
@@ -117,26 +109,29 @@ const sessionStartedAt = (claims) =>
   claims?.session_started_at ?? claims?.iat
 
 /**
- * Whether the session behind these claims may be renewed again.
+ * Whether a session still counts, given the owner's `sessionsValidAfter` — the
+ * second they last signed out everywhere, or undefined if they never have.
  *
- * Claims saying nothing at all about when they were issued are not renewed:
- * `signNetlifyJWT` writes both, so a token without either is not one of ours
- * to slide forward.
+ * Strictly after: a session that began in the same second as the sign-out is
+ * signed out too, since it may be the one that asked. Claims saying nothing
+ * about when they were issued never count — `signNetlifyJWT` writes both, so
+ * a token without either is not one of ours.
  *
- * @type {(claims: any, nowSeconds: number) => boolean}
+ * @type {(claims: any, sessionsValidAfter: number | undefined) => boolean}
  */
-const isWithinAbsoluteLifetime = (claims, nowSeconds) => {
+const isSessionCurrent = (claims, sessionsValidAfter) => {
   const startedAt = sessionStartedAt(claims)
-  return startedAt !== undefined && nowSeconds - startedAt < MAX_SESSION_SECONDS
+  return startedAt !== undefined &&
+    (sessionsValidAfter === undefined || startedAt > sessionsValidAfter)
 }
 
 export {
   SESSION_COOKIE_NAME,
   SESSION_HINT_COOKIE_NAME,
   CSRF_HEADER,
-  MAX_SESSION_SECONDS,
+  SESSION_LIFETIME_SECONDS,
   VERIFY_OPTIONS,
   tokenSecret,
   sessionStartedAt,
-  isWithinAbsoluteLifetime,
+  isSessionCurrent,
 }

@@ -78,6 +78,7 @@ if (dependenciesInstalled) useClient(new MongoClient())
 const tokens = dependenciesInstalled ? await import('../routes/tokens.js') : undefined
 const name = dependenciesInstalled ? await import('../routes/name.js') : undefined
 const bio = dependenciesInstalled ? await import('../routes/bio.js') : undefined
+const auth = dependenciesInstalled ? await import('../routes/auth.js') : undefined
 const { MAX_API_TOKENS_PER_USER } = dependenciesInstalled
   ? await import('./tokens.js')
   : { MAX_API_TOKENS_PER_USER: 0 }
@@ -456,4 +457,86 @@ test('an API token needs no X-Requested-With, since a forged request cannot carr
   })
 
   assert.equal(statusCode, 200)
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// Signing out everywhere
+
+const signOutEverywhere = (headers) =>
+  callRoute(auth, 'POST', 'auth/logout-everywhere', { headers })
+
+test('signing out everywhere refuses every existing session and clears this one', options, async () => {
+  seed()
+  const cookie = await cookieFor('u1')
+  const elsewhere = await tokenFor('u1')
+
+  const response = await auth.handler({
+    httpMethod: 'POST',
+    path: '/.netlify/functions/auth/logout-everywhere',
+    headers: { cookie, 'x-requested-with': 'memo' },
+    body: null,
+  }, {})
+
+  assert.equal(response.statusCode, 200)
+  assert.equal(typeof store.users[0].sessionsValidAfter, 'number')
+  assert.equal(store.users[1].sessionsValidAfter, undefined)
+  assert.deepEqual(
+    response.multiValueHeaders['Set-Cookie'].map((c) => c.split(';')[0]),
+    ['nf_jwt=', 'memo_session=']
+  )
+
+  // This browser's session and one on another device are both over.
+  assert.equal((await callRoute(name, 'GET', 'name', { headers: { cookie } })).statusCode, 401)
+  const other = await callRoute(name, 'GET', 'name', { bearer: elsewhere })
+  assert.equal(other.statusCode, 401)
+  assert.match(other.body.message, /signed out/)
+
+  // Someone else's are not.
+  assert.equal((await callRoute(name, 'GET', 'name', { as: 'u2' })).statusCode, 200)
+})
+
+test('a session begun after signing out everywhere works', options, async () => {
+  seed()
+  store.users[0].sessionsValidAfter = Math.floor(Date.now() / 1000) - 60
+
+  assert.equal((await callRoute(name, 'GET', 'name', { as: 'u1' })).statusCode, 200)
+})
+
+test('signing out everywhere leaves API tokens working', options, async () => {
+  seed()
+  const { body: { token } } = await issue()
+  store.users[0].sessionsValidAfter = Math.floor(Date.now() / 1000) + 60
+
+  assert.equal((await callRoute(name, 'GET', 'name', { bearer: token })).statusCode, 200)
+})
+
+test('an API token cannot sign its owner out everywhere', options, async () => {
+  seed()
+  const { body: { token } } = await issue()
+
+  const { statusCode } = await signOutEverywhere({ authorization: `Bearer ${token}` })
+
+  assert.equal(statusCode, 401)
+  assert.equal(store.users[0].sessionsValidAfter, undefined)
+})
+
+test('signing out everywhere by cookie needs the X-Requested-With header', options, async () => {
+  seed()
+
+  const { statusCode } = await signOutEverywhere({ cookie: await cookieFor('u1') })
+
+  assert.equal(statusCode, 401)
+  assert.equal(store.users[0].sessionsValidAfter, undefined)
+})
+
+test('an account with no username yet has nothing to sign out, and is told so', options, async () => {
+  seed()
+
+  const { statusCode, body } = await signOutEverywhere({
+    cookie: await cookieFor('u-new'),
+    'x-requested-with': 'memo',
+  })
+
+  assert.equal(statusCode, 409)
+  assert.match(body.message, /username/)
 })

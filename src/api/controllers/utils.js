@@ -9,7 +9,7 @@ import * as workTypes from '../utils/work_types.js'
 import { identity } from 'ramda'
 import { jwtVerify } from 'jose'
 import { parseCookie } from 'cookie'
-import { CSRF_HEADER, SESSION_COOKIE_NAME, tokenSecret, VERIFY_OPTIONS } from '../utils/session_token.js'
+import { CSRF_HEADER, SESSION_COOKIE_NAME, isSessionCurrent, tokenSecret, VERIFY_OPTIONS } from '../utils/session_token.js'
 import { hashApiToken, isExpired, looksLikeApiToken, shouldRecordUse } from '../utils/api_token.js'
 import { bearerCredential } from '../utils/bearer.js'
 /**
@@ -280,11 +280,35 @@ const sessionCookieOf = (cookieHeader) => {
   }
 }
 
-/** @type {(jwt: string) => ResultAsync<string, Error>} */
+/**
+ * The user a session token is for, if the session still counts.
+ *
+ * A token that verifies may still belong to a session its owner has since
+ * signed out everywhere, which is `sessionsValidAfter` on their user
+ * document. Checking it costs a lookup per request — by an indexed `userId`,
+ * the same lookup most routes make anyway — and it is what lets a session
+ * last as long as it is used rather than stopping at a fixed age: there is a
+ * way to end one early. An account with no user document yet has never
+ * signed out anywhere.
+ *
+ * A database that did not answer is a 500 rather than a 401, for the reason
+ * `userIdOfApiToken` gives.
+ * @type {(jwt: string) => ResultAsync<string, Error>}
+ */
 const userIdOfSession = (jwt) =>
   ResultAsync.fromPromise(jwtVerify(jwt, tokenSecret(), VERIFY_OPTIONS), identity)
-    .map(({ payload }) => payload.sub)
     .mapErr(errors.unauthorized)
+    .andThen(({ payload }) =>
+      db.findOneByField_('users', 'userId', payload.sub)
+        .andThen((user) =>
+          isSessionCurrent(payload, user?.sessionsValidAfter)
+            ? okAsync(payload.sub)
+            : errAsync(errors.unauthorized(
+                undefined,
+                'this session was signed out; log in again'
+              ))
+        )
+    )
 
 /**
  * The owner of an API token, found by its hash. A token nobody holds — never

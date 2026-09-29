@@ -189,18 +189,19 @@ const legacyJwtExpiringIn = (seconds) => {
   return `header.${payload}.signature`
 }
 
-const WEEKS = 30 * 24 * 3600
+const MONTHS = 300 * 24 * 3600
 const AN_HOUR = 3600
 
 test('a patch goes out as one, with a JSON body, the cookie and the CSRF header', async () => {
   const { Http, calls, context } = loadWithFetch(() => ({ body: { score: 9 } }))
-  context.document.cookie = hintExpiringIn(WEEKS)
+  context.document.cookie = hintExpiringIn(MONTHS)
 
   const result = await Http.patch('/.netlify/functions/entries/films/abc', {
     score: 9,
   })
 
-  // One call: the session has weeks left, so nothing is renewed first.
+  // One call: the session has most of its 400 days left, so nothing is
+  // renewed first.
   assert.equal(calls.length, 1)
   assert.equal(calls[0].method, 'PATCH')
   // The session travels as the cookie, which the page cannot read and so
@@ -286,7 +287,7 @@ test('the hint is what says someone is signed in', () => {
   context.document.cookie = ''
   assert.equal(Http.hasSession(), false)
 
-  context.document.cookie = hintExpiringIn(WEEKS)
+  context.document.cookie = hintExpiringIn(MONTHS)
   assert.equal(Http.hasSession(), true)
 
   // A hint that is not a number is no session, rather than one expiring at NaN.
@@ -297,11 +298,11 @@ test('the hint is what says someone is signed in', () => {
 test('a readable session from before #501 still counts, until it is renewed', () => {
   const { Http, context } = loadWithFetch(() => ({}))
 
-  context.document.cookie = `nf_jwt=${legacyJwtExpiringIn(WEEKS)}`
+  context.document.cookie = `nf_jwt=${legacyJwtExpiringIn(MONTHS)}`
   assert.equal(Http.hasSession(), true)
 })
 
-test('a session near its expiry is renewed before the request', async () => {
+test('a session past halfway is renewed before the request', async () => {
   const { Http, calls, context } = loadWithFetch(() => ({ body: {} }))
   context.document.cookie = hintExpiringIn(AN_HOUR)
 
@@ -315,7 +316,7 @@ test('a pre-#501 session is renewed on the first request, however long it has le
   // The renewal is what replaces the readable cookie with the httpOnly one and
   // sets the hint, so it cannot wait for the halfway mark.
   const { Http, calls, context } = loadWithFetch(() => ({ body: {} }))
-  context.document.cookie = `nf_jwt=${legacyJwtExpiringIn(WEEKS)}`
+  context.document.cookie = `nf_jwt=${legacyJwtExpiringIn(MONTHS)}`
 
   await Http.get('/.netlify/functions/name')
 

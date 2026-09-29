@@ -182,6 +182,12 @@ you did not expect to see used shows up in the list. An expired token
 answers 401 saying so, stays listed until revoked, and does not count
 towards the 20 a user may hold.
 
+A signed-in session lasts as long as it is used — it renews itself, and lapses
+only after 400 days away — and **Log out everywhere** in the menu ends every
+session the account has, on every device, at once
+(`POST /api/auth/logout-everywhere`). API tokens are not sessions and keep
+working through it; revoke those one at a time above.
+
 These three want the `nf_jwt` session. It is an `httpOnly` cookie, so nothing
 on the page can read it, but the browser sends it — and the frontend's own
 request helper adds the `X-Requested-With` header a write signed in by cookie

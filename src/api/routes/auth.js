@@ -3,6 +3,7 @@ import * as responses from '../utils/responses.js'
 import { matchVerbAndNumberOfUrlSegments } from '../router.js'
 import { getUrlSegments } from '../controllers/utils.js'
 import { handleLogout, handleLogin, handleCallback, handleRenew } from '../controllers/auth.js'
+import { signOutEverywhere } from '../controllers/sessions.js'
 import { match } from 'ts-pattern'
 /** @type Handler */
 export const handler = async (event, context) => {
@@ -17,10 +18,11 @@ export const handler = async (event, context) => {
         .otherwise(responses.notFound)
     )
 
-    // POST /api/auth/callback
+    // POST /api/auth/{callback | logout-everywhere}
     .with(['POST', 1], () =>
       match(getUrlSegments(event)[0])
         .with('callback', () => handleCallback(event))
+        .with('logout-everywhere', () => signOutEverywhere(event))
         .otherwise(responses.notFound)
     )
 
