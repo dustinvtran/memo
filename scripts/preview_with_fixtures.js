@@ -91,6 +91,27 @@ const dune = {
   externalUrls: [{ name: "tmdb", url: "https://www.themoviedb.org/movie/693134" }],
 };
 
+/**
+ * A work with a real poster, stored the way every film and show written
+ * before #483 stored one: on `www.themoviedb.org`, which redirects, at
+ * 300×450. The list row should ask `image.tmdb.org` for `w92` of the same
+ * file, and the comment panel should still show this url.
+ */
+const spaceOdyssey = {
+  _id: "w-2001",
+  entryType: "Film",
+  apiRefs: ["tmdb__62"],
+  englishTranslatedTitle: "2001: A Space Odyssey",
+  originalTitle: "2001: A Space Odyssey",
+  releaseYear: 1968,
+  duration: 149,
+  imageUrl: "https://www.themoviedb.org/t/p/w300_and_h450_bestv2/ve72VxNqjGM69Uky4WTo2bK6rfq.jpg",
+  genres: ["Science Fiction", "Mystery", "Adventure"],
+  directors: ["Stanley Kubrick"],
+  actors: ["Keir Dullea", "Gary Lockwood"],
+  externalUrls: [{ name: "tmdb", url: "https://www.themoviedb.org/movie/62" }],
+};
+
 const entries = {
   films: [
     {
@@ -104,6 +125,17 @@ const entries = {
       workRef: dune._id,
       overrides: {},
       commonMetadata: dune,
+    },
+    {
+      // A film with a stored TMDB poster, for the list thumbnail (#483).
+      dbRef: "e-poster",
+      userId: "u1",
+      status: "Completed",
+      score: 9,
+      completedDate: Date.parse("2023-03-12"),
+      workRef: spaceOdyssey._id,
+      overrides: {},
+      commonMetadata: spaceOdyssey,
     },
     {
       // A Planned film. Its completed-date container is hidden, which is why

@@ -114,11 +114,19 @@ const main = async () => {
         continue;
       }
 
-      const { set, unset } = retitleUpdate(work, row.to);
+      const { set, unset, cleared } = retitleUpdate(work, row.to, collection);
       console.log(
         `  ~ "${displayTitle(work)}" -> "${set.englishTranslatedTitle}"` +
           `  (${collection.type}; ${collection.retrievePrefix}__${ref} answered with it)`
       );
+      // Said out loud, as set_work_ref.js does: a reader can see these today,
+      // and the row goes blank until a refresh fills it for the whole work.
+      if (cleared.length > 0) {
+        console.log(
+          `      cleared ${cleared.map((f) => `${f}=${JSON.stringify(work[f])}`).join(", ")}` +
+            " — measured for the part, and a refresh would not have replaced them"
+        );
+      }
 
       if (apply) {
         await db.collection(collection.works).updateOne({ _id: work._id }, { $set: set, $unset: unset });
