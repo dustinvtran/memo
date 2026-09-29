@@ -31,7 +31,8 @@
  * ../../docs/works_and_entries.md, and `link_entry.js` for the script that
  * does write entry text, and why it is allowed to.
  */
-const { findApiRef, displayTitle, titlesAgree } = require("./work_collections");
+const { findApiRef, displayTitle } = require("./work_collections");
+const { isWidening, staleAfterWidening } = require("./work_ref_repair");
 
 /**
  * Why this work may not be renamed, or `undefined` if it may.
@@ -94,11 +95,34 @@ const retitleRefusalReason = ({ collection, work, retitleTo, retrieved, retrieve
  * refresh queue. It has just stopped being refused, and the whole point of
  * the rename is the refresh it now allows; leaving the stamp would hold it
  * back for up to the full `--max-age-days` window.
- * @type {(work: any, retitleTo: string) => { set: any, unset: any }}
+ *
+ * A rename from a part to the whole also clears what `staleAfterWidening`
+ * names, exactly as scripts/set_work_ref.js does through `refUpdate`. The id
+ * is correct and unchanged, so the repoint rule has nothing to say; but a
+ * playtime measured for `Spyro Reignited Trilogy: Spyro 2` is nine hours of a
+ * twenty-five hour trilogy once the work is the trilogy, and a stored duration
+ * is only ever replaced by its own source, so no refresh would correct it.
+ * #467. `cleared` is returned so the caller can say so rather than doing it
+ * quietly.
+ * @type {(work: any, retitleTo: string, collection: any) => {
+ *   set: any, unset: any, cleared: string[],
+ * }}
  */
-const retitleUpdate = (work, retitleTo) => ({
-  set: { englishTranslatedTitle: String(retitleTo).trim() },
-  unset: { metadataUpdatedDate: "" },
-});
+const retitleUpdate = (work, retitleTo, collection) => {
+  const title = String(retitleTo).trim();
+  // A field only needs clearing if it is there, the same as `refUpdate`: a
+  // dry run should not claim to drop a value the work does not have.
+  const cleared = isWidening(work, title)
+    ? staleAfterWidening(collection).filter((f) => work?.[f] !== undefined)
+    : [];
+  return {
+    cleared,
+    set: { englishTranslatedTitle: title },
+    unset: {
+      metadataUpdatedDate: "",
+      ...Object.fromEntries(cleared.map((field) => [field, ""])),
+    },
+  };
+};
 
 module.exports = { retitleRefusalReason, retitleUpdate };
