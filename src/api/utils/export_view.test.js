@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { statusLabel, toExportEntry, toExportList, toExportUrls, toExportDocument, toExportIndex, toMarkdown, toIndexMarkdown } from './export_view.js'
+import { statusLabel, toExportEntry, toExportList, toExportUrls, toSiteUrl, toExportDocument, toExportIndex, toMarkdown, toIndexMarkdown } from './export_view.js'
 const film = {
   entry: {
     _id: 'e1',
@@ -307,4 +307,55 @@ test('the index as markdown is the same four urls a reader can follow', () => {
   assert.match(markdown, /^Exported 2026-08-10T04:42:41\.244Z\.$/m)
   assert.match(markdown, /^- Films \(712\) — https:\/\/nil\.moe\/api\/export\/films\/nil$/m)
   assert.match(markdown, /^- Literature \(806\) — https:\/\/nil\.moe\/api\/export\/books\/nil$/m)
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// The origin an export links to — #474. Production's `*.netlify.app`
+// subdomain answered the export with every url pointing back at itself, a
+// second copy of the pages `sitemap.xml` asks to be indexed.
+
+const netlifyEnv = { URL: 'https://nil.moe', SITE_NAME: 'td-memo' }
+
+test("production's netlify subdomain links to the site's address instead", () => {
+  assert.equal(
+    toSiteUrl('https://td-memo.netlify.app/api/export/nil', netlifyEnv),
+    'https://nil.moe'
+  )
+})
+
+test('a deploy preview, a branch deploy and a permalink keep their own origin', () => {
+  // `URL` is production's on every one of these, so it cannot be what
+  // decides; a preview's export has to link to the preview.
+  for (const host of [
+    'deploy-preview-474--td-memo.netlify.app',
+    'main--td-memo.netlify.app',
+    '6512d0c5e4b0a70008a1b2c3--td-memo.netlify.app',
+  ]) {
+    assert.equal(
+      toSiteUrl(`https://${host}/api/export/nil`, netlifyEnv),
+      `https://${host}`,
+      host
+    )
+  }
+})
+
+test('the custom domain, and anywhere without the netlify variables, is the request origin', () => {
+  assert.equal(toSiteUrl('https://nil.moe/api/export/nil?format=md', netlifyEnv), 'https://nil.moe')
+  assert.equal(toSiteUrl('http://localhost:8888/api/export/nil', netlifyEnv), 'http://localhost:8888')
+  assert.equal(toSiteUrl('https://td-memo.netlify.app/api/export/nil'), 'https://td-memo.netlify.app')
+  assert.equal(
+    toSiteUrl('https://td-memo.netlify.app/api/export/nil', { SITE_NAME: 'td-memo' }),
+    'https://td-memo.netlify.app'
+  )
+})
+
+test('another site whose name ends in this one is not mistaken for it', () => {
+  assert.equal(
+    toSiteUrl('https://not-td-memo.netlify.app/api/export/nil', netlifyEnv),
+    'https://not-td-memo.netlify.app'
+  )
+})
+
+test('an unparseable request url throws rather than guessing', () => {
+  assert.throws(() => toSiteUrl(undefined, netlifyEnv), TypeError)
 })

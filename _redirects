@@ -1,3 +1,11 @@
+# Production's own netlify.app subdomain served the whole site and the API as
+# a second copy of nil.moe, so it goes to the site before anything below is
+# read — first, because Netlify takes the first rule that matches. A host
+# rule matches that host exactly: `deploy-preview-N--td-memo.netlify.app`,
+# the branch and the permalink subdomains are other hosts and are untouched,
+# which is what keeps previews working. #474.
+https://td-memo.netlify.app/*	https://nil.moe/:splat	301!
+
 # The catch-all at the bottom is forced (`200!`), so it rewrites even urls
 # that do exist as files. Every static asset therefore needs a forced rule of
 # its own, mapping it to itself, or it is served the HTML of the homepage:

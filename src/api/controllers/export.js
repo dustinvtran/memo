@@ -20,7 +20,7 @@ import * as errors from '../utils/errors.js'
 import * as db from '../utils/db/index.js'
 import { getSegment, findIdOfName, toEntryCollection, toReviewCollection, toLimit } from './utils.js'
 import { safeJSONStringify, warn } from '../utils/general.js'
-import { LIST_TYPES, toExportUrls, toExportList, toExportDocument, toExportIndex, toMarkdown, toIndexMarkdown } from '../utils/export_view.js'
+import { LIST_TYPES, toExportUrls, toSiteUrl, toExportList, toExportDocument, toExportIndex, toMarkdown, toIndexMarkdown } from '../utils/export_view.js'
 /**
  * A Netlify function may return 6 MB, and going over is a 502 with nothing in
  * it to explain itself. All four of one heavy user's lists already come to
@@ -142,7 +142,7 @@ const exportUserLists = async (event) => {
     return responses.fromError(errors.notFound(undefined, `no such user: ${username}`))
   }
 
-  const siteUrl = toSiteUrl(event)
+  const siteUrl = findSiteUrl(event)
   const context = { username, siteUrl }
 
   // The url the README, the `<noscript>` block and `robots.txt` all advertise
@@ -289,12 +289,13 @@ const findReviews = (collection, entryRefs) =>
 
 /**
  * The site this was fetched from, so the export can link back to the pages it
- * mirrors. Netlify gives the function the original request url in `rawUrl`.
+ * mirrors. Netlify gives the function the original request url in `rawUrl`;
+ * `toSiteUrl` swaps production's `*.netlify.app` subdomain for `URL`.
  * @type {(event: Event) => string | undefined}
  */
-const toSiteUrl = (event) => {
+const findSiteUrl = (event) => {
   try {
-    return new URL(event.rawUrl).origin
+    return toSiteUrl(event.rawUrl, process.env)
   } catch (error) {
     warn(`Could not read the site url from ${event?.rawUrl}: ${error}`)
     return undefined
