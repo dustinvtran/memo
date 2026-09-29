@@ -34,6 +34,14 @@
 #
 # The HTML that names these urls keeps Netlify's default and should: it is what
 # tells a browser the hash has changed.
+#
+# The promise covers a url that serves a file, not every url under these
+# paths. `_headers` has no rule conditional on status, so a 404 here is sent
+# `immutable` for a year too — a browser that asks for a hashed name before
+# its deploy is live, an old tab racing a deploy, keeps that 404 (#476). This
+# is accepted rather than fixed: Netlify purges its own edge on deploy, so
+# only that one browser holds it, and only for a url the name will never
+# serve anyway, since the hash changes with the content.
 
 /js/*
   Cache-Control: public, max-age=31536000, immutable
