@@ -11,6 +11,7 @@ import { identity } from 'ramda'
 import { jwtVerify } from 'jose'
 import { tokenSecret, VERIFY_OPTIONS } from '../utils/session_token.js'
 import { hashApiToken, looksLikeApiToken } from '../utils/api_token.js'
+import { bearerCredential } from '../utils/bearer.js'
 /**
  * The user behind the bearer credential, or an unauthorized error.
  *
@@ -212,7 +213,7 @@ const describeBody = (body) =>
 /** @type {(event: Event) => Result<string, Error>} */
 const getBearer = (event) =>
   validateExists(event.headers?.authorization)
-    .map((authString) => authString.replace('Bearer ', ''))
+    .map(bearerCredential)
     .mapErr(errors.unauthorized)
 
 /** @type {(jwt: string) => ResultAsync<string, Error>} */
