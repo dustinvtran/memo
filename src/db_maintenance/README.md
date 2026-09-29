@@ -607,9 +607,10 @@ It follows the same discipline as a hand-run `--apply`, in the same order:
 snapshot with `backup_database.js`, verify with `verify_backup.js --live`
 (which exits non-zero on a bad snapshot, so the run stops before it writes),
 then refresh, then audit. The snapshot is kept as a workflow artifact for 90
-days, which would also be the first copy of this database that is not in the
-Google Drive folder that holds the code and the credentials — a piece of #303,
-though not that issue's answer, and not yet a copy of anything.
+days. That, and the daily one `backup_database.yml` keeps, are the only
+current copies of this database away from the machine that holds the code
+and the credentials — see [Where snapshots live](#where-snapshots-live) for
+what that does and does not buy.
 
 **A scheduled run is a dry run until `METADATA_REFRESH_APPLY` is `true`.**
 Merging the workflow does not start a crawl of the whole library; turning it
@@ -1723,31 +1724,71 @@ is never deleted.
 
 **Scheduling.** The script has no state of its own, so `cron`, Task
 Scheduler or any runner works — just give it `MONGODB_URL` and a `--out` that
-is backed up itself (an external drive, a private bucket). Don't publish the
-snapshots: a full dump includes the `users` collection. In particular, don't
-upload them as GitHub Actions artifacts from this repo — artifacts of a public
-repo can be downloaded by anyone.
+is backed up itself. Don't publish the snapshots: a full dump includes the
+`users` collection. That is the rule `backup_database.yml` and
+`refresh_metadata.yml` do not follow today: this repository is public, its
+Actions artifacts are downloadable by anyone signed in to GitHub, and both
+workflows upload a full snapshot as one. See below.
 
 Daily is the cadence the retention policy was written for: "every snapshot
 from the last 14 days" assumes there is one most days. The snapshots taken
 before an `--apply` are not that — they are the trail of maintenance runs,
 and they leave the weeks with no maintenance in them empty.
 
-**Where a scheduled run should live.** The hook is already there:
+### Where snapshots live
+
+As of 2026-09-29 (#482) there are three places, and none of them is a
+scheduled copy off this machine that the owner controls:
+
+- **Local disk.** `src/db_maintenance/backups/` in the main checkout: 104
+  snapshots, 635 MB, pruned by the retention policy above. The checkout moved
+  off Google Drive, so this directory is now on the same disk as the code and
+  the `.env` — it survives a bad `--apply`, not a lost disk.
+- **A hand-made copy on Google Drive.** 67 snapshots, the newest from
+  2026-09-17: copied once by hand, updated by nothing, and twelve days stale
+  on that date. It is off the machine, but only as current as the last time
+  somebody remembered.
+- **Workflow artifacts.** `backup_database.yml` uploads one snapshot a day
+  and `refresh_metadata.yml` one before each applied crawl, each kept 90 days.
+  These are the only current copies away from this machine. They are also,
+  as above, readable by anyone signed in to GitHub, and they exist only as
+  long as the repository's Actions storage does.
+
+Atlas keeps nothing: the cluster is M0 and its `Disaster Recovery` page reads
+`Backups Inactive` (#303).
+
+**What is not decided** is whether to keep a scheduled off-machine copy that
+does not depend on the artifacts, and where. That is the owner's call, and
+this file does not make it. The options raised so far:
+
+- **Leave it at the artifacts.** Nothing new to run or pay for, and the
+  copies are already daily and verified. What it keeps is a public download
+  of the `users` collection, and a history that is 90 days deep and lives on
+  GitHub's account rather than the owner's.
+- **Encrypt the artifact before upload.** Same schedule and storage, with the
+  snapshot unreadable without a key held outside the repository. The key then
+  has to be kept somewhere a restore can reach, and a lost key is a lost
+  backup.
+- **An encrypted copy to a private bucket** — S3, R2, B2 or similar — pushed
+  by the scheduled workflow or by a host that is awake on the schedule. Real
+  retention under the owner's control, at the cost of one more account, one
+  more credential in the repository's secrets, and a small bill.
+- **The Drive folder, on a schedule** rather than by hand, from a machine that
+  can see it. Reuses storage that already exists, but a laptop that has to be
+  open is not a schedule, which is what the stale copy above is a picture of.
+
+Whichever is chosen, write it down here, next to the retention policy: which
+host, which cadence, where `--out` points, who holds any key, and who sees it
+fail.
+
+**Where a scheduled run could live.** The hook is already there:
 `MONGODB_URL` is read from the environment and dotenv never overwrites a
 variable that is already set, so `MONGODB_URL=... node scripts/backup_database.js
 --out=...` runs on a machine with no `.env`, no credentials on disk beyond
 what the runner holds, and no checkout of this repo beyond the scripts
-themselves. Two things decide where: it has to be **awake on the schedule** —
-a laptop that has to be open is not a schedule, which is what the current
-snapshot history is a picture of — and its `--out` should not be the same
-disk as the code and the `.env`, because the point of a backup is to survive
-whatever takes that disk out.
-
-Where it runs is the owner's call and nothing in this repo sets it up. When
-it is decided, write it down here: which host, which cadence, where `--out`
-points, and who sees it fail. **As of 2026-09-02 the answer is nowhere** —
-snapshots are taken by hand before `--apply` runs and at no other time.
+themselves. Two things decide where: it has to be **awake on the schedule**,
+and its `--out` should not be the same disk as the code and the `.env`,
+because the point of a backup is to survive whatever takes that disk out.
 
 **How anyone would notice it had stopped.** A backup job that fails silently
 is worse than no job at all, because it buys the confidence of a backup
@@ -1808,9 +1849,10 @@ it means a collection created after the snapshot has no backup in it at all.
 right *amount* of data"; the digest answers "is this the *same* data". They
 are not the same question, and only the second one catches a file that was
 re-serialised, hand-edited, half-written or truncated by a filesystem — and
-this repo already distrusts the filesystem these snapshots live on (the root
-`CLAUDE.md` on Google Drive, and a Drive checkout losing files during
-ordinary git operations). A snapshot whose counts match and whose digests
+this repo already distrusts Google Drive, where these snapshots used to live
+and a hand-made copy of them still does (the root `CLAUDE.md` on Google
+Drive, and a Drive checkout losing files during ordinary git operations). A
+snapshot whose counts match and whose digests
 don't is a snapshot you must not restore from.
 
 CLAUDE.md asks for a fresh snapshot to be verified — "manifest counts, file
