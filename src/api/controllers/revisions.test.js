@@ -180,7 +180,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 2))
 const edit = (extra) => ({
   commonMetadata: null,
   workRef: 'w1',
-  overrides: { englishTranslatedTitle: 'Stalker', genres: null },
+  overrides: { englishTranslatedTitle: 'Stalker' },
   status: 'Completed',
   score: 9,
   startedDate: 1700000000000,

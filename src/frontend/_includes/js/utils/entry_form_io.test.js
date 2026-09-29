@@ -40,12 +40,12 @@ const formWith = (fields) => {
         : null,
   };
 
-  const { readForm, writeForm, differencesFrom, takeFromWork } = vm.runInContext(
+  const { readForm, writeForm, differencesFrom, emptyFieldIds, clearedFields, takeFromWork } = vm.runInContext(
     `${source}\n;EntryFormIO`,
     vm.createContext({ document, Event: class {}, console })
   );
 
-  return { values, readForm, writeForm, differencesFrom, takeFromWork };
+  return { values, readForm, writeForm, differencesFrom, emptyFieldIds, clearedFields, takeFromWork };
 };
 
 const filmForm = (overrides) =>
@@ -148,17 +148,64 @@ test("a field the user changed is stored as an override", () => {
   assert.deepEqual([...entry.overrides.genres], ["Sci-Fi"]);
 });
 
-test("a field the user emptied is stored as null", () => {
-  const { readForm } = filmForm({ "release-year": "", directors: "" });
+test("a field the user emptied is refused, and never read as a null", () => {
+  // It used to be stored as a null that hid the work's value, which only the
+  // Year column honoured and the next save quietly dropped. Now the submit
+  // button refuses it by name, and nothing reading the form sees a null. #478.
+  const { readForm, clearedFields } = filmForm({ "release-year": "", directors: "" });
 
-  const entry = readForm(editing(stalker), "films");
+  assert.deepEqual(plainly(clearedFields(editing(stalker), "films")), [
+    { id: "release-year", key: "releaseYear", label: "Release year", theirs: "1979" },
+    { id: "directors", key: "directors", label: "Director(s)", theirs: "Andrei Tarkovsky" },
+  ]);
+  assert.deepEqual(keysOf(readForm(editing(stalker), "films").overrides), []);
+});
 
-  // Not a copy of the work's value, and not absent: the work says 1979 and
-  // the user says it doesn't. Both `list.js` and `export_view.js` read a null
-  // override as "don't shadow the work", which is what a cleared field means.
-  assert.deepEqual(keysOf(entry.overrides), ["directors", "releaseYear"]);
-  assert.equal(entry.overrides.releaseYear, null);
-  assert.equal(entry.overrides.directors, null);
+test("an untouched form has nothing cleared, on the edit path or the add path", () => {
+  const { clearedFields } = filmForm();
+
+  assert.deepEqual(plainly(clearedFields(editing(stalker), "films")), []);
+  assert.deepEqual(
+    plainly(clearedFields({ commonMetadata: { internalRef: "w1", ...stalker } }, "films")),
+    []
+  );
+});
+
+test("a field emptied over a work that has nothing there is not cleared", () => {
+  // `original-title` and `image-url` are empty boxes over a work with neither.
+  const { clearedFields } = filmForm({ "original-title": "", "image-url": "" });
+
+  assert.deepEqual(plainly(clearedFields(editing(stalker), "films")), []);
+});
+
+test("an entry with no work has nothing to clear", () => {
+  // Its overrides are its only metadata, so an empty field is a field it has
+  // no value for, not one hiding a work's.
+  const { clearedFields } = filmForm({ "release-year": "" });
+
+  assert.deepEqual(
+    plainly(clearedFields({ originalData: undefined, commonMetadata: { releaseYear: 1979 } }, "films")),
+    []
+  );
+});
+
+test("a game with a zero playtime is not cleared by the empty box it shows", () => {
+  // The form draws a zero duration as an empty box, and zero is not a
+  // duration; refusing it would refuse every save of that game.
+  const { clearedFields } = formWith({ title: "Tetris", duration: "" });
+
+  assert.deepEqual(plainly(clearedFields(editing({ englishTranslatedTitle: "Tetris", duration: 0 }), "games")), []);
+});
+
+test("an override emptied is refused too, with the work's value named", () => {
+  // The field was showing the override and the hint under it the database
+  // value; emptying it is not a way back to the database value.
+  const { clearedFields } = filmForm({ title: "" });
+
+  assert.deepEqual(
+    plainly(clearedFields(editing(stalker, { englishTranslatedTitle: "Сталкер" }), "films")),
+    [{ id: "title", key: "englishTranslatedTitle", label: "Title", theirs: "Stalker" }]
+  );
 });
 
 test("emptying a field the work has nothing in stores nothing", () => {
@@ -418,6 +465,18 @@ test("a value the work does not have shows as an empty one", () => {
   assert.deepEqual(plainly(differencesFrom({}, "films")), [
     { id: "original-title", key: "originalTitle", label: "Original title", mine: "Дюна", theirs: "" },
   ]);
+});
+
+test("an empty field is not a difference, and is what the link fills in", () => {
+  // Offering "yours: (empty)" would offer a choice the submit button then
+  // refuses, since an empty field over a work's value cannot be saved. #478.
+  const { differencesFrom, emptyFieldIds } = formWith({ title: "Dune", genres: "", "release-year": " " });
+
+  assert.deepEqual(
+    plainly(differencesFrom({ englishTranslatedTitle: "Dune", genres: ["Sci-Fi"], releaseYear: 2021 }, "films")),
+    []
+  );
+  assert.deepEqual(plainly(emptyFieldIds()), ["release-year", "genres"]);
 });
 
 test("taking the work's value writes it into the named fields only", () => {

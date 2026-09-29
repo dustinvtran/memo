@@ -1,45 +1,30 @@
 /**
- * @file Finds the linked entries whose overrides object holds nothing but
- * `null`s, and — separately — the ones whose `overrides.releaseYear` is a
- * `null` over a work that has a year. #478.
+ * @file Decides which `null` override keys go — all of them — and reports the
+ * two populations #478 asked about on the way: the linked entries whose
+ * overrides object holds nothing but nulls, and the ones whose
+ * `overrides.releaseYear` is a null over a work that has a year.
  *
- * **Why the year, of all the fields.** A `null` override means "the work's
- * value is wrong and there is no replacement" — see `asOverride` in
- * ../frontend/_includes/js/utils/entry_form_io.js — but only one reader
- * honours it. `withOverrides` in ../api/utils/export_view.js drops a null so
- * the work's value comes through, and every list column but one merges with
- * `??`, which does the same. The Year column is the exception:
- * `getOverrideOrMetadataPreserveNull('releaseYear')` in
- * ../frontend/_includes/js/utils/columns.js keeps the null and draws a dash
- * where the work's year would be. So a stored null on any other field is
- * invisible today, and a stored null year is the one that shows.
+ * **An override is a value, never a null, and the owner decided that the
+ * nulls already stored are all mistakes** (2026-09-29, on #478). The evidence
+ * that decided it: every one traced back to #317's whole-form saves, where a
+ * blank box was sent as a null; only the Year column ever honoured one, and
+ * drew a dash where the work's year was; and the edit form showed the work's
+ * value in place of a null, so the next save dropped it anyway. The form now
+ * refuses to submit an emptied field and the API refuses a null override, so
+ * this is the backlog and nothing refills it.
  *
- * **Why the all-null objects are the suspicious half.** #317's bug stored the
- * whole add/edit form as overrides on every save, and a form whose fields
- * were blank stored a null for each. An entry where every key is null is that
- * shape exactly — eight or nine fields cleared in one save — rather than a
- * person clearing one field they disagreed with. #317's cleanup,
- * ./noop_override_plan.js, kept every null on principle, which is right for a
- * single cleared field and doubtful for this.
+ * **Removing one changes only the Year column.** `withOverrides` in
+ * ../api/utils/export_view.js and every list column already read a null as
+ * absent, and since #478 the Year column does too — so on the page the
+ * removal is already done, and this makes the stored data agree.
  *
- * **Doubtful is not decided.** A null is a legitimate way to hide a year, and
- * this module cannot tell a deliberate one from the bug's. It reports; the
- * owner decides. What it would remove, if told to, is only the all-null
- * objects on linked entries: unsetting one of those changes exactly one thing
- * a reader can see, the Year cell, and only where the work has a year. The
- * mixed entries — a null year beside a real override — are listed and never
- * proposed, because a real value beside the null is evidence someone was
- * choosing field by field.
+ * Entries with no work are included. For those the overrides are the only
+ * metadata, which is why ./noop_override_plan.js skips them — but a null is
+ * not metadata, it is a field with no value, which an absent key says as
+ * well. An empty overrides object `{}` has no keys to be null and is left
+ * alone.
  *
- * Left alone entirely:
- *
- * - **An entry with no work, or a dangling `workRef`.** For those, `overrides`
- *   *is* the metadata, not a layer over it, so there is nothing underneath
- *   for a removal to reveal. Counted, not listed.
- * - **An empty overrides object `{}`.** It has no keys to be null, and is
- *   ./unreachable_document_plan.js's kind of nothing, not this one's.
- *
- * Pure and dependency-free: scripts/report_null_overrides.js does the I/O and
+ * Pure and dependency-free: scripts/clear_null_overrides.js does the I/O and
  * this decides, so the decision is unit tested
  * (./null_override_plan.test.js) in the no-install suite.
  */
@@ -49,9 +34,10 @@ const { isEmptyValue } = require("./work_collections");
 /**
  * What an entry looks like in the report.
  *
- * `hides` is the subset of `fields` for which the work has a value, which is
- * what a reader would see come back if the object went — the Year column
- * today, the rest only if another column is ever taught to keep a null.
+ * `hides` is the subset of `nullFields` for which the work has a value: what
+ * the null was standing in front of. Since #478 nothing on the page honours
+ * it, so this is a record of what the null meant, not of what removing it
+ * changes.
  *
  * @typedef {{
  *   _id: any,
@@ -74,8 +60,16 @@ const { isEmptyValue } = require("./work_collections");
  *   blocked: string | undefined,
  *   allNull: Reported[],
  *   releaseYearNull: Reported[],
- *   removals: { _id: any, overrides: object }[],
+ *   removals: {
+ *     _id: any, overrides: object, fields: string[],
+ *     dropsObject: boolean, linked: boolean,
+ *   }[],
+ *   unaddressable: { _id: any, field: string }[],
  *   totals: {
+ *     nullKeys: number,
+ *     unlinkedNullKeys: number,
+ *     entriesTouched: number,
+ *     objectsDropped: number,
  *     entries: number,
  *     withOverrides: number,
  *     linkedWithOverrides: number,
@@ -118,14 +112,16 @@ const planNullOverrideReport = (entries, works) => {
     if (fields.length === 0) continue;
     plan.totals.withOverrides += 1;
 
+    const nullFields = fields.filter((field) => isCleared(entry.overrides[field]));
     const work = worksById.get(toRefKey(entry.workRef));
+    if (nullFields.length > 0) addRemoval(plan, entry, fields, nullFields, work);
+
     if (work === undefined) {
       plan.totals.unlinkedWithOverrides += 1;
       continue;
     }
     plan.totals.linkedWithOverrides += 1;
 
-    const nullFields = fields.filter((field) => isCleared(entry.overrides[field]));
     const allNull = nullFields.length === fields.length;
     const yearHidden =
       "releaseYear" in entry.overrides &&
@@ -151,7 +147,6 @@ const planNullOverrideReport = (entries, works) => {
 
     if (allNull) {
       plan.allNull.push(reported);
-      plan.removals.push({ _id: entry._id, overrides: entry.overrides });
       plan.totals.allNull += 1;
       if (yearHidden) plan.totals.allNullHidingYear += 1;
       user.allNull += 1;
@@ -186,6 +181,38 @@ const updatedYear = (value) => {
   return date === undefined || Number.isNaN(date.getTime())
     ? "unknown"
     : String(date.getUTCFullYear());
+};
+
+/**
+ * Every null key on the entry goes, linked or not, and the object with them
+ * when nothing else is in it. On an entry with no work a null is not metadata
+ * either: it is a field with no value, which is what leaving it out says.
+ *
+ * A key whose name holds a `.` or starts with a `$` cannot be addressed as
+ * `overrides.<field>` — the path would name something else — so it is kept
+ * and reported, unless the whole object is going and no path is needed.
+ */
+const addRemoval = (plan, entry, fields, nullFields, work) => {
+  const dropsObject = nullFields.length === fields.length;
+  const addressable = dropsObject
+    ? nullFields
+    : nullFields.filter((field) => !field.includes(".") && !field.startsWith("$"));
+  for (const field of nullFields) {
+    if (!addressable.includes(field)) plan.unaddressable.push({ _id: entry._id, field });
+  }
+  if (addressable.length === 0) return;
+
+  plan.removals.push({
+    _id: entry._id,
+    overrides: entry.overrides,
+    fields: addressable,
+    dropsObject,
+    linked: work !== undefined,
+  });
+  plan.totals.nullKeys += addressable.length;
+  plan.totals.entriesTouched += 1;
+  if (dropsObject) plan.totals.objectsDropped += 1;
+  if (work === undefined) plan.totals.unlinkedNullKeys += addressable.length;
 };
 
 module.exports = {
@@ -224,7 +251,12 @@ const emptyPlan = () => ({
   allNull: [],
   releaseYearNull: [],
   removals: [],
+  unaddressable: [],
   totals: {
+    nullKeys: 0,
+    unlinkedNullKeys: 0,
+    entriesTouched: 0,
+    objectsDropped: 0,
     entries: 0,
     withOverrides: 0,
     linkedWithOverrides: 0,

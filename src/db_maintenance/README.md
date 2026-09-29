@@ -34,7 +34,7 @@ The scripts, and the section below that explains each:
 | `prune_unreachable_documents.js` | Deletes cached works no entry in any collection points at, and review documents holding the empty string. Two halves, run separately with `--only=works` / `--only=reviews`. | `--apply` |
 | `clear_noop_overrides.js` | `$unset`s the `overrides.<field>` keys holding a byte-identical copy of the work's own value, so a corrected work can reach the page again. Leaves every different value, every `null`, and every entry with no work. | `--apply` |
 | `clear_blank_overrides.js` | `$unset`s the `overrides.<field>` keys holding a list with nothing readable in it — `directors: [""]` — so the work's own value reaches the page instead of an empty anchor. Leaves every `null`, every list with a readable member, and every entry with no work. | `--apply` |
-| `clear_null_overrides.js` | Reports the linked entries whose overrides object is nothing but `null`s, and the ones with `overrides.releaseYear: null` over a work that has a year — the one null the list draws, as a dash in the Year column (#478). With `--apply` it would unset the all-null objects and nothing else; whether they were deliberate is the owner's call, so run the dry run only. | `--apply`, not authorised |
+| `clear_null_overrides.js` | `$unset`s every `overrides.<field>` key holding `null`, and the object itself when nothing else is in it. An override is a value, never a null: the form and the API both refuse one now, and every stored one was a leftover of #317 (#478). Leaves every real value, on an entry with a work or without. | `--apply` |
 
 Everything marked `--apply` is a **dry run without it**, and takes a backup of
 each collection it writes to first — except `ensure_indexes.js`, which writes
@@ -43,26 +43,25 @@ the overrides a user set by hand, which live on the entry documents, are out
 of reach by construction; `dedupe_works.js` is the one that also writes to the
 entry collections, repointing `workRef` at the document it merged into.
 
-Five scripts write outside the work collections, and each says so in its own
+Six scripts write outside the work collections, and each says so in its own
 section below: `prune_orphan_reviews.js` deletes review documents nothing can
 reach, `prune_unreachable_documents.js --only=reviews` deletes review
 documents holding nothing, `clear_noop_overrides.js` removes the overrides
 that are copies of the work they override, `clear_blank_overrides.js` removes
-the ones holding a list with nothing readable in it, and `link_entry.js`
-writes an entry's `workRef` and the name it is filed under — and, in the same
-write, unsets that entry's lists of blanks, which hide nothing until the entry
-has a work and then hide the work's own value (#479).
+the ones holding a list with nothing readable in it, `clear_null_overrides.js`
+removes the ones holding `null` (#478), and `link_entry.js` writes an entry's
+`workRef` and the name it is filed under — and, in the same write, unsets that
+entry's lists of blanks, which hide nothing until the entry has a work and
+then hide the work's own value (#479).
 
-`clear_null_overrides.js` can write there too and is not on that list: its
-case is not made, and its section below says why.
-
-The last three are the ones that reach an override at all, and their
+The last four are the ones that reach an override at all, and their
 exceptions are about the overrides rather than in spite of them, so each
 argues the case in its own file header and section rather than inheriting one.
-The two `clear_*` scripts are deliberately two rather than one comparison
-loosened to cover both: a copy of the work is not a user decision, and a list
+The three `clear_*` scripts are deliberately three rather than one comparison
+loosened to cover them all: a copy of the work is not a user decision, a list
 of blanks is not a user decision either, but for a different reason and with a
-different effect on the page, and each argument has to stand on its own.
+different effect on the page, and a null was decided by the owner to be a
+mistake in every case — each argument has to stand on its own.
 `link_entry.js` is also the only script here that deletes an entry, and the
 only one that creates a work outside a backfill. What holds it inside the rule
 is that it is not a population: every operation names one entry by its id and
@@ -1598,37 +1597,43 @@ it wants a fresh snapshot taken with `backup_database.js` and verified with
 does; the audit's `entries whose empty override list hides the work's value`
 line going to zero is what afterwards looks like.
 
-## Override objects of nothing but nulls
+## Overrides that are null
 
-The Year column is the one column that keeps a `null` override rather than
-falling through to the work — `getOverrideOrMetadataPreserveNull('releaseYear')`
-in `columns.js` — so a stored null draws a dash where the work's year would
-be. Every other column, and the export's `withOverrides`, drops a null and
-shows the work's value, so a null on any other field is invisible today (#478).
+**An override is a value, never a null.** A stored null was how a blank box
+used to be saved: the Year column kept it and drew a dash where the work's
+year was, every other column and the export's `withOverrides` ignored it, and
+the edit form showed the work's value in its place, so the next save quietly
+dropped it. The owner decided on 2026-09-29, on #478, that every null already
+stored is a mistake, and the evidence below agrees: all of them trace back to
+#317's whole-form saves. Since then the form refuses to save a field emptied
+over a value the work has, naming the field and the database value; the API
+refuses a null override outright; and the Year column reads a null as absent
+like every other column.
 
-An entry whose every override key is null can look like #317's bug, the whole
-blank form stored as overrides in one save, rather than one field cleared by
-hand. `clear_noop_overrides.js` keeps every null on principle, which is right
-for a single cleared field and doubtful for these. Doubtful is not decided: a
-null is a legitimate way to hide a year, and nothing in the data tells a
-deliberate one from the bug's.
-
-`scripts/clear_null_overrides.js` reports both populations per collection —
-entry id, `userId`, `updatedDate` and the keys — with counts by user and by
-the year of the last save. It is a **dry run unless you pass `--apply`**, and
-`--apply` would `$unset` the `overrides` object only on a linked entry whose
-every key is null, filtering on the object as it was read so an entry edited
-in between is left alone. Mixed entries, and entries with no work, are never
-written to.
+`scripts/clear_null_overrides.js` is that decision's backlog. It `$unset`s
+every `overrides.<field>` key holding null — on entries with a work and
+without, since a null is not metadata either way — and the `overrides` object
+itself when every key in it is null. It is a **dry run unless you pass
+`--apply`**, filters each write on the object as it was read so an entry
+edited in between is left alone, never touches `updatedDate`, and recounts the
+null keys afterwards. Nothing on the page changes: every reader already treats
+a null override as absent, so this makes the stored data say what the page
+shows.
 
 ```
 node scripts/clear_null_overrides.js
-node scripts/clear_null_overrides.js --only=films --json=report.json
+node scripts/clear_null_overrides.js --list --json=report.json
+node scripts/clear_null_overrides.js --apply
 ```
 
-Flags: `--only=films,tv,games,books`, `--json=path`, `--backup-dir=path`.
+Flags: `--only=films,tv,games,books`, `--list` (every all-null entry, not only
+the mixed ones), `--json=path`, `--backup-dir=path`.
 
 ### The dry run, 2026-09-29
+
+1,477 null keys on 725 entries, 28 of the keys on entries with no work; 542
+objects are nothing but nulls and go whole. Those two populations #478 asked
+about:
 
 ```
          all-null  hiding a year  releaseYear null  mixed
@@ -1649,15 +1654,21 @@ most of it is not #317's shape:
 - **38** are some other small set of keys.
 
 249 of the 542 hide nothing at all — the work has no value under any of their
-keys — and only the 93 hide something a reader can see. Twelve of the lone
-`originalTitle: null` objects were saved on 2026-09-16, after #321 fixed the
-whole-form bug, so something may still be writing that one. That is worth
-chasing before any `--apply`, or a run clears a backlog the next save refills.
+keys — and only the 93 hid something a reader could see.
 
-**Not applied.** Whether the 93 were deliberate, and whether `--apply` should
-reach all 542 or only the ones hiding a year, are the owner's to decide.
-Applying it wants the snapshot and `verify_backup.js --live` that everything
-in this folder does.
+**The lone nulls are #317's too, not a new writer.** Twelve lone
+`originalTitle: null` objects carry an `updatedDate` of 2026-09-16, after
+#321, which looked like the form still writing one. The snapshots say
+otherwise: in 2026-08-13's, each of those twelve entries held the whole form
+as overrides, `originalTitle: null` among them, last saved in 2023.
+`clear_noop_overrides.js` then removed the copies and kept the null, as it
+does, and the 2026-09-16 date is a write that moved `updatedDate` alone — ten
+of them within one second, no revision recorded, overrides unchanged.
+
+The 18 mixed entries are a null year beside a real value — 13 TV shows
+retitled to one season, three game edits, one book title, and one
+`Diablo IV TEST` retitle. Each of the TV ones has `originalTitle: null` too,
+the blank-form signature.
 
 ## Documents nothing can reach
 
