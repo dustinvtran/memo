@@ -290,7 +290,7 @@ test('an account that has not picked a name is still a 200', options, async () =
 })
 
 ///////////////////////////////////////////////////////////////////////////////
-// The two public probes on a name — `/api/name/:name` for the list page and
+// The two public probes on a name â€” `/api/name/:name` for the list page and
 // `/api/user/:name` for the profile. Both answered `200 {}` for a name nobody
 // has taken, which a caller could tell from a real user only by looking
 // inside; the entries route has answered 404 since #253. #477.
