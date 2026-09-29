@@ -13,11 +13,12 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/parsers').ValidCollection} ValidCollection */
+/** @typedef {import('../utils/errors').Error} Error */
 import { Result } from 'neverthrow'
 import * as responses from '../utils/responses.js'
 import * as errors from '../utils/errors.js'
 import * as db from '../utils/db/index.js'
-import { getSegment, findIdOfName, toEntryCollection, toReviewCollection } from './utils.js'
+import { getSegment, findIdOfName, toEntryCollection, toReviewCollection, toLimit } from './utils.js'
 import { safeJSONStringify, warn } from '../utils/general.js'
 import { LIST_TYPES, toExportUrls, toExportList, toExportDocument, toExportIndex, toMarkdown, toIndexMarkdown } from '../utils/export_view.js'
 /**
@@ -96,7 +97,8 @@ const CACHE_HEADERS = {
  * GET /api/export/:type/:username     — one list
  *
  * `?format=md` for Markdown; JSON otherwise. `?limit=N` keeps the N
- * most recently updated entries of each list, as `/api/entries` does.
+ * most recently updated entries of each list, as `/api/entries` does, and
+ * anything but a positive integer there is a 400.
  * @type {(event: Event) => Promise<Response>}
  */
 const exportUserLists = async (event) => {
@@ -115,7 +117,20 @@ const exportUserLists = async (event) => {
     )
   }
 
-  const userId = await findIdOfName(username).unwrapOr(undefined)
+  // Before the database is asked anything: `?limit=-5` reached `$limit`, the
+  // driver refused it, and the refusal came back as an empty list. `abc` fell
+  // back to the index, which is a different document from the one asked for.
+  // Both are 400s now. #463.
+  const limit = toLimit(event.queryStringParameters?.limit)
+  if (limit.isErr()) return responses.fromError(limit.error)
+
+  // A database that did not answer is a 500 and not a 404: it used to come out
+  // of here as `undefined`, which the check below reads as nobody having the
+  // name, and tells the caller so. #462.
+  const found = await findIdOfName(username)
+  if (found.isErr()) return responses.fromError(found.error)
+
+  const userId = found.value
   // A name nobody has taken and a name whose lists happen to be empty are
   // different things, and only the first is a 404.
   //
@@ -127,7 +142,6 @@ const exportUserLists = async (event) => {
     return responses.fromError(errors.notFound(undefined, `no such user: ${username}`))
   }
 
-  const limit = toLimit(event)
   const siteUrl = toSiteUrl(event)
   const context = { username, siteUrl }
 
@@ -139,21 +153,29 @@ const exportUserLists = async (event) => {
   // is and where it lives, in a few hundred bytes, so a reader chooses before
   // it downloads rather than after a failure. Asking for entries here is still
   // `?limit=N`, which the index names.
-  if (!namesType && limit === undefined) {
+  if (!namesType && limit.value === undefined) {
     const counts = await findListCounts(collections.value, types, userId)
-    const index = toExportIndex({ username, counts, siteUrl })
+    if (counts.isErr()) return responses.fromError(counts.error)
+
+    const index = toExportIndex({ username, counts: counts.value, siteUrl })
 
     return wantsMarkdown(event)
       ? asText(MARKDOWN_CONTENT_TYPE, toIndexMarkdown(index), context)
       : asJson(index, context)
   }
 
-  const lists = await Promise.all(
-    collections.value.map(async (collection, index) =>
-      toExportList(types[index], await findListEntries(collection, userId, limit))
-    )
-  )
+  // Every read below is a `Result`, and any one of them failing fails the
+  // whole response. The alternative is the one #462 is about: a list that did
+  // not load drawn as a list with nothing in it, answered 200, and cached at
+  // the edge for five minutes and served stale for a day — a reader of this
+  // url has no other way to tell "no films" from "no answer". An error comes
+  // off `responses.js`, which sets no cache header, so it is not kept.
+  const rows = Result.combine(await Promise.all(
+    collections.value.map((collection) => findListEntries(collection, userId, limit.value))
+  ))
+  if (rows.isErr()) return responses.fromError(rows.error)
 
+  const lists = rows.value.map((entries, index) => toExportList(types[index], entries))
   const document = toExportDocument({ username, lists, siteUrl })
 
   return wantsMarkdown(event)
@@ -211,58 +233,59 @@ const MARKDOWN_CONTENT_TYPE = 'text/markdown; charset=utf-8'
  * by. Counted by the database rather than assembled — this is the reason the
  * index is cheap, and the reason it is worth being a different document
  * rather than a truncation of the other one.
- * @type {(collections: ValidCollection[], types: string[], userId: string) => Promise<Object.<string, number>>}
+ *
+ * A count that failed is an `Err` rather than a `0`: an index saying a list is
+ * empty sends a reader away from the one url that would have had it. #462.
+ * @type {(collections: ValidCollection[], types: string[], userId: string) => Promise<Result<Object.<string, number>, Error>>}
  */
-const findListCounts = async (collections, types, userId) => {
-  const counts = await Promise.all(
-    collections.map((collection) => db.countUserEntries_(collection, userId).unwrapOr(0))
+const findListCounts = async (collections, types, userId) =>
+  Result.combine(
+    await Promise.all(collections.map((collection) => db.countUserEntries_(collection, userId)))
+  ).map((counts) =>
+    Object.fromEntries(types.map((type, index) => [type, counts[index]]))
   )
-
-  return Object.fromEntries(types.map((type, index) => [type, counts[index]]))
-}
 
 /**
  * The entries of one list with their works and their notes. Two queries per
  * list: the entries joined to their works, then every note of those entries
  * at once.
- * @type {(collection: ValidCollection, userId: string, limit?: number) => Promise<object[]>}
+ *
+ * Either query failing fails the list. The notes failing is the quieter of
+ * the two and was the easier to miss: every entry still came back, each with
+ * its note silently dropped. #462.
+ * @type {(collection: ValidCollection, userId: string, limit?: number) => import('neverthrow').ResultAsync<object[], Error>}
  */
-const findListEntries = async (collection, userId, limit) => {
-  const rows = await db
-    .findAllUserEntriesWithMetadata_(collection, userId, limit)
-    .unwrapOr([])
-
-  const reviews = await findReviews(
-    toReviewCollection(collection),
-    rows.map(({ entry }) => entry?._id).filter(Boolean)
-  )
-
-  return rows.map(({ entry, work }) => ({
-    entry: entry ?? {},
-    work: work ?? {},
-    review: reviews.get(entry?._id),
-  }))
-}
+const findListEntries = (collection, userId, limit) =>
+  db.findAllUserEntriesWithMetadata_(collection, userId, limit)
+    .andThen((rows) =>
+      findReviews(
+        toReviewCollection(collection),
+        rows.map(({ entry }) => entry?._id).filter(Boolean)
+      ).map((reviews) =>
+        rows.map(({ entry, work }) => ({
+          entry: entry ?? {},
+          work: work ?? {},
+          review: reviews.get(entry?._id),
+        }))
+      )
+    )
 
 /**
  * The notes of a whole list, keyed by the entry they belong to. A note the
  * user has since emptied is stored as an empty string, which is not something
  * to export.
- * @type {(collection: ValidCollection, entryRefs: string[]) => Promise<Map<string, string>>}
+ * @type {(collection: ValidCollection, entryRefs: string[]) => import('neverthrow').ResultAsync<Map<string, string>, Error>}
  */
-const findReviews = async (collection, entryRefs) => {
-  const found = await db
-    .findAllByFieldIn_(collection, 'entryRef', entryRefs, {
-      projection: { entryRef: 1, text: 1 },
-    })
-    .unwrapOr([])
-
-  return new Map(
-    (found ?? [])
-      .filter((review) => review?.entryRef && review?.text)
-      .map((review) => [review.entryRef, review.text])
+const findReviews = (collection, entryRefs) =>
+  db.findAllByFieldIn_(collection, 'entryRef', entryRefs, {
+    projection: { entryRef: 1, text: 1 },
+  }).map((found) =>
+    new Map(
+      (found ?? [])
+        .filter((review) => review?.entryRef && review?.text)
+        .map((review) => [review.entryRef, review.text])
+    )
   )
-}
 
 /**
  * The site this was fetched from, so the export can link back to the pages it
@@ -283,10 +306,6 @@ const wantsMarkdown = (event) =>
   ['md', 'markdown', 'text'].includes(
     (event.queryStringParameters?.format ?? '').toLowerCase()
   )
-
-/** @type {(event: Event) => number | undefined} */
-const toLimit = (event) =>
-  parseInt(event.queryStringParameters?.limit ?? '') || undefined
 
 /**
  * Stringified here rather than by `responses.ok` because the byte budget
