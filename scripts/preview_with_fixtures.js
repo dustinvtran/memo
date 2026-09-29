@@ -94,7 +94,7 @@ const dune = {
 /**
  * A work with a real poster, stored the way every film and show written
  * before #483 stored one: on `www.themoviedb.org`, which redirects, at
- * 300×450. The list row should ask `image.tmdb.org` for `w92` of the same
+ * 300Ã—450. The list row should ask `image.tmdb.org` for `w92` of the same
  * file, and the comment panel should still show this url.
  */
 const spaceOdyssey = {
