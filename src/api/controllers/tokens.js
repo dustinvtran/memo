@@ -10,15 +10,29 @@
  * The token itself leaves the building once, in the answer to the request
  * that made it, and only its hash is stored — so a lost token is revoked and
  * replaced, never recovered.
+ *
+ * A token never expires unless it is made with `expiresInSeconds`;
+ * `utils/api_token.js` says why that is the default. An expired token is
+ * still listed until it is revoked, so its owner can see what stopped
+ * working, but does not count towards the cap, since it can no longer do
+ * anything the cap is protecting against.
  */
-import { ResultAsync, errAsync, okAsync } from 'neverthrow'
+import { Result, ResultAsync, errAsync, okAsync } from 'neverthrow'
 import * as responses from '../utils/responses.js'
 import * as errors from '../utils/errors.js'
 import * as db from '../utils/db/index.js'
 import { getSessionUserId, getReqBody, getSegment } from './utils.js'
 import { pair, toAsync, toPromise } from '../utils/general.js'
-import { generateApiToken, hashApiToken } from '../utils/api_token.js'
-import { apiTokenName as parseApiTokenName } from '../utils/parsers/apiTokens.js'
+import {
+  expiresAtOf,
+  generateApiToken,
+  hashApiToken,
+  isExpired,
+} from '../utils/api_token.js'
+import {
+  apiTokenLifetime as parseApiTokenLifetime,
+  apiTokenName as parseApiTokenName,
+} from '../utils/parsers/apiTokens.js'
 
 const COLLECTION = 'apiTokens'
 
@@ -31,9 +45,19 @@ const MAX_API_TOKENS_PER_USER = 20
 /**
  * What a caller is shown of a stored token: never its hash. The hash cannot
  * be turned back into a token, but nothing a client does needs it either.
- * @type {(stored: any) => { id: string, name: string, createdAt: number }}
+ *
+ * `expiresAt` is `null` for a token that never expires, including one minted
+ * before the field existed. `lastUsedAt` is `null` for a token never used,
+ * and otherwise good to within `LAST_USED_RESOLUTION_MS`.
+ * @type {(stored: any) => { id: string, name: string, createdAt: number, expiresAt: number | null, lastUsedAt: number | null }}
  */
-const describe = ({ _id, name, createdAt }) => ({ id: _id, name, createdAt })
+const describe = (stored) => ({
+  id: stored._id,
+  name: stored.name,
+  createdAt: stored.createdAt,
+  expiresAt: expiresAtOf(stored),
+  lastUsedAt: stored.lastUsedAt ?? null,
+})
 
 /** @type {(event: Event, context: Context) => Promise<Response>} */
 const listApiTokens = (event) => toPromise(
@@ -50,28 +74,33 @@ const createApiToken = (event) => toPromise(
     getSessionUserId(event),
     toAsync(getReqBody(event)),
   ]))
-    .andThen(([userId, { name }]) =>
-      toAsync(parseApiTokenName(name))
-        .andThen((validName) =>
-          db.findMany_(COLLECTION, { userId })
+    .andThen(([userId, { name, expiresInSeconds }]) =>
+      toAsync(Result.combine(pair([
+        parseApiTokenName(name),
+        parseApiTokenLifetime(expiresInSeconds),
+      ])))
+        .andThen((valid) => {
+          const now = Date.now()
+          return db.findMany_(COLLECTION, { userId })
             .andThen((existing) =>
-              existing.length < MAX_API_TOKENS_PER_USER
-                ? okAsync(validName)
+              existing.filter((stored) => !isExpired(stored, now)).length < MAX_API_TOKENS_PER_USER
+                ? okAsync(valid)
                 : errAsync(errors.conflict(
                     undefined,
                     `there are already ${MAX_API_TOKENS_PER_USER} API tokens; revoke one first`
                   ))
             )
-        )
-        .andThen((validName) => {
-          const token = generateApiToken()
-          return db.create_(COLLECTION, {
-            userId,
-            name: validName,
-            tokenHash: hashApiToken(token),
-            createdAt: Date.now(),
-          })
-            .map((stored) => ({ ...describe(stored), token }))
+            .andThen(([validName, lifetime]) => {
+              const token = generateApiToken()
+              return db.create_(COLLECTION, {
+                userId,
+                name: validName,
+                tokenHash: hashApiToken(token),
+                createdAt: now,
+                expiresAt: lifetime == null ? null : now + lifetime * 1000,
+              })
+                .map((stored) => ({ ...describe(stored), token }))
+            })
         })
     )
     .map(responses.ok)

@@ -312,6 +312,13 @@ test('renewal slides the expiry forward but not the session start', options, asy
   assert.equal(claims.session_started_at, startedAt)
 })
 
+test('renewal reads the Bearer scheme whatever its case', options, async () => {
+  const token = await sign({ sessionStartedAt: now() })
+  const response = await handleRenew({ headers: { authorization: `bearer ${token}` } })
+
+  assert.equal(response.statusCode, 200)
+})
+
 test('a session past the cap is not renewed again', options, async () => {
   // The token presented is in perfectly good order and has a fortnight left to
   // run - it is the session behind it that has gone on long enough.

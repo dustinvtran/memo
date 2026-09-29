@@ -18,6 +18,7 @@ import * as errors from '../utils/errors.js'
 import * as openidClient from '../utils/openid_client.js'
 import * as responses from '../utils/responses.js'
 import { VERIFY_OPTIONS, isWithinAbsoluteLifetime, sessionStartedAt, tokenSecret } from '../utils/session_token.js'
+import { bearerCredential } from '../utils/bearer.js'
 /* `openid-client` 6 is ESM-only — its exports map has no `require` condition —
    so it is loaded with `import()`, through the seam in `utils/openid_client`
    rather than from here directly. That works on every loader: the deployed
@@ -345,7 +346,7 @@ const generateNetlifyCookie = (netlifyToken) =>
     // cannot have yet: `Http.getToken` reads it from `document.cookie` and
     // `refreshTokenIfNecessary` parses its `exp` there, so hiding it means
     // moving the API to the cookie `getNetlifyJWTFromEvent` already accepts.
-    // Its own issue, not this one (#173).
+    // Its own issue, not this one (#173): #501.
     sameSite: "lax",
   })
 
@@ -355,7 +356,7 @@ const generateNetlifyCookieFromAuth0Token = async (tokenData) =>
 const getNetlifyJWTFromEvent = (event) => {
   const authHeader = event.headers?.authorization
   if (authHeader) {
-    return authHeader.replace("Bearer ", "")
+    return bearerCredential(authHeader)
   }
   const cookieHeader = event.headers?.cookie
   return cookieHeader

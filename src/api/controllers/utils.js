@@ -10,7 +10,8 @@ import { validateExists } from '../utils/general.js'
 import { identity } from 'ramda'
 import { jwtVerify } from 'jose'
 import { tokenSecret, VERIFY_OPTIONS } from '../utils/session_token.js'
-import { hashApiToken, looksLikeApiToken } from '../utils/api_token.js'
+import { hashApiToken, isExpired, looksLikeApiToken, shouldRecordUse } from '../utils/api_token.js'
+import { bearerCredential } from '../utils/bearer.js'
 /**
  * The user behind the bearer credential, or an unauthorized error.
  *
@@ -238,7 +239,7 @@ const describeBody = (body) =>
 /** @type {(event: Event) => Result<string, Error>} */
 const getBearer = (event) =>
   validateExists(event.headers?.authorization)
-    .map((authString) => authString.replace('Bearer ', ''))
+    .map(bearerCredential)
     .mapErr(errors.unauthorized)
 
 /** @type {(jwt: string) => ResultAsync<string, Error>} */
@@ -249,19 +250,47 @@ const userIdOfSession = (jwt) =>
 
 /**
  * The owner of an API token, found by its hash. A token nobody holds — never
- * issued, revoked, or mangled on the way — is a 401 like a bad session. A
- * database that did not answer stays a `DBError`, and so a 500: a 401 would
- * tell the caller their token is no good, and it may be fine.
+ * issued, revoked, or mangled on the way — is a 401 like a bad session, and
+ * so is one past its `expiresAt`. A database that did not answer stays a
+ * `DBError`, and so a 500: a 401 would tell the caller their token is no
+ * good, and it may be fine.
  *
  * A miss carries no `detail`, for the reason `findOneByFieldOrFail_` gives: a
  * bad token is the request a stranger makes on purpose, and `fromError` logs
- * every `detail` it is handed.
+ * every `detail` it is handed. An expired token does say so, since only the
+ * holder of a real token can get that far, and "issue another" is the one
+ * thing they need to hear.
  * @type {(token: string) => ResultAsync<string, Error>}
  */
 const userIdOfApiToken = (token) =>
   db.findOneByField_('apiTokens', 'tokenHash', hashApiToken(token))
-    .andThen((stored) =>
-      stored?.userId
-        ? okAsync(stored.userId)
-        : errAsync(errors.unauthorized())
-    )
+    .andThen((stored) => {
+      const now = Date.now()
+      return !stored?.userId ? errAsync(errors.unauthorized())
+        : isExpired(stored, now) ? errAsync(errors.unauthorized(
+            undefined,
+            'this API token has expired; issue a new one from a signed-in session'
+          ))
+        : recordUse(stored, now).map(() => stored.userId)
+    })
+
+/**
+ * Writes `lastUsedAt`, at most once per `LAST_USED_RESOLUTION_MS` a token.
+ *
+ * Awaited rather than left running, because a function's work stops when it
+ * answers and a write started just before may never land. A write that fails
+ * does not fail the request: the request was authenticated either way, and
+ * answering 500 over a timestamp would make the bookkeeping the thing that
+ * broke. It is logged instead, since a `lastUsedAt` that stopped moving is
+ * worth knowing about.
+ * @type {(stored: any, now: number) => ResultAsync<void, never>}
+ */
+const recordUse = (stored, now) =>
+  shouldRecordUse(stored, now)
+    ? db.updateByRef_('apiTokens', stored._id, { lastUsedAt: now })
+        .map(() => undefined)
+        .orElse((error) => {
+          console.warn(`could not record an API token's use: ${error?.error ?? error}`)
+          return okAsync(undefined)
+        })
+    : okAsync(undefined)

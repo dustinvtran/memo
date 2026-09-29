@@ -34,6 +34,7 @@ process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
 const store = {}
 
 let readsFail = false
+let updatesFail = false
 
 const matches = (doc, filter = {}) =>
   Object.entries(filter).every(([field, wanted]) => doc[field] === wanted)
@@ -50,6 +51,7 @@ const collection = (name) => ({
   },
   insertOne: async (doc) => (collectionOf(name).push(doc), { insertedId: doc._id }),
   updateOne: async (filter, { $set }) => {
+    if (updatesFail) throw new Error('update failed')
     const doc = collectionOf(name).find((d) => matches(d, filter))
     if (doc) Object.assign(doc, $set)
     return { modifiedCount: doc ? 1 : 0 }
@@ -79,6 +81,9 @@ const bio = dependenciesInstalled ? await import('../routes/bio.js') : undefined
 const { MAX_API_TOKENS_PER_USER } = dependenciesInstalled
   ? await import('./tokens.js')
   : { MAX_API_TOKENS_PER_USER: 0 }
+const { MAX_API_TOKEN_LIFETIME_SECONDS, LAST_USED_RESOLUTION_MS } = dependenciesInstalled
+  ? await import('../utils/api_token.js')
+  : {}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -86,13 +91,13 @@ const { MAX_API_TOKENS_PER_USER } = dependenciesInstalled
  * `as` is a user id, for which a real session token is minted; `bearer` is a
  * credential sent exactly as given.
  */
-const callRoute = async (route, method, url, { as, bearer, body } = {}) => {
+const callRoute = async (route, method, url, { as, bearer, body, scheme = 'Bearer' } = {}) => {
   const credential = bearer ?? (as ? await tokenFor(as) : undefined)
   const response = await route.handler(
     {
       httpMethod: method,
       path: `/.netlify/functions/${url}`,
-      headers: credential ? { authorization: `Bearer ${credential}` } : {},
+      headers: credential ? { authorization: `${scheme} ${credential}` } : {},
       body: body === undefined ? null : JSON.stringify(body),
     },
     {}
@@ -111,8 +116,10 @@ const seed = () => {
   store.apiTokens = []
 }
 
-const issue = (as = 'u1', tokenName = 'claude') =>
-  callRoute(tokens, 'POST', 'tokens', { as, body: { name: tokenName } })
+const issue = (as = 'u1', tokenName = 'claude', extra = {}) =>
+  callRoute(tokens, 'POST', 'tokens', { as, body: { name: tokenName, ...extra } })
+
+const DAY_MS = 24 * 3600 * 1000
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -216,7 +223,10 @@ test('listing shows a user their own tokens, without hashes', options, async () 
   assert.equal(statusCode, 200)
   assert.deepEqual(body.map((t) => t.name).sort(), ['claude', 'laptop'])
   for (const listed of body) {
-    assert.deepEqual(Object.keys(listed).sort(), ['createdAt', 'id', 'name'])
+    assert.deepEqual(
+      Object.keys(listed).sort(),
+      ['createdAt', 'expiresAt', 'id', 'lastUsedAt', 'name']
+    )
   }
 })
 
@@ -262,4 +272,118 @@ test('a session token still works everywhere it did', options, async () => {
 
   assert.equal(statusCode, 200)
   assert.equal(body.username, 'nil')
+})
+
+test('a token never expires unless it is given a lifetime', options, async () => {
+  seed()
+
+  const { body: forever } = await issue('u1', 'forever')
+  assert.equal(forever.expiresAt, null)
+  assert.equal(store.apiTokens[0].expiresAt, null)
+
+  const { body: explicit } = await issue('u1', 'explicit', { expiresInSeconds: null })
+  assert.equal(explicit.expiresAt, null)
+
+  for (const days of [30, 90]) {
+    const { body } = await issue('u1', `${days} days`, { expiresInSeconds: days * 24 * 3600 })
+    assert.equal(body.expiresAt, body.createdAt + days * 24 * 3600 * 1000)
+  }
+})
+
+test('a never-expiring token still works long after it was made', options, async () => {
+  seed()
+  const { body: { token } } = await issue()
+  store.apiTokens[0].createdAt = Date.now() - 10 * 365 * DAY_MS
+
+  assert.equal((await callRoute(name, 'GET', 'name', { bearer: token })).statusCode, 200)
+})
+
+test('a lifetime that is not a whole positive number, or is absurdly long, is refused', options, async () => {
+  seed()
+
+  for (const expiresInSeconds of [MAX_API_TOKEN_LIFETIME_SECONDS + 1, 0, -5, 1.5, '3600']) {
+    const { statusCode } = await issue('u1', 'claude', { expiresInSeconds })
+    assert.equal(statusCode, 400, String(expiresInSeconds))
+  }
+  assert.equal(store.apiTokens.length, 0)
+})
+
+test('an expired token is a 401 that says so', options, async () => {
+  seed()
+  const { body: { token } } = await issue()
+  store.apiTokens[0].expiresAt = Date.now() - 1
+
+  const { statusCode, body } = await callRoute(name, 'GET', 'name', { bearer: token })
+
+  assert.equal(statusCode, 401)
+  assert.match(body.message, /expired/)
+})
+
+test('a token minted before expiresAt existed never expires', options, async () => {
+  seed()
+  const { body: { token } } = await issue()
+  const [stored] = store.apiTokens
+  delete stored.expiresAt
+  stored.createdAt = Date.now() - 10 * 365 * DAY_MS
+
+  assert.equal((await callRoute(name, 'GET', 'name', { bearer: token })).statusCode, 200)
+  const { body: [listed] } = await callRoute(tokens, 'GET', 'tokens', { as: 'u1' })
+  assert.equal(listed.expiresAt, null)
+})
+
+test('using a token records when, at most once an hour', options, async () => {
+  seed()
+  const { body: { token } } = await issue()
+  const [stored] = store.apiTokens
+  assert.equal(stored.lastUsedAt, undefined)
+
+  const before = Date.now()
+  await callRoute(name, 'GET', 'name', { bearer: token })
+  assert.ok(stored.lastUsedAt >= before)
+
+  const recent = Date.now() - LAST_USED_RESOLUTION_MS + 60 * 1000
+  stored.lastUsedAt = recent
+  await callRoute(name, 'GET', 'name', { bearer: token })
+  assert.equal(stored.lastUsedAt, recent)
+
+  stored.lastUsedAt = Date.now() - LAST_USED_RESOLUTION_MS
+  await callRoute(name, 'GET', 'name', { bearer: token })
+  assert.ok(stored.lastUsedAt >= before)
+
+  const { body: [listed] } = await callRoute(tokens, 'GET', 'tokens', { as: 'u1' })
+  assert.equal(listed.lastUsedAt, stored.lastUsedAt)
+})
+
+test('a lastUsedAt that cannot be written does not fail the request', options, async () => {
+  seed()
+  const { body: { token } } = await issue()
+
+  updatesFail = true
+  try {
+    const { statusCode } = await callRoute(name, 'GET', 'name', { bearer: token })
+    assert.equal(statusCode, 200)
+  } finally {
+    updatesFail = false
+  }
+})
+
+test('an expired token does not count towards the cap', options, async () => {
+  seed()
+  for (let i = 0; i < MAX_API_TOKENS_PER_USER; i++) await issue('u1', `t${i}`)
+  store.apiTokens[0].expiresAt = Date.now() - 1
+
+  const accepted = await issue('u1', 'room made by expiry')
+  assert.equal(accepted.statusCode, 200)
+})
+
+test('the Bearer scheme is recognised whatever its case', options, async () => {
+  seed()
+  const { body: { token } } = await issue()
+
+  for (const scheme of ['bearer', 'BEARER']) {
+    const withToken = await callRoute(name, 'GET', 'name', { bearer: token, scheme })
+    assert.equal(withToken.statusCode, 200, scheme)
+    const withSession = await callRoute(name, 'GET', 'name', { as: 'u1', scheme })
+    assert.equal(withSession.statusCode, 200, scheme)
+  }
 })
