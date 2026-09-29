@@ -5,12 +5,14 @@ const {
   siblingsAfterRun,
   deleteRefusalReason,
   linkUpdate,
+  blankOverrideFields,
   nameAfter,
   overrideIsRedundant,
   workTitleRefusalReason,
   workTitleUpdate,
   renderedAfterRename,
 } = require("./entry_link_plan");
+const { planBlankOverrideRemoval } = require("./blank_override_plan");
 
 const games = { type: "games", retrievePrefix: "igdb" };
 const films = { type: "films", retrievePrefix: "tmdb" };
@@ -277,6 +279,92 @@ test("an emptied entryTitle unsets the override rather than blanking it", () => 
 test("no override to begin with and none asked for is not an unset", () => {
   const { unset } = linkUpdate({ entry, workId: "w1", entryTitle: "" });
   assert.deepEqual(unset, {});
+});
+
+/**
+ * #479. With no work these hide nothing; once linked, `[""]` wins the `??`
+ * merge over the work's own directors and genres — #395's defect, reintroduced
+ * one row at a time by the script meant to repair rows.
+ */
+test("a link unsets every override list with nothing readable in it", () => {
+  const unlinked = {
+    _id: "338137896187855441",
+    overrides: {
+      englishTranslatedTitle: "Some Film",
+      releaseYear: 2024,
+      genres: [""],
+      directors: ["", " "],
+      actors: [null],
+    },
+  };
+  const { set, unset, blankFields } = linkUpdate({ entry: unlinked, workId: "w1" });
+  assert.deepEqual(set, { workRef: "w1" });
+  assert.deepEqual(unset, {
+    "overrides.genres": "",
+    "overrides.directors": "",
+    "overrides.actors": "",
+  });
+  assert.deepEqual(blankFields, ["genres", "directors", "actors"]);
+});
+
+test("a link keeps what the blank-override removal keeps", () => {
+  const kept = {
+    _id: "e1",
+    overrides: {
+      directors: null, // the form's deliberate clear
+      genres: ["", "Drama"], // renders Drama
+      actors: [], // #395 did not measure it
+      studios: "", // a blank scalar, likewise
+      "a.b": [""], // no $unset reaches just this key
+    },
+  };
+  const { unset, blankFields } = linkUpdate({ entry: kept, workId: "w1" });
+  assert.deepEqual(unset, {});
+  assert.deepEqual(blankFields, []);
+});
+
+test("a link clears the keys the blank-override removal would clear, and no others", () => {
+  const unlinked = {
+    _id: "e1",
+    workRef: "w1",
+    overrides: { genres: [""], authors: [" "], directors: null, actors: ["Someone"] },
+  };
+  const plan = planBlankOverrideRemoval([unlinked], [{ _id: "w1" }]);
+  const removed = plan.removals.flatMap((removal) => removal.fields.map(({ field }) => field));
+  assert.deepEqual(blankOverrideFields(unlinked), removed);
+});
+
+test("blank overrides go alongside a title and the other unsets", () => {
+  const unlinked = {
+    _id: "e1",
+    overrides: { englishTranslatedTitle: "Old", originalTitle: "旧", genres: [""] },
+  };
+  const { set, unset } = linkUpdate({
+    entry: unlinked,
+    workId: "w1",
+    entryTitle: "",
+    entryOriginalTitle: "",
+  });
+  assert.deepEqual(set, { workRef: "w1" });
+  assert.deepEqual(unset, {
+    "overrides.genres": "",
+    "overrides.englishTranslatedTitle": "",
+    "overrides.originalTitle": "",
+  });
+});
+
+test("a path the link sets is never also unset", () => {
+  const odd = { _id: "e1", overrides: { englishTranslatedTitle: [""] } };
+  const { set, unset, blankFields } = linkUpdate({ entry: odd, workId: "w1", entryTitle: "Named" });
+  assert.equal(set["overrides.englishTranslatedTitle"], "Named");
+  assert.deepEqual(unset, {});
+  assert.deepEqual(blankFields, []);
+});
+
+test("an entry with no overrides object has no blank fields", () => {
+  assert.deepEqual(blankOverrideFields({ _id: "e1" }), []);
+  assert.deepEqual(blankOverrideFields({ _id: "e1", overrides: null }), []);
+  assert.deepEqual(blankOverrideFields(undefined), []);
 });
 
 test("a delete only ever takes the work when the entry is its last", () => {

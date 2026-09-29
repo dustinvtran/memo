@@ -48,7 +48,9 @@ reach, `prune_unreachable_documents.js --only=reviews` deletes review
 documents holding nothing, `clear_noop_overrides.js` removes the overrides
 that are copies of the work they override, `clear_blank_overrides.js` removes
 the ones holding a list with nothing readable in it, and `link_entry.js`
-writes an entry's `workRef` and the name it is filed under.
+writes an entry's `workRef` and the name it is filed under — and, in the same
+write, unsets that entry's lists of blanks, which hide nothing until the entry
+has a work and then hide the work's own value (#479).
 
 The last three are the ones that reach an override at all, and their
 exceptions are about the overrides rather than in spite of them, so each
