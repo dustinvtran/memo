@@ -61,6 +61,20 @@ const read = (stream) =>
 const main = async () => {
   const report = JSON.parse(await read(process.stdin))
 
+  /* A failed `npm audit` — the registry unreachable, a rate limit — still
+     writes JSON, just an error object with no `vulnerabilities` in it, and
+     reading that as an empty report would pass having audited nothing. A real
+     report always counts the tree it read, so no count means no audit. */
+  if (report.error || !report.metadata?.dependencies) {
+    console.error('npm audit did not produce a report, so nothing was checked:')
+    console.error(
+      report.error
+        ? JSON.stringify(report.error, null, 2)
+        : '  no `error` and no `metadata.dependencies` in its output'
+    )
+    process.exit(1)
+  }
+
   /* `via` holds either an advisory or the name of the dependency that brought
      one in. Only the objects are advisories, and the same one appears under
      every package it reaches, so they are collected by url rather than counted. */

@@ -13,24 +13,41 @@
  * default is deliberate: the common case is recovering something that was
  * overwritten or deleted, not rewinding the whole database.
  *
+ * Two things it will not do without being told (#465, #466, and the rules
+ * themselves are in ../restore_plan.js):
+ *
+ * - **It skips `apiTokens`** unless `--only` names it. A revoked token is a
+ *   document that is missing, so restoring it puts back a credential, not
+ *   data.
+ * - **It connects only to the host `--target` names**, and that must be the
+ *   host `MONGODB_URL` points at. The production host — the one in the `.env`
+ *   that ../env.js loads, read from the file so an inline override cannot
+ *   hide it — is refused unless `--production` is also passed. Dry runs
+ *   included, so a dry run fails exactly where the real run would.
+ *
  * Usage:
- *   node scripts/restore_backup.js                          # dry run, latest snapshot
- *   node scripts/restore_backup.js --only=bookEntries,bookReviews
- *   node scripts/restore_backup.js --from=snapshot-2024-06-30T04-17-00-000Z --apply
+ *   MONGODB_URL=<scratch> node scripts/restore_backup.js --target=<scratch host>
+ *   node scripts/restore_backup.js --target=<host> --production --only=bookEntries,bookReviews
+ *   node scripts/restore_backup.js --target=<host> --production  *     --from=snapshot-2024-06-30T04-17-00-000Z --apply
  *
  * Flags:
+ *   --target=host       required: the host MONGODB_URL points at, as printed
+ *   --production        required as well when that host is production's
  *   --dir=path          where snapshots live (default ../backups)
  *   --from=name|path    which snapshot to restore (default: the newest one)
- *   --only=a,b          only restore these collections
+ *   --only=a,b          only restore these collections (the only way to
+ *                       restore apiTokens)
  *   --prune             also delete documents the snapshot doesn't have
  *   --apply             actually write (without it, nothing is written)
  *   --no-safety-backup  don't snapshot the current database first
  *   --skip-verify       restore even if the snapshot fails its checksums
  */
-require("../env");
+const { envFile } = require("../env");
 const fs = require("fs");
 const path = require("path");
+const dotenv = require("dotenv");
 const { parseArgs } = require("../work_collections");
+const { planCollections, checkTarget } = require("../restore_plan");
 const {
   connect,
   writeSnapshot,
@@ -56,6 +73,22 @@ const main = async () => {
     verify: args["skip-verify"] !== true,
   };
 
+  const target = checkTarget({
+    target: args.target,
+    connectionUrl: process.env.MONGODB_URL,
+    productionUrl: productionUrl(),
+    envFile,
+    production: args.production === true,
+  });
+  if (target.refusal) {
+    console.error(target.refusal);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(
+    `Target: ${target.host}` + (target.isProduction ? " — PRODUCTION" : "")
+  );
+
   const snapshotDir = resolveSnapshotDir(options);
   if (!snapshotDir) return;
 
@@ -80,8 +113,12 @@ const main = async () => {
     console.warn("\n--skip-verify given, continuing anyway.\n");
   }
 
-  const collections = (manifest?.collections ?? []).filter(({ name }) =>
-    options.only ? options.only.includes(name) : true
+  const { restore: collections, skipped } = planCollections({
+    collections: manifest?.collections ?? [],
+    only: options.only,
+  });
+  skipped.forEach(({ name, reason }) =>
+    console.log(`${name}: skipped — ${reason}`)
   );
 
   if (collections.length === 0) {
@@ -158,6 +195,16 @@ const restoreCollection = async (db, snapshotDir, { name, file }, options) => {
       (options.prune ? `, deleted ${extra.length}` : "")
   );
 };
+
+/**
+ * The MONGODB_URL written in the .env that env.js loads, read from the file
+ * itself: dotenv never overwrites a variable already set, so process.env
+ * holds an inline override instead and cannot say which host is production.
+ */
+const productionUrl = () =>
+  fs.existsSync(envFile)
+    ? dotenv.parse(fs.readFileSync(envFile)).MONGODB_URL
+    : undefined;
 
 /** Key order is not meaningful in a document, so it must not count as a diff. */
 const stableStringify = (value) => {

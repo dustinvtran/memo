@@ -54,6 +54,26 @@ jobs:
       - name: Syntax check every JS file
         run: git ls-files '*.js' | xargs -n1 -P4 node --check
 
+      # `node --check` and esbuild both accept a comment holding a stray
+      # Windows-1252 byte, so an editor that saves in the wrong encoding
+      # breaks nothing that runs and only shows up as `�` on GitHub. #459 did
+      # that to two files (#469). `git grep -I` is git's own notion of a
+      # text file, so images and fonts are left out without a list of them.
+      - name: Every tracked text file is UTF-8
+        run: |
+          git grep -Iz --name-only -e '' | node -e '
+            const fs = require("fs")
+            const files = fs.readFileSync(0, "utf8").split("\0").filter(Boolean)
+            const decoder = new TextDecoder("utf-8", { fatal: true })
+            const bad = files.filter((file) => {
+              try { decoder.decode(fs.readFileSync(file)); return false }
+              catch { return true }
+            })
+            for (const file of bad) console.log(`not UTF-8: ${file}`)
+            console.log(`${files.length} tracked text files read, ${bad.length} not UTF-8`)
+            process.exit(bad.length ? 1 : 0)
+          '
+
   # `npm ci` is the only reader of `package-lock.json` that checks it against
   # `package.json` at all, and #396 is what happens when every reader in CI
   # runs the npm that reads it leniently. `npm ci` against main failed outright

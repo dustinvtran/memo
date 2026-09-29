@@ -105,3 +105,16 @@ test('the index skips rows that identify nothing', () => {
   assert.deepEqual([...namesById], [[4432, 'Team Cherry']])
   assert.deepEqual([...indexCompanyNamesById(null)], [])
 })
+
+test('a name given twice for one role is stored once, where it first came', () => {
+  // #481. The same company on two `involved_companies` rows, or two company
+  // records under one name, used to be stored as `["Valve", "Valve"]`.
+  const rows = [
+    { id: 1, name: 'Valve' },
+    { id: 2, name: 'Hidden Path' },
+    { id: 3, name: 'Valve' },
+  ]
+
+  assert.deepEqual(companyNames([1, 2, 3], rows), ['Valve', 'Hidden Path'])
+  assert.deepEqual(companyNames([1, 1], rows), ['Valve'])
+})

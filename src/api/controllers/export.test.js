@@ -56,6 +56,20 @@ process.env.TOKEN_SECRET = process.env.TOKEN_SECRET ?? 'a-secret-for-the-tests'
 
 const store = {}
 
+/**
+ * The one read that is going to refuse, as `{ collection, op }` — #462. The
+ * same switch entries.test.js keeps, and for the same reason: an Atlas
+ * timeout is the case worth testing and there is no way to ask a real one for
+ * it on demand.
+ */
+let broken = null
+
+const refuseIfBroken = (name, op) => {
+  if (broken?.collection === name && broken?.op === op) {
+    throw new Error(`the database refused to ${op} on ${name}`)
+  }
+}
+
 const matchesValue = (value, wanted) =>
   wanted && typeof wanted === 'object' && !Array.isArray(wanted)
     ? '$ne' in wanted
@@ -107,18 +121,28 @@ const applyStage = (rows, stage) => {
 
 const collection = (name) => ({
   aggregate: (pipeline) => ({
-    toArray: async () => pipeline.reduce(applyStage, collectionOf(name)),
+    toArray: async () => (
+      refuseIfBroken(name, 'aggregate'),
+      pipeline.reduce(applyStage, collectionOf(name))
+    ),
   }),
   find: (filter) => ({
-    toArray: async () => collectionOf(name).filter((doc) => matches(doc, filter)),
+    toArray: async () => (
+      refuseIfBroken(name, 'find'),
+      collectionOf(name).filter((doc) => matches(doc, filter))
+    ),
   }),
-  findOne: async (filter) =>
-    collectionOf(name).find((doc) => matches(doc, filter)) ?? null,
+  findOne: async (filter) => (
+    refuseIfBroken(name, 'findOne'),
+    collectionOf(name).find((doc) => matches(doc, filter)) ?? null
+  ),
   // What the index document is built out of — #334. The real one is
   // `countDocuments({ userId })` against the entry indexes, which is why the
   // index answers without assembling a list.
-  countDocuments: async (filter) =>
-    collectionOf(name).filter((doc) => matches(doc, filter)).length,
+  countDocuments: async (filter) => (
+    refuseIfBroken(name, 'countDocuments'),
+    collectionOf(name).filter((doc) => matches(doc, filter)).length
+  ),
 })
 
 class MongoClient {
@@ -181,6 +205,7 @@ const getExport = async (path, query = undefined) => {
 }
 
 const seed = () => {
+  broken = null
   store.users = [{ _id: 'a1', userId: 'u1', username: 'reader' }]
   store.filmEntries = [
     {
@@ -533,4 +558,109 @@ test('a verb the route really does not serve is still a 404', options, async () 
   )
 
   assert.equal(response.statusCode, 404)
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// #462. Every read here used to `.unwrapOr` its way past a failure — an empty
+// list, a zero count, no notes, no such user — and answer 200 with the cache
+// headers on, so a blip at Atlas was served from the edge as "reader has no
+// films" for five minutes and as a stale copy for a day after that. These
+// refuse one read each and ask for a 500 that says nothing more, carrying no
+// cache header.
+
+/** A database failure, as `fromError` tells it to a stranger. */
+const DB_ERROR = { error: 'DBError', message: 'the database did not answer' }
+
+const assertUncachedDbError = ({ statusCode, headers, body }) => {
+  assert.equal(statusCode, 500)
+  assert.deepEqual(body, DB_ERROR)
+  assert.ok(!('cache-control' in headers))
+  assert.ok(!('netlify-cdn-cache-control' in headers))
+}
+
+test('a list whose entries will not load is a 500, not an empty list', options, async () => {
+  seed()
+  broken = { collection: 'filmEntries', op: 'aggregate' }
+
+  assertUncachedDbError(await getExport('/films/reader'))
+})
+
+test('a list whose notes will not load is a 500, not a list without notes', options, async () => {
+  // The quieter of the two: every entry still came back, and every note was
+  // dropped from it without a word.
+  seed()
+  store.filmReviews = [{ _id: 'r1', entryRef: 'e1', text: 'a note' }]
+  broken = { collection: 'filmReviews', op: 'find' }
+
+  assertUncachedDbError(await getExport('/films/reader'))
+})
+
+test('one list failing fails the all-lists export too', options, async () => {
+  // Three lists fine and one empty would read as a real answer, and is the
+  // likeliest shape of a partial outage.
+  seed()
+  broken = { collection: 'gameEntries', op: 'aggregate' }
+
+  assertUncachedDbError(await getExport('/reader', { limit: '200' }))
+})
+
+test('an index whose counts will not load is a 500, not a list of zeros', options, async () => {
+  seed()
+  broken = { collection: 'filmEntries', op: 'countDocuments' }
+
+  assertUncachedDbError(await getExport('/reader'))
+})
+
+test('a user lookup the database refuses is a 500, not "no such user"', options, async () => {
+  seed()
+  broken = { collection: 'users', op: 'findOne' }
+
+  assertUncachedDbError(await getExport('/films/reader'))
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// #463. `?limit=` was `parseInt(…) || undefined`: `-5` reached `$limit`, which
+// the driver refuses and the export used to read as an empty list; `abc` and
+// `0` were no limit at all, which on the all-lists url is the index rather
+// than the entries asked for; `12abc` and `1.5` were numbers nobody wrote.
+
+const BAD_LIMITS = ['-5', '0', 'abc', '1.5', '12abc', '', ' 3', '1e3', '007']
+
+test('a limit that is not a positive integer is a 400 that says so', options, async () => {
+  for (const path of ['/films/reader', '/reader']) {
+    for (const limit of BAD_LIMITS) {
+      seed()
+
+      const { statusCode, body, headers } = await getExport(path, { limit })
+
+      assert.equal(statusCode, 400, `${path}?limit=${limit}`)
+      assert.deepEqual(body, {
+        error: 'RequestError',
+        message: `limit must be a positive integer, not "${limit}"`,
+      })
+      assert.ok(!('cache-control' in headers))
+    }
+  }
+})
+
+test('a bad limit is refused before the database is asked anything', options, async () => {
+  // So the 400 is about the request, whatever state the database is in.
+  seed()
+  broken = { collection: 'users', op: 'findOne' }
+
+  const { statusCode } = await getExport('/films/reader', { limit: '-5' })
+
+  assert.equal(statusCode, 400)
+})
+
+test('a positive limit is still a limit', options, async () => {
+  seed()
+  store.filmEntries.push({
+    _id: 'e2', userId: 'u1', workRef: 'w1', status: 'Watched', updatedDate: 1800000000000,
+  })
+
+  const { statusCode, body } = await getExport('/films/reader', { limit: '1' })
+
+  assert.equal(statusCode, 200)
+  assert.equal(body.lists[0].entries.length, 1)
 })

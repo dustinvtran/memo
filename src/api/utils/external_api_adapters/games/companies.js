@@ -13,6 +13,7 @@
  * *ids* and role flags, and the names come back from a second `/companies`
  * request. Everything between those two responses is here.
  */
+import { unique } from '../unique.js'
 
 /**
  * IGDB will not return more than this many rows for one query, the same cap
@@ -79,7 +80,7 @@ const indexCompanyNamesById = (companies) =>
 
 /**
  * The names for `ids`, in the order they were asked for, dropping any the
- * response did not carry.
+ * response did not carry and any already given.
  *
  * Dropping rather than keeping a hole is the whole point, and matches what
  * ../tmdb_mapping.js does in `genreNames`, `directorNames` and
@@ -88,13 +89,20 @@ const indexCompanyNamesById = (companies) =>
  * or deleted — and neither is a reason to reject a game we can otherwise
  * describe. A work with one unnameable publisher is worth caching with the
  * publishers we could name.
+ *
+ * Without repeats: IGDB can answer with one name more than once for a role —
+ * the same company on two `involved_companies` rows, or two company records
+ * under one name — and stored as it came, it drew as the same link twice.
+ * #481.
  * @type {(ids: number[], companies: any) => string[]}
  */
 const companyNames = (ids, companies) => {
   const namesById = indexCompanyNamesById(companies)
-  return (Array.isArray(ids) ? ids : [])
-    .map((id) => namesById.get(Number(id)))
-    .filter((name) => typeof name === 'string')
+  return unique(
+    (Array.isArray(ids) ? ids : [])
+      .map((id) => namesById.get(Number(id)))
+      .filter((name) => typeof name === 'string')
+  )
 }
 
 export {

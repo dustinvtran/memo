@@ -85,7 +85,7 @@ const hasChanges = (before, after) => changedFields(before, after).length > 0
  * changed relative to the version before it.
  *
  * The oldest version is also marked `isOriginal` when it is the entry exactly
- * as it was added — when its date is the moment the entry's id was minted.
+ * as it was added â€” when its date is the moment the entry's id was minted.
  * Otherwise the history begins partway through: the entry predates it, or
  * predates `updatedDate`, and what it was added with is not known.
  *

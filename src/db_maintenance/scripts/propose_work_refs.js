@@ -27,7 +27,13 @@
  *   --works=<file>  search these work ids instead of the ones with no ref:
  *                   a work whose ref answers with a different work needs the
  *                   same search, and cannot be found by querying the database
- *                   (#448). Takes a bare list of ids or rows carrying `work`.
+ *                   (#448). Reads either a JSON list — each row an id, or an
+ *                   object with a `work` or `id` field, so this script's own
+ *                   output passes as it stands — or `audit_database.js
+ *                   --verify-titles --json`'s report, from which it takes
+ *                   `titleRefDifferent` and `titleRefContained`. A row it
+ *                   cannot read is refused, and every id that matched no work
+ *                   is printed. ../named_works.js and #468.
  *   --limit=N       stop after N works per collection, for a trial run
  *   --delay=MS      override the collection pause; Google Books needs more
  *                   than its usual 1000ms when several queries run per work
@@ -44,6 +50,7 @@ const {
 } = require("../work_collections");
 const { loadAdapter, describeError } = require("../load_adapter");
 const { rankCandidates, queriesFor, STRONG } = require("../work_ref_proposal");
+const { parseNamedWorks, unmatchedNamed } = require("../named_works");
 
 const main = async () => {
   const args = parseArgs(process.argv);
@@ -55,16 +62,17 @@ const main = async () => {
   // rate-limited Google Books on 64 of 76 books.
   const maxQueries = Number(args["max-queries"]) || 3;
   // Ids to search *instead of* the works with no ref — see `targets` below.
-  // Reads a bare list of ids, or the rows this script's own output uses, or
-  // anything else carrying a `work` or `id` per row, so a worklist from
-  // another step can be handed over without a reshaping pass.
+  // Read before connecting, so a file of the wrong shape is refused before
+  // anything is asked of the database or the APIs. ../named_works.js.
   const named = args.works
     ? new Set(
-        JSON.parse(fs.readFileSync(String(args.works), "utf8")).map((row) =>
-          String(typeof row === "string" ? row : (row.work ?? row.id))
+        parseNamedWorks(
+          JSON.parse(fs.readFileSync(String(args.works), "utf8")),
+          String(args.works)
         )
       )
     : undefined;
+  const matched = new Set();
   const collections = selectCollections(
     args.only === undefined || args.only === true
       ? undefined
@@ -113,12 +121,15 @@ const main = async () => {
               ? named.has(String(work._id))
               : !findApiRef(work.apiRefs, collection.retrievePrefix)
           )
-          .map((work) => ({
-            kind: "work",
-            id: String(work._id),
-            doc: work,
-            entries: counts.get(String(work._id)) ?? 0,
-          })),
+          .map((work) => {
+            matched.add(String(work._id));
+            return {
+              kind: "work",
+              id: String(work._id),
+              doc: work,
+              entries: counts.get(String(work._id)) ?? 0,
+            };
+          }),
         // An entry with no work is not part of a `--works` run: that flag
         // names works whose ref is wrong, and an entry with nothing to point
         // at is a different repair with a different answer.
@@ -219,6 +230,19 @@ const main = async () => {
   fs.writeFileSync(`${stem}.json`, JSON.stringify(rows, null, 1));
   fs.writeFileSync(`${stem}.md`, markdown(rows));
   report(rows, stem);
+
+  // A stale list and a misshaped one look the same from outside — a run that
+  // searched less than it was asked to — so every miss is named, not counted.
+  if (named) {
+    const missing = unmatchedNamed(named, matched);
+    if (missing.length > 0) {
+      console.warn(
+        `\n${missing.length} of ${named.size} named id(s) matched no work` +
+          `${args.only === undefined ? "" : " in the collections searched"}:`
+      );
+      for (const id of missing) console.warn(`  ${id}`);
+    }
+  }
 };
 
 /** The title to search: a work's own, or what an unlinked entry had typed. */

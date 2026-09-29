@@ -308,6 +308,7 @@ const unsetPaths = (removal) =>
 module.exports = {
   planBlankOverrideRemoval,
   unsetPaths,
+  isAddressable,
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -336,13 +337,17 @@ const keptReason = (stored) => {
  *
  * Every field the site writes is a plain identifier, so in practice this
  * refuses nothing — the point is that it refuses rather than mis-addresses if
- * one ever is not.
+ * one ever is not. Exported for ./entry_link_plan.js, which clears the same
+ * keys one entry at a time and must refuse the same ones.
  */
-const isAddressable = (field) =>
-  typeof field === "string" &&
-  field.length > 0 &&
-  !field.includes(".") &&
-  !field.startsWith("$");
+function isAddressable(field) {
+  return (
+    typeof field === "string" &&
+    field.length > 0 &&
+    !field.includes(".") &&
+    !field.startsWith("$")
+  );
+}
 
 /**
  * A `null` or a missing value is the form's "cleared", and the one thing here

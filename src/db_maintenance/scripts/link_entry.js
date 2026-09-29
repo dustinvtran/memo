@@ -18,6 +18,12 @@
  * that selected its own targets would be the thing the rule forbids, however
  * carefully it was written.
  *
+ * Every write also unsets the entry's override lists with nothing readable in
+ * them — `[""]` and the like, the #395 shape. They hide nothing while an entry
+ * has no work and start hiding the work's own value the moment it has one, so
+ * a link that left them would be creating the damage clear_blank_overrides.js
+ * removes. They hold no text anybody typed. The dry run names each key. #479.
+ *
  * Usage:
  *   node scripts/link_entry.js --from=ops.json
  *   node scripts/link_entry.js --from=ops.json --apply
@@ -245,7 +251,7 @@ const runOne = async (db, op, apply) => {
   const renamed = op.workTitle === undefined ? undefined : await adoptApiTitle(db, collection, work, op, apply);
   if (renamed === false) return false;
 
-  const { set, unset } = linkUpdate({
+  const { set, unset, blankFields } = linkUpdate({
     entry,
     workId: work._id,
     entryTitle: op.entryTitle,
@@ -263,6 +269,11 @@ const runOne = async (db, op, apply) => {
   if (op.entryTitle === undefined && overrideIsRedundant(entry, work)) {
     console.log(`      its override "${filed}" now says what the work says — pass "entryTitle": "" to drop it and track the work instead`);
   }
+  // Done rather than said, unlike the line above: a list of blanks holds
+  // nothing anybody typed, and on a work it hides the work's own value (#479).
+  if (blankFields.length) {
+    console.log(`      unsets blank override${blankFields.length === 1 ? "" : "s"} ${blankFields.join(", ")} — each would hide the work's own value once linked`);
+  }
 
   if (apply) {
     await db.collection(collection.entries).updateOne(
@@ -276,7 +287,12 @@ const runOne = async (db, op, apply) => {
   assignedIn(collection).set(String(entry._id), {
     ...entry,
     workRef: String(work._id),
-    overrides: { ...entry.overrides, englishTranslatedTitle: filed },
+    overrides: {
+      ...Object.fromEntries(
+        Object.entries(entry.overrides ?? {}).filter(([field]) => !blankFields.includes(field))
+      ),
+      englishTranslatedTitle: filed,
+    },
   });
 
   // The work the entry came from, now that nothing is on it. Left behind it
