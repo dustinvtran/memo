@@ -628,6 +628,16 @@ affected; strings and numbers cross realms fine.
   scales with other users — discussion, profile comments, likes, a global feed,
   "trending this week" all multiply by a number that is currently 1. Features
   useful at N=1 are a different question and stand on their own merits.
+
+  **"Effectively" is not "entirely", and the gap is where a data repair goes
+  wrong.** The second account holds 41 entries (2026-09), so two entries on
+  one work can be two people rather than one person's duplicate. #448's
+  `Ocarina of Time` had a completed 2011 entry and an in-progress 2022 one,
+  and the 2022 one was proposed for deletion before anybody read its
+  `userId` — it was the other account's. Read `userId` before calling two
+  entries a duplicate. `link_entry.js` already scopes its name-clash check
+  to the entry's own user, which is right; the analysis around it is the part
+  that has to remember.
 - **IGDB replaced `external_games.category`** with
   `external_games.external_game_source` (`1` = Steam). Querying the old field
   returns zero rows silently instead of erroring.
