@@ -20,6 +20,10 @@ const setName = (newName) => Http.post(ENDPOINTS.name, { newName })
 
 const setBio = (newBio) => Http.post(ENDPOINTS.bio, { newBio })
 
+/* Ends every session this account has, this one included. See
+   `controllers/sessions.js`. */
+const signOutEverywhere = () => Http.post(ENDPOINTS.logoutEverywhere)
+
 const searchWorks = (type, query) => Http.get(
   ENDPOINTS.searchWorks(type, encodeURIComponent(query))
 )
@@ -86,6 +90,7 @@ Netlify = {
   deleteDraft,
   getStats,
   setBio,
+  signOutEverywhere,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -104,6 +109,7 @@ const ENDPOINTS = {
   deleteEntry: (type, dbRef) => `${API_URL_BASE}/entries/${type}/${dbRef}`,
   stats: (username) => `${API_URL_BASE}/stats/${username}`,
   bio: `${API_URL_BASE}/bio/`,
+  logoutEverywhere: `${API_URL_BASE}/auth/logout-everywhere`,
   retrieveReview: (type, entryRef) => `${API_URL_BASE}/reviews/${type}/${entryRef}`,
   versions: (type, dbRef) => `${API_URL_BASE}/revisions/${type}/${dbRef}`,
   draft: (type, dbRef) => `${API_URL_BASE}/revisions/${type}/${dbRef}/draft`,

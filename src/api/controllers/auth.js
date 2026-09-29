@@ -20,8 +20,8 @@ import * as responses from '../utils/responses.js'
 import {
   SESSION_COOKIE_NAME,
   SESSION_HINT_COOKIE_NAME,
+  SESSION_LIFETIME_SECONDS,
   VERIFY_OPTIONS,
-  isWithinAbsoluteLifetime,
   sessionStartedAt,
   tokenSecret,
 } from '../utils/session_token.js'
@@ -45,7 +45,7 @@ import { bearerCredential } from '../utils/bearer.js'
    `client.callback()` are all gone. Each call site below names what replaced
    it. */
 
-const NETLIFY_JWT_EXPIRATION_SECONDS = 14 * 24 * 3600
+const NETLIFY_JWT_EXPIRATION_SECONDS = SESSION_LIFETIME_SECONDS
 // cookie's maxAge is in seconds
 const LOGIN_COOKIE_MAX_AGE = 30 * 60
 const AUTH0_LOGIN_COOKIE_NAME = "auth0_login_cookie"
@@ -189,8 +189,8 @@ const signNetlifyJWT = async ({ aud, sub, roles, startedAt }) => {
     iat,
     updated_at: iat,
     /* A login starts the session here; a renewal passes the original forward
-       untouched, which is the only thing that keeps the sliding window from
-       sliding for ever. See ../utils/session_token.js. */
+       untouched, which is what "sign out everywhere" is measured against. See
+       ../utils/session_token.js. */
     session_started_at: startedAt ?? iat,
     aud,
     sub,
@@ -541,8 +541,13 @@ const sessionOver = () => ({
 /* Re-issues the nf_jwt cookie with a fresh expiry so that an active session
    slides forward instead of hard-expiring NETLIFY_JWT_EXPIRATION_SECONDS after
    login. The frontend calls this once the current token is past halfway
-   through its lifetime, and MAX_SESSION_SECONDS is how far forward it may go
-   in total. */
+   through its lifetime.
+
+   It does not ask whether the session was signed out everywhere, and needs no
+   database to answer: a renewal carries `session_started_at` forward, so the
+   token it mints is exactly as signed out as the one it was handed, and every
+   API route refuses it. Keeping the check in one place is what keeps this
+   route free of a database it has never needed. */
 const handleRenew = async (event) => {
   const currentToken = getNetlifyJWTFromEvent(event)
   if (!currentToken) {
@@ -564,16 +569,6 @@ const handleRenew = async (event) => {
        means the session is genuinely over and the user has to log in again. */
     claims = (await jwtVerify(currentToken, secret, VERIFY_OPTIONS)).payload
   } catch (err) {
-    return sessionOver()
-  }
-
-  /* The bound the sliding window was missing. Renewal asks nothing of Auth0
-     and mints from the presented token's own claims, so without a cap a token
-     stolen once was renewable indefinitely and a user disabled in Auth0 kept a
-     working session for as long as anything went on renewing it. Reaching the
-     cap looks exactly like an expired session from out here, which is both
-     true and none of a stranger's business. */
-  if (!isWithinAbsoluteLifetime(claims, Math.floor(Date.now() / 1000))) {
     return sessionOver()
   }
 
@@ -620,6 +615,9 @@ export {
   handleCallback,
   handleLogout,
   handleRenew,
+  /* For the sign-out-everywhere route, which ends this browser's session the
+     same way logging out does. */
+  generateLogoutCookies,
   /* Exported for their tests. The flow reaches all three through the
      handlers, and they are the pieces of it that can be checked without an
      Auth0 tenant on the other end of the wire — the first two because the v6

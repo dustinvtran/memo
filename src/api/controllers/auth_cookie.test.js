@@ -1,7 +1,7 @@
 /**
  * @file The attributes the session cookie is set with, which nothing checked.
  *
- * `nf_jwt` is the whole session — a 14-day HS256 token — and #173 is about
+ * `nf_jwt` is the whole session — a 400-day HS256 token that renews while used — and #173 is about
  * the attributes it was missing. The login flow that sets it runs through
  * Auth0 and cannot be exercised here, but `handleRenew` mints the same cookie
  * through the same `generateNetlifyCookie`, needs nothing but a valid token,
@@ -111,7 +111,7 @@ test('the session cookie is Secure, site-wide, and HttpOnly', options, async () 
 
   assert.equal(attributes.includes('secure'), true)
   assert.match(cookie, /;\s*Path=\//i)
-  assert.match(cookie, /;\s*Max-Age=1209600/i)
+  assert.match(cookie, /;\s*Max-Age=34560000/i)
   // The point of #501: nothing on the page can read the session.
   assert.equal(attributes.includes('httponly'), true)
 })
@@ -129,7 +129,7 @@ test('the hint beside it carries the expiry and nothing else, readably', options
   assert.equal(attributes.includes('httponly'), false)
   assert.equal(attributes.includes('secure'), true)
   assert.match(hint, /;\s*Path=\//i)
-  assert.match(hint, /;\s*Max-Age=1209600/i)
+  assert.match(hint, /;\s*Max-Age=34560000/i)
   assert.match(hint, /;\s*SameSite=Lax/i)
 })
 

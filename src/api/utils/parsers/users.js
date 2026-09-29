@@ -70,6 +70,10 @@ const userParser = z.object({
     })
   }).nullable().optional(),
   biography: biographyParser.optional(),
+  /* The second the user last signed out everywhere; see `isSessionCurrent`.
+     Written only by `signOutEverywhere`, through an update, so this line
+     documents the field rather than guarding it. */
+  sessionsValidAfter: z.number().optional(),
 })
 
 /** @typedef {z.infer<typeof userParser>} User

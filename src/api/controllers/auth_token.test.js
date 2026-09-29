@@ -93,6 +93,23 @@ const jose = dependenciesInstalled ? await import('jose') : undefined
 const { parseSetCookie, stringifyCookie } = dependenciesInstalled
   ? await import('cookie')
   : {}
+/* `getUserId` looks the user up for a session, to see whether it was signed
+   out everywhere, so it needs a database to ask. This one holds a single user
+   whose `sessionsValidAfter` a test can set. */
+const users = []
+const { useClient } = dependenciesInstalled ? await import('../utils/db/db.js') : {}
+if (dependenciesInstalled) {
+  useClient({
+    connect: async () => {},
+    db: () => ({
+      databaseName: 'memo',
+      collection: () => ({
+        findOne: async (filter) =>
+          users.find((u) => Object.entries(filter).every(([k, v]) => u[k] === v)) ?? null,
+      }),
+    }),
+  })
+}
 const { getUserId } = dependenciesInstalled ? await import('./utils.js') : {}
 const { handleRenew, handleCallback, handleLogout } = dependenciesInstalled
   ? await import('./auth.js')
@@ -265,43 +282,35 @@ test('a token handled with no TOKEN_SECRET is a fault, not an unauthorized reque
 })
 
 ///////////////////////////////////////////////////////////////////////////////
-// The absolute session lifetime
+// Signing out everywhere, which is what a session is measured against now
 
-test('a session may slide, but not past the cap', () => {
-  const cap = sessionToken.MAX_SESSION_SECONDS
+test('a session counts unless it began at or before the last sign-out everywhere', () => {
   const at = (startedAt) => ({ session_started_at: startedAt, iat: now() })
 
-  assert.equal(sessionToken.isWithinAbsoluteLifetime(at(now()), now()), true)
-  assert.equal(
-    sessionToken.isWithinAbsoluteLifetime(at(now() - cap + 60), now()),
-    true,
-  )
-  assert.equal(
-    sessionToken.isWithinAbsoluteLifetime(at(now() - cap), now()),
-    false,
-  )
+  assert.equal(sessionToken.isSessionCurrent(at(now()), undefined), true)
+  // Any age at all: there is no cap any more, only the sign-out.
+  assert.equal(sessionToken.isSessionCurrent(at(now() - 5 * 365 * 24 * 3600), undefined), true)
+  assert.equal(sessionToken.isSessionCurrent(at(1000), 999), true)
+  assert.equal(sessionToken.isSessionCurrent(at(1000), 1000), false)
+  assert.equal(sessionToken.isSessionCurrent(at(1000), 1001), false)
 })
 
 test('a token from before the claim existed is read as starting when it was minted', () => {
-  // The lenient reading, and the one that does not sign everybody out on
-  // deploy. It stops being reachable once every live token has been renewed.
-  const cap = sessionToken.MAX_SESSION_SECONDS
-
   assert.equal(sessionToken.sessionStartedAt({ iat: 1000 }), 1000)
   assert.equal(
     sessionToken.sessionStartedAt({ session_started_at: 7, iat: 1000 }),
     7,
   )
-  assert.equal(
-    sessionToken.isWithinAbsoluteLifetime({ iat: now() - 3600 }, now()),
-    true,
-  )
-  assert.equal(
-    sessionToken.isWithinAbsoluteLifetime({ iat: now() - cap }, now()),
-    false,
-  )
-  // Claims saying nothing about when they were issued are not ours to slide.
-  assert.equal(sessionToken.isWithinAbsoluteLifetime({}, now()), false)
+  assert.equal(sessionToken.isSessionCurrent({ iat: 1000 }, 999), true)
+  assert.equal(sessionToken.isSessionCurrent({ iat: 1000 }, 1000), false)
+})
+
+test('claims saying nothing about when they were issued never count', () => {
+  assert.equal(sessionToken.isSessionCurrent({ sub: 'x' }, undefined), false)
+})
+
+test('a session lives as long as Chrome lets a cookie', () => {
+  assert.equal(sessionToken.SESSION_LIFETIME_SECONDS, 400 * 24 * 3600)
 })
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -317,8 +326,9 @@ test('renewal slides the expiry forward but not the session start', options, asy
   const claims = await claimsOf(sessionTokenOf(response))
   assert.equal(claims.sub, 'auth0|somebody')
   assert.deepEqual(claims.app_metadata.authorization.roles, ['user'])
-  // The window moved; the thing that bounds it did not.
-  assert.ok(claims.exp > now() + 13 * 24 * 3600)
+  // The window moved; the start that sign-out-everywhere is measured
+  // against did not.
+  assert.ok(claims.exp > now() + 399 * 24 * 3600)
   assert.equal(claims.session_started_at, startedAt)
 })
 
@@ -329,16 +339,12 @@ test('renewal reads the Bearer scheme whatever its case', options, async () => {
   assert.equal(response.statusCode, 200)
 })
 
-test('a session past the cap is not renewed again', options, async () => {
-  // The token presented is in perfectly good order and has a fortnight left to
-  // run - it is the session behind it that has gone on long enough.
-  const response = await handleRenew(asEvent(await sign({
-    sessionStartedAt: now() - sessionToken.MAX_SESSION_SECONDS - 1,
-  })))
+test('a session years old still renews, since only a sign-out ends it', options, async () => {
+  const startedAt = now() - 3 * 365 * 24 * 3600
+  const response = await handleRenew(asEvent(await sign({ sessionStartedAt: startedAt })))
 
-  assert.equal(response.statusCode, 401)
-  // The cleared hint is what stops the frontend asking again every request.
-  assert.deepEqual(setCookiesOf(response), CLEARED_SESSION)
+  assert.equal(response.statusCode, 200)
+  assert.equal((await claimsOf(sessionTokenOf(response))).session_started_at, startedAt)
 })
 
 test('a token from before the claim existed renews, and carries a start from then on', options, async () => {
@@ -393,8 +399,8 @@ test('logging in mints the session start the cap is measured from', options, asy
 })
 
 test('a login and the renewals after it share one session start', options, async () => {
-  // The cap is only a cap if this holds: two renewals, and the start is still
-  // the one the login wrote.
+  // Signing out everywhere only holds if this does: two renewals, and the
+  // start is still the one the login wrote.
   const state = Buffer.from(JSON.stringify({ route: '/' })).toString('base64')
   const login = await handleCallback(callbackEvent(state))
 
@@ -432,11 +438,11 @@ test('a login and the renewals after it share one session start', options, async
 
 /** What `generateNetlifyCookie` writes for `token`: HttpOnly since #501. */
 const sessionCookie = (token) =>
-  `nf_jwt=${token}; Max-Age=1209600; Path=/; HttpOnly; Secure; SameSite=Lax`
+  `nf_jwt=${token}; Max-Age=34560000; Path=/; HttpOnly; Secure; SameSite=Lax`
 
 /** And the hint beside it, which the page reads and so is not HttpOnly. */
 const hintCookie = (token) =>
-  `memo_session=${jose.decodeJwt(token).exp}; Max-Age=1209600; Path=/; Secure; SameSite=Lax`
+  `memo_session=${jose.decodeJwt(token).exp}; Max-Age=34560000; Path=/; Secure; SameSite=Lax`
 
 /** And what clearing a cookie looks like: same name and path, `Max-Age=0`. */
 const cleared = (name) => `${name}=; Max-Age=0; Path=/; HttpOnly; Secure`
@@ -469,7 +475,7 @@ test('a login sets the session cookie and clears the login cookie', options, asy
 
 test('a renewal sets the same cookie, with the same attributes', options, async () => {
   // The renewed cookie is the one whose Max-Age is a real duration rather than
-  // 0, so it pins the units too: 1209600 is a fortnight in seconds, not ms.
+  // 0, so it pins the units too: 34560000 is 400 days in seconds, not ms.
   const response = await handleRenew(asEvent(await sign()))
 
   assert.equal(response.statusCode, 200)
@@ -481,15 +487,14 @@ test('logging out clears the session cookie', options, async () => {
   assert.deepEqual(setCookiesOf(await handleLogout()), CLEARED_SESSION)
 })
 
-test('and so does a session that has run past its cap', options, async () => {
+test('and so does a session that is past saving', options, async () => {
   /* The other place a session ends. `Max-Age=0` is the whole of it: an empty
      value alone leaves a cookie the browser goes on sending, and a `Path` that
      does not match the one it was set with leaves the old cookie sitting
      beside the new one. Asserted here as the same string as the logout above,
      because clearing has to be clearing wherever it is done from. */
-  const response = await handleRenew(asEvent(await sign({
-    sessionStartedAt: now() - sessionToken.MAX_SESSION_SECONDS - 1,
-  })))
+  const otherKey = new TextEncoder().encode('not the secret we sign with')
+  const response = await handleRenew(asEvent(await sign({ key: otherKey })))
 
   assert.equal(response.statusCode, 401)
   assert.deepEqual(setCookiesOf(response), CLEARED_SESSION)
@@ -605,7 +610,7 @@ test('so does the 200 of a renewal', options, async () => {
 test('and both of the 401s a renewal can answer', options, async (t) => {
   /* `_headers` counted one, and there are two objects: a request with no token
      to renew, which is turned away before anything is verified, and a session
-     that has run past its cap, which is cleared on the way out. Neither goes
+     that no longer verifies, which is cleared on the way out. Neither goes
      near `responses.js`. */
   await t.test('nothing to renew', async () => {
     const response = await handleRenew(asEvent(undefined))
@@ -615,10 +620,9 @@ test('and both of the 401s a renewal can answer', options, async (t) => {
     assert.equal(response.headers['Cache-Control'], 'no-store')
   })
 
-  await t.test('a session past its cap', async () => {
-    const response = await handleRenew(asEvent(await sign({
-      sessionStartedAt: now() - sessionToken.MAX_SESSION_SECONDS - 1,
-    })))
+  await t.test('a session past saving', async () => {
+    const otherKey = new TextEncoder().encode('not the secret we sign with')
+    const response = await handleRenew(asEvent(await sign({ key: otherKey })))
 
     assert.equal(response.statusCode, 401)
     assertSecurityHeaders(response.headers)
@@ -634,4 +638,38 @@ test('and the logout redirect, which is where a reader is sent to Auth0', option
   assertSecurityHeaders(response.headers)
   assert.match(response.headers.Location, /\/v2\/logout\?/)
   assert.deepEqual(setCookiesOf(response), CLEARED_SESSION)
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// A session signed out everywhere
+
+test('a session begun before the last sign-out everywhere is refused, and says so', options, async () => {
+  users.splice(0, users.length, { _id: 'a1', userId: 'auth0|nil', username: 'nil', sessionsValidAfter: now() - 60 })
+  try {
+    const before = await getUserId(asEvent(await sign({ sub: 'auth0|nil', sessionStartedAt: now() - 3600 })))
+    assert.equal(before.isErr(), true)
+    assert.equal(before._unsafeUnwrapErr().error, 'UnauthorizedError')
+    assert.match(before._unsafeUnwrapErr().message, /signed out/)
+
+    const after = await getUserId(asEvent(await sign({ sub: 'auth0|nil', sessionStartedAt: now() })))
+    assert.equal(after._unsafeUnwrap(), 'auth0|nil')
+  } finally {
+    users.splice(0, users.length)
+  }
+})
+
+test('renewing a signed-out session does not bring it back', options, async () => {
+  /* The renewal itself succeeds — it asks no database — but the token it
+     mints carries the same start, and so is refused exactly as the old one
+     was. That is what keeps the check in one place. */
+  users.splice(0, users.length, { _id: 'a1', userId: 'auth0|nil', username: 'nil', sessionsValidAfter: now() - 60 })
+  try {
+    const renewal = await handleRenew(asEvent(await sign({ sub: 'auth0|nil', sessionStartedAt: now() - 3600 })))
+    assert.equal(renewal.statusCode, 200)
+
+    const result = await getUserId(asEvent(sessionTokenOf(renewal)))
+    assert.equal(result.isErr(), true)
+  } finally {
+    users.splice(0, users.length)
+  }
 })

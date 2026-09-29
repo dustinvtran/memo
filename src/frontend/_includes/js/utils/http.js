@@ -234,10 +234,12 @@ const decodeCookieValue = (value) => {
 }
 
 
-/* The session is minted with a fixed lifetime, so without renewal it just
-   expires and silently logs the user out. Renewing once it is past halfway
-   through that lifetime keeps an active session sliding forward. */
-const RENEWAL_THRESHOLD_SECONDS = 7 * 24 * 3600
+/* The session is minted with a fixed lifetime — 400 days, as
+   `SESSION_LIFETIME_SECONDS` in `session_token.js` — so without renewal it
+   just expires and silently logs the user out. Renewing once it is past
+   halfway through that lifetime keeps an active session sliding forward, so
+   anyone who visits at least every 200 days stays signed in. */
+const RENEWAL_THRESHOLD_SECONDS = 200 * 24 * 3600
 const RENEWAL_URL = '/.netlify/functions/auth/renew'
 
 /* Written by the server beside the session cookie; `SESSION_HINT_COOKIE_NAME`

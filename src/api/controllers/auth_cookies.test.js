@@ -124,7 +124,7 @@ test('a renewed token survives the round trip through a cookie', options, async 
   assert.equal((await jose.jwtVerify(renewed, new TextEncoder().encode(process.env.TOKEN_SECRET))).payload.sub, 'auth0|nil')
   // The renewed cookie is the one whose `maxAge` is a real duration, so it
   // pins the units as well: seconds, not milliseconds.
-  assert.equal(parseSetCookie(setCookie).maxAge, 14 * 24 * 3600)
+  assert.equal(parseSetCookie(setCookie).maxAge, 400 * 24 * 3600)
 })
 
 test('no token at all is refused without a cookie to clear', options, async () => {
