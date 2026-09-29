@@ -188,11 +188,15 @@ session the account has, on every device, at once
 (`POST /api/auth/logout-everywhere`). API tokens are not sessions and keep
 working through it; revoke those one at a time above.
 
+The quickest way is **API tokens** at the bottom of your own profile page,
+which lists them with when each was created, expires and was last used,
+revokes one, and makes a new one — shown there once and never again.
+
 These three want the `nf_jwt` session. It is an `httpOnly` cookie, so nothing
 on the page can read it, but the browser sends it — and the frontend's own
 request helper adds the `X-Requested-With` header a write signed in by cookie
-has to carry — so the quickest way is the browser console on the site while
-signed in:
+has to carry — so without the page it is the browser console on the site
+while signed in:
 
 ```
 (await Http.post('/api/tokens', { name: 'claude' })).value.token
