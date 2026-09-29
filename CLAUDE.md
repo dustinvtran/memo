@@ -512,6 +512,14 @@ tests sit at the top, the scripts in `scripts/`. See
 
 Tests that do need the dependencies skip themselves when they aren't there.
 
+**A fixture connection string must not look like a real Atlas credential.**
+The repository is public and GitHub secret scanning matches
+`user:password@<anything>.mongodb.net`, so a made-up one raises an alert
+that somebody has to triage and dismiss — three did from
+`restore_plan.test.js` in 2026-09. Leave out the password where the test does
+not need one, and use a reserved host such as `cluster0.example.invalid`
+where it does; nothing under `src/` cares that a host ends in `mongodb.net`.
+
 **An array returned from a frontend test's `vm` context fails
 `deepStrictEqual`.** `columns.test.js`, `tables.test.js` and
 `table_model.test.js` run a bundle file inside `vm.createContext`, so an array
