@@ -229,7 +229,7 @@ const TMDB_IMAGE_HOSTS = ['image.tmdb.org', 'www.themoviedb.org']
 /**
  * The url to draw a cover sixteen pixels wide from, given the stored one.
  *
- * A film or show stores a 300×450 poster, which is right for the comment
+ * A film or show stores a 300Ã—450 poster, which is right for the comment
  * panel and about seven times what a list row needs, and older rows store it
  * on `www.themoviedb.org`, which answers every one with a redirect to
  * `image.tmdb.org`. TMDB paths are `/t/p/<size>/<file>`, so asking the CDN

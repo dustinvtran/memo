@@ -296,7 +296,7 @@ test("an ordinary title renders a closed link and the placeholder cover", () => 
 });
 
 // A list row draws its cover sixteen pixels wide, and a film or show stores a
-// 300×450 poster — until #483 on a host that answered each one with a
+// 300Ã—450 poster â€” until #483 on a host that answered each one with a
 // redirect first. The row asks TMDB's CDN for `w92` of the same file instead.
 // The comment panel reads `imageUrl` itself, so the full poster stays there.
 const coverOf = (imageUrl) =>

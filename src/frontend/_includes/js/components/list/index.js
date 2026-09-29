@@ -1,4 +1,4 @@
-const { initComponent, Error404, WithRemoteData } = Components
+const { initComponent, Error404, WithRemoteData, NotFoundOrFailure } = Components
 const { getUserIdFromName, getUserName, getEntries, isLoggedIn } = Netlify
 const { getNameFromUrl, getEntryTypeFromUrl } = Http
 const { waitForEl } = Utils
@@ -37,7 +37,8 @@ const ListPage = () => initComponent({
       remoteData: user,
       component: ({ data }) => data
         ? List({ username, entryType, entries, isOwner })
-        : Error404()
+        : Error404(),
+      errorComponent: NotFoundOrFailure,
     }))
   },
   initializer: () => {
