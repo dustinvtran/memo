@@ -22,7 +22,7 @@ import { unique } from './unique.js'
 /**
  * The poster sizes: the small one for a search row, the large one for a work.
  *
- * On `image.tmdb.org`, TMDB's image CDN, because `www.themoviedb.org/t/p/…`
+ * On `image.tmdb.org`, TMDB's image CDN, because `www.themoviedb.org/t/p/â€¦`
  * answers every request with a 301 to the same path there (#483). Works stored
  * before this carry the old host and pick up the new one on their next
  * refresh; the list's thumbnail rewrites either host, so nothing waits on it.
