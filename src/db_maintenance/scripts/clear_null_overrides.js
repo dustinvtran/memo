@@ -1,31 +1,29 @@
 #!/usr/bin/env node
 /**
- * @file Reports the linked entries whose overrides object is nothing but
- * `null`s, and the ones storing `overrides.releaseYear: null` over a work that
- * has a year; with `--apply`, unsets the first kind and nothing else. #478.
+ * @file Removes every `null` override key, and the overrides object with them
+ * when nothing else is in it; and reports, on the way, the two populations
+ * #478 asked about. #478.
  *
- * The Year column is the one column that keeps a null override rather than
- * falling through to the work — `getOverrideOrMetadataPreserveNull` in
- * ../../frontend/_includes/js/utils/columns.js — so a stored null draws a dash
- * where the work's year would be. An entry whose every override key is null
- * is the shape #317's bug left, the whole blank form stored as overrides in
- * one save, rather than one field cleared by hand. ../null_override_plan.js
- * has the argument in full.
+ * An override is a value, never a null. A stored null was how a blank box used
+ * to be saved, and the owner decided on 2026-09-29, on #478, that all of them
+ * are mistakes: every one traced back to #317's whole-form saves, only the
+ * Year column ever honoured one, and the edit form showed the work's value in
+ * its place so the next save dropped it anyway. The form now refuses an
+ * emptied field and the API refuses a null override, so nothing refills this.
+ * ../null_override_plan.js has the argument in full.
  *
- * **Run the dry run; do not run `--apply` without the owner's say-so.** This
- * writes to `*Entries`, which ../../../CLAUDE.md reserves, and unlike
- * ./clear_noop_overrides.js and ./clear_blank_overrides.js its case is not
- * made: a null is a legitimate way to hide a year, and nothing in the data
- * tells a deliberate one from the bug's. The dry run exists to put the list in
- * front of the person who can say which these are. The `--apply` half is here
- * so that the answer, if it is "the bug's", is one command rather than a new
- * script written in a hurry.
+ * **This writes to `*Entries`, which ../../../CLAUDE.md reserves**, and the
+ * case for the exception is that decision plus this: nothing on the page
+ * changes. Every reader — the list columns, the Year column since #478, and
+ * the export's `withOverrides` — already reads a null override as absent, so
+ * `$unset`ting one makes the stored data say what the page already shows.
+ * No user text is reachable from here: a null holds none.
  *
- * What bounds `--apply`, if it is ever given:
+ * What bounds `--apply`:
  *
- * - It only `$unset`s the `overrides` object, and only on a linked entry whose
- *   every key is null. A mixed entry — a null year beside a real override —
- *   is listed and never written to. So is every entry with no work.
+ * - It only `$unset`s `overrides.<field>` keys holding null, and the
+ *   `overrides` object itself only when every key in it is null. A real
+ *   value beside a null is never touched, on an entry with a work or without.
  * - Each update filters on the overrides object exactly as it was read, so an
  *   entry edited between the read and the write is left alone and reported
  *   as a shortfall rather than overwritten.
@@ -39,10 +37,12 @@
  * Usage:
  *   node scripts/clear_null_overrides.js
  *   node scripts/clear_null_overrides.js --only=games --json=report.json
+ *   node scripts/clear_null_overrides.js --apply
  *
  * Flags:
- *   --apply             unset the all-null override objects (default: dry run)
+ *   --apply             unset every null override key (default: dry run)
  *   --only=a,b          restrict to these types (films, tv, games, books)
+ *   --list              print every all-null entry, not only the mixed ones
  *   --json=path         write a machine-readable report
  *   --backup-dir=path   where to put the pre-run backups (default ../backups)
  */
@@ -61,6 +61,7 @@ const args = parseArgs(process.argv);
 
 const options = {
   apply: args.apply === true,
+  list: args.list === true,
   backupDir: String(args["backup-dir"] ?? path.join(__dirname, "..", "backups")),
 };
 
@@ -80,7 +81,7 @@ const main = async () => {
 
   console.log(
     options.apply
-      ? "APPLY MODE: all-null override objects will be unset from entry documents."
+      ? "APPLY MODE: every null override key will be unset from entry documents."
       : "DRY RUN: nothing will be written."
   );
 
@@ -133,7 +134,13 @@ const reportCollection = async (db, collection) => {
   console.log(
     `  ${totals.entries} entries, ${totals.withOverrides} carrying overrides ` +
       `(${totals.linkedWithOverrides} linked, ${totals.unlinkedWithOverrides} ` +
-      `with no readable work and left out)`
+      `with no readable work)`
+  );
+  console.log(
+    `  ${totals.nullKeys} null key(s) on ${totals.entriesTouched} entry(s) ` +
+      `${options.apply ? "to unset" : "would be unset"} — ` +
+      `${totals.objectsDropped} overrides object(s) left empty and dropped, ` +
+      `${totals.unlinkedNullKeys} key(s) on entries with no work`
   );
   console.log(
     `  ${totals.allNull} linked entry(s) whose every override key is null, ` +
@@ -147,17 +154,29 @@ const reportCollection = async (db, collection) => {
 
   printCounts("by userId", plan.byUser);
   printCounts("by year of updatedDate", plan.byUpdatedYear);
+  if (options.list) {
+    printEntries(
+      "ALL-NULL override objects on linked entries (dropped whole)",
+      plan.allNull
+    );
+  }
   printEntries(
-    "ALL-NULL override objects (what --apply would unset)",
-    plan.allNull
-  );
-  printEntries(
-    "MIXED: releaseYear null beside another override (never written to)",
+    "MIXED: releaseYear null beside a real override (the null goes, the rest stays)",
     plan.releaseYearNull.filter((reported) => !reported.allNull)
   );
+  if (plan.unaddressable.length > 0) {
+    console.error(
+      `\n  ${plan.unaddressable.length} null key(s) KEPT — no update path can ` +
+        `name them, and their object has other keys:`
+    );
+    for (const { _id, field } of plan.unaddressable) {
+      console.error(`      ${_id} ${JSON.stringify(field)}`);
+    }
+  }
 
   const base = {
     totals,
+    unaddressable: plan.unaddressable.map((u) => ({ ...u, _id: String(u._id) })),
     byUser: plan.byUser,
     byUpdatedYear: plan.byUpdatedYear,
     allNull: plan.allNull.map(toJson),
@@ -170,16 +189,19 @@ const reportCollection = async (db, collection) => {
 
   backup(collection.entries, entries);
   const unset = await applyRemovals(db, collection, plan);
-  const after = await db.collection(collection.entries).countDocuments();
-  console.log(`  after: ${after} entries (was ${totals.entries})`);
-  if (after !== totals.entries) {
+  const after = await countAfter(db, collection);
+  console.log(
+    `  after: ${after.entries} entries (was ${totals.entries}), ` +
+      `${after.nullKeys} null override key(s) left`
+  );
+  if (after.entries !== totals.entries) {
     console.error(
-      `  ENTRY COUNT CHANGED: ${totals.entries} -> ${after}. ` +
+      `  ENTRY COUNT CHANGED: ${totals.entries} -> ${after.entries}. ` +
         `Restore from the snapshot taken before this run.`
     );
     process.exitCode = 1;
   }
-  return { ...base, unset };
+  return { ...base, unset, after };
 };
 
 /**
@@ -187,18 +209,28 @@ const reportCollection = async (db, collection) => {
  * saved in the meantime no longer matches and is not written. Embedded
  * document equality is exact and key-ordered, and the object is handed back
  * exactly as the driver gave it.
+ *
+ * `$unset` and not `$set: {}` or a rebuilt object: each null key is removed
+ * by name and nothing else in the object is written at all, so a real value
+ * beside it cannot be altered by a mistake in how the object was rebuilt.
  */
 const applyRemovals = async (db, collection, plan) => {
   const result = await db.collection(collection.entries).bulkWrite(
     plan.removals.map((removal) => ({
       updateOne: {
         filter: { _id: removal._id, overrides: removal.overrides },
-        update: { $unset: { overrides: "" } },
+        update: {
+          $unset: removal.dropsObject
+            ? { overrides: "" }
+            : Object.fromEntries(
+                removal.fields.map((field) => [`overrides.${field}`, ""])
+              ),
+        },
       },
     })),
     { ordered: false }
   );
-  console.log(`  unset ${result.modifiedCount} overrides object(s)`);
+  console.log(`  modified ${result.modifiedCount} entry(s)`);
   if (result.modifiedCount !== plan.removals.length) {
     console.error(
       `  expected ${plan.removals.length}, modified ${result.modifiedCount} — ` +
@@ -207,6 +239,22 @@ const applyRemovals = async (db, collection, plan) => {
     process.exitCode = 1;
   }
   return result.modifiedCount;
+};
+
+/** What is left, asked of the database rather than inferred from the plan. */
+const countAfter = async (db, collection) => {
+  const entries = db.collection(collection.entries);
+  const withOverrides = await entries
+    .find({ overrides: { $type: "object" } }, { projection: { overrides: 1 } })
+    .toArray();
+  return {
+    entries: await entries.countDocuments(),
+    nullKeys: withOverrides.reduce(
+      (n, { overrides }) =>
+        n + Object.values(overrides).filter((value) => value == null).length,
+      0
+    ),
+  };
 };
 
 const printCounts = (label, counts) => {
@@ -251,7 +299,13 @@ const summarise = (report) => {
   const sum = (key) =>
     Object.values(report).reduce((n, r) => n + (r.totals?.[key] ?? 0), 0);
   console.log(
-    `\n${sum("allNull")} all-null override object(s) on linked entries ` +
+    `\n${sum("nullKeys")} null override key(s) on ${sum("entriesTouched")} ` +
+      `entry(s) ${options.apply ? "to unset" : "would be unset"}, ` +
+      `${sum("objectsDropped")} object(s) dropped whole, ` +
+      `${sum("unlinkedNullKeys")} key(s) on entries with no work.`
+  );
+  console.log(
+    `${sum("allNull")} all-null override object(s) on linked entries ` +
       `(${sum("allNullHidingYear")} hiding a year); ${sum("releaseYearNull")} ` +
       `linked entry(s) with releaseYear: null over a work with a year, ` +
       `${sum("releaseYearNullMixed")} of them mixed.`
@@ -259,7 +313,9 @@ const summarise = (report) => {
   console.log(
     options.apply
       ? `${Object.values(report).reduce((n, r) => n + (r.unset ?? 0), 0)} ` +
-          `overrides object(s) unset.`
+          `entry(s) modified; ` +
+          `${Object.values(report).reduce((n, r) => n + (r.after?.nullKeys ?? 0), 0)} ` +
+          `null key(s) left.`
       : "Nothing written."
   );
 };

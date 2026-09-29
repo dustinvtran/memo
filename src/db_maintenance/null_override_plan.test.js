@@ -25,9 +25,19 @@ test("an overrides object of nothing but nulls is reported and proposed", () => 
   assert.equal(plan.blocked, undefined);
   assert.deepEqual(ids(plan.allNull), ["e1"]);
   assert.deepEqual(plan.allNull[0].fields, ["releaseYear", "duration", "genres"]);
-  // Only the fields the work can fill are ones a removal would reveal.
+  // Only the fields the work has a value for were hiding anything.
   assert.deepEqual(plan.allNull[0].hides, ["releaseYear", "duration"]);
-  assert.deepEqual(plan.removals, [{ _id: "e1", overrides }]);
+  assert.deepEqual(plan.removals, [
+    {
+      _id: "e1",
+      overrides,
+      fields: ["releaseYear", "duration", "genres"],
+      dropsObject: true,
+      linked: true,
+    },
+  ]);
+  assert.equal(plan.totals.objectsDropped, 1);
+  assert.equal(plan.totals.nullKeys, 3);
   assert.equal(plan.totals.allNull, 1);
   assert.equal(plan.totals.allNullHidingYear, 1);
 });
@@ -46,16 +56,18 @@ test("the report carries the entry id, userId, updatedDate and keys", () => {
   assert.equal(reported.workYear, 2001);
 });
 
-test("a null year beside a real override is reported and never proposed", () => {
-  // The mixed case: a real value next to the null is evidence someone was
-  // choosing field by field, so the null may well be deliberate.
+test("a null beside a real override goes, and the real one stays", () => {
+  // The mixed case. Reported as mixed, and the null goes all the same: an
+  // override is a value, never a null (#478). The real value is untouched.
   const plan = planNullOverrideReport(
     [entry("e1", { releaseYear: null, englishTranslatedTitle: "Сталкер" })],
     [work("w1", { releaseYear: 1979, englishTranslatedTitle: "Stalker" })]
   );
 
   assert.deepEqual(plan.allNull, []);
-  assert.deepEqual(plan.removals, []);
+  assert.deepEqual(plan.removals.map((r) => [r._id, r.fields, r.dropsObject]), [
+    ["e1", ["releaseYear"], false],
+  ]);
   assert.deepEqual(ids(plan.releaseYearNull), ["e1"]);
   assert.equal(plan.releaseYearNull[0].allNull, false);
   assert.deepEqual(plan.releaseYearNull[0].nullFields, ["releaseYear"]);
@@ -123,11 +135,13 @@ test("undefined counts as null, as a snapshot read off disk can carry it", () =>
   assert.deepEqual(ids(plan.releaseYearNull), ["e1"]);
 });
 
-test("an entry with no work, or a dangling one, is counted and never reported", () => {
-  // For those the overrides are the metadata, not a layer over it.
+test("an entry with no work loses its nulls and keeps its metadata", () => {
+  // Its overrides are its only metadata, so a real value there is never
+  // touched; a null is a field with no value, which an absent key says too.
+  // Not in the linked report, which is about nulls standing over a work.
   const plan = planNullOverrideReport(
     [
-      entry("e1", { releaseYear: null }, { workRef: undefined }),
+      entry("e1", { releaseYear: null, englishTranslatedTitle: "A mod" }, { workRef: undefined }),
       entry("e2", { releaseYear: null }, { workRef: "gone" }),
       entry("e3", { releaseYear: null }),
     ],
@@ -135,10 +149,34 @@ test("an entry with no work, or a dangling one, is counted and never reported", 
   );
 
   assert.deepEqual(ids(plan.allNull), ["e3"]);
-  assert.deepEqual(ids(plan.removals), ["e3"]);
+  assert.deepEqual(plan.removals.map((r) => [r._id, r.fields, r.dropsObject, r.linked]), [
+    ["e1", ["releaseYear"], false, false],
+    ["e2", ["releaseYear"], true, false],
+    ["e3", ["releaseYear"], true, true],
+  ]);
+  assert.equal(plan.totals.unlinkedNullKeys, 2);
   assert.equal(plan.totals.withOverrides, 3);
   assert.equal(plan.totals.linkedWithOverrides, 1);
   assert.equal(plan.totals.unlinkedWithOverrides, 2);
+});
+
+test("a key no update path can name is kept unless the whole object goes", () => {
+  // `overrides.a.b` would address a nested field, and `$x` an operator.
+  const plan = planNullOverrideReport(
+    [
+      entry("e1", { "a.b": null, $x: null, genres: ["Drama"] }),
+      entry("e2", { "a.b": null }, { _id: "e2" }),
+    ],
+    [work("w1", {})]
+  );
+
+  assert.deepEqual(plan.removals.map((r) => [r._id, r.fields, r.dropsObject]), [
+    ["e2", ["a.b"], true],
+  ]);
+  assert.deepEqual(plan.unaddressable, [
+    { _id: "e1", field: "a.b" },
+    { _id: "e1", field: "$x" },
+  ]);
 });
 
 test("an empty overrides object, or none at all, is not all-null", () => {

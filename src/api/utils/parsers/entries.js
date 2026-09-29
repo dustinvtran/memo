@@ -15,11 +15,25 @@ const scoreParser = z.union([
   z.literal(10)
 ])
 
+/**
+ * An override is a value, never a `null`. The work parser allows a null in
+ * most fields, which is right for a work — the API may simply not know — and
+ * is how a stored "hide the work's value" came to exist on 725 entries: only
+ * the Year column honoured one, the edit form could not show one, and every
+ * one of them turned out to be left over from #317's whole-form saves. The
+ * form now refuses to submit an emptied field; this refuses the null from
+ * anything else. #478.
+ */
+const hasNoNullValue = (overrides) =>
+  Object.values(overrides).every((value) => value !== null)
+
 /** @param {ZodObject} specificWorkParser */
 const entryParser = (specificWorkParser) => z.object({
   // commonMetadata: specificWorkParser,
   workRef: z.string().nullable().optional(),
-  overrides: specificWorkParser.partial().optional(),
+  overrides: specificWorkParser.partial().refine(hasNoNullValue, {
+    error: 'an override cannot be null: leave the field out to use the work\'s value',
+  }).optional(),
   userId: z.string(),
   status: statusParser,
   score: scoreParser.nullable().optional(),

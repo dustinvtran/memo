@@ -29,7 +29,7 @@ const { initComponent, setContent } = Components
 const { InputWithAction, Button, showNotification } = Components.UI
 const { searchWorks, retrieveWork } = Netlify
 const { typeToTitle } = Conversions
-const { differencesFrom, takeFromWork } = EntryFormIO
+const { differencesFrom, emptyFieldIds, takeFromWork } = EntryFormIO
 const { errorMessage } = Http
 const { icon } = Icons
 
@@ -215,15 +215,20 @@ const Comparison = (type, data, parentId, work) => {
       setContent(`#${id}-confirm`, Button({
         label: "Link this entry",
         onClick: () => {
-          // Only the fields whose radio still says "theirs". The rest keep what
-          // is in them, and `getOverrides` turns that into an override when the
-          // form is read — nothing here writes one.
+          // The fields whose radio still says "theirs", and every empty one,
+          // which is not offered as a choice because an empty field over a
+          // work's value cannot be saved (#478). The rest keep what is in them,
+          // and `getOverrides` turns that into an override when the form is
+          // read — nothing here writes one.
           takeFromWork(
             work,
             type,
-            differences
-              .filter(({ id: fieldId }) => chosen(`${id}-${fieldId}`) !== 'mine')
-              .map(({ id: fieldId }) => fieldId)
+            [
+              ...differences
+                .filter(({ id: fieldId }) => chosen(`${id}-${fieldId}`) !== 'mine')
+                .map(({ id: fieldId }) => fieldId),
+              ...emptyFieldIds(),
+            ]
           )
 
           // The row the submit button reads when it is pressed. `commonMetadata`

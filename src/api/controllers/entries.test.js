@@ -223,7 +223,7 @@ const seedSavedEntry = () => {
 const form = (extra) => ({
   commonMetadata: null,
   workRef: 'w1',
-  overrides: { englishTranslatedTitle: 'Stalker', genres: null },
+  overrides: { englishTranslatedTitle: 'Stalker' },
   status: 'Completed',
   score: 9,
   startedDate: 1700000000000,
@@ -283,7 +283,8 @@ test('the same work under a different name is a different entry, and is created'
 /**
  * Absent, null and blank are one name between them, because all three render
  * as the work's own title — so a second unnamed entry is the duplicate the
- * user sees, whichever of the three the form happened to send.
+ * user sees, whichever of the three is stored. A null can no longer be sent
+ * (#478), but entries saved before that still carry one.
  */
 test('an unnamed entry collides with one whose name is blank or missing', options, async () => {
   for (const stored of [undefined, null, '', '   ']) {
@@ -291,7 +292,7 @@ test('an unnamed entry collides with one whose name is blank or missing', option
 
     const { statusCode } = await call(entries, 'POST', 'entries/films', {
       as: 'u1',
-      body: form({ overrides: { englishTranslatedTitle: null } }),
+      body: form({ overrides: {} }),
     })
 
     assert.equal(statusCode, 409, `stored name ${JSON.stringify(stored)}`)
@@ -304,6 +305,20 @@ test('an unnamed entry collides with one whose name is blank or missing', option
  * not have — and two of those are not copies of each other, they are both
  * simply unlinked. Checking them would refuse the second one for ever.
  */
+test('a null override is refused before anything is written', options, async () => {
+  // The parser's rule, seen from the route: a 400, and no entry. #478.
+  seed()
+  const before = store.filmEntries.length
+
+  const { statusCode } = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: form({ overrides: { englishTranslatedTitle: 'Stalker', releaseYear: null } }),
+  })
+
+  assert.equal(statusCode, 400)
+  assert.equal(store.filmEntries.length, before)
+})
+
 test('entries with no workRef are never treated as duplicates', options, async () => {
   seed()
   store.filmEntries = [{ _id: 'e1', userId: 'u1', workRef: null, status: 'Completed' }]

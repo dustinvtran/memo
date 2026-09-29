@@ -1,7 +1,7 @@
 const { css } = Utils;
 const { Button, showNotification } = Components.UI;
 const { updateEntry, createEntry, deleteEntry } = Netlify;
-const { readForm } = EntryFormIO;
+const { readForm, clearedFields } = EntryFormIO;
 const { errorMessage } = Http;
 
 const DeleteButton = (type, data) =>
@@ -39,7 +39,12 @@ const SubmitButton = (type, data, isEdit) =>
         margin-right: 5px;
       }
     `,
-    onClick: () =>
+    onClick: () => {
+      const cleared = clearedFields(data, type);
+      if (cleared.length > 0) {
+        showNotification(clearedMessage(cleared));
+        return;
+      }
       (isEdit
         ? updateEntry(type, data.dbRef, readForm(data, type))
         : createEntry(type, readForm(data, type))
@@ -49,8 +54,20 @@ const SubmitButton = (type, data, isEdit) =>
           showNotification(
             `Error ${isEdit ? "editing" : "adding"} this entry: ${errorMessage(err)}`
           )
-        ),
+        );
+    },
   });
+
+/**
+ * Why nothing was saved, naming each emptied field and what the database has
+ * in it. An empty field used to be stored as a `null` that hid the work's
+ * value; now it is refused, out loud, rather than turned into something the
+ * person did not type. #478.
+ */
+const clearedMessage = (cleared) =>
+  `Nothing was saved: ${cleared
+    .map(({ label, theirs }) => `${label} is empty (database value: ${theirs})`)
+    .join("; ")}. Type the database value back in to use it, or type what it should be.`;
 
 Components.List.SubmitButton = SubmitButton;
 Components.List.DeleteButton = DeleteButton;

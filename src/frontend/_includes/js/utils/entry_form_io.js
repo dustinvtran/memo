@@ -121,6 +121,12 @@ const writeForm = (snapshot, type, data) => {
  * looking at: a game's duration is stored in minutes and shown in hours, and a
  * list is stored as an array and shown comma-separated.
  *
+ * **An empty field is not a disagreement.** There is nothing typed to keep,
+ * and an empty field over a work that has a value cannot be saved — see
+ * `clearedFields` — so offering "yours: (empty)" would offer a choice the
+ * submit button then refuses. `emptyFieldIds` is what the panel fills from
+ * the work instead.
+ *
  * @type {(work: any, type: string) => Array<{
  *   id: string, key: string, label: string, mine: string, theirs: string,
  * }>}
@@ -135,7 +141,52 @@ const differencesFrom = (work, type) =>
       mine: valueOf(id) ?? '',
       theirs: asFieldText(work?.[key], { key, isList, type }),
     }))
+    .filter(({ mine }) => mine.trim() !== '')
     .filter(({ mine, theirs }) => mine.trim() !== theirs.trim())
+
+/** The metadata fields on this form with nothing in them. */
+const emptyFieldIds = () =>
+  OVERRIDE_FIELDS
+    .filter(({ id }) => document.getElementById(id))
+    .filter(({ id }) => (valueOf(id) ?? '').trim() === '')
+    .map(({ id }) => id)
+
+/**
+ * The fields the form holds empty over a work that has a value for them, which
+ * is what stops a save. #478.
+ *
+ * An override is a value: there is no stored way to say "hide the work's
+ * value". There used to be — an emptied field was sent as a `null` — but only
+ * the Year column ever honoured one, the edit form showed the work's value in
+ * its place so the next save quietly dropped it, and all 1,477 in production
+ * turned out to be what #317's whole-form saves left behind rather than
+ * anything somebody chose. So an emptied field is now an error the person
+ * sees, not a value decided for them. The field starts out holding the work's
+ * value, and the override hint under it names that value when it differs, so
+ * putting it back is always possible.
+ *
+ * An entry with no work has nothing to clear: its overrides are its only
+ * metadata, and an empty field there is simply a field it has no value for.
+ *
+ * @type {(data: any, type: string) => Array<{
+ *   id: string, key: string, label: string, theirs: string,
+ * }>}
+ */
+const clearedFields = (data, type) => {
+  const work = baselineMetadata(data)
+  if (work == null) return []
+  const typed = formMetadata(type)
+  return OVERRIDE_FIELDS
+    .filter(({ id, key }) =>
+      document.getElementById(id) && key in typed &&
+      isBlank(typed[key]) && hasValue(work[key]))
+    .map(({ id, key, label, isList }) => ({
+      id,
+      key,
+      label,
+      theirs: asFieldText(work[key], { key, isList, type }),
+    }))
+}
 
 /**
  * Writes the work's own values into the named fields, leaving every other
@@ -162,6 +213,8 @@ EntryFormIO = {
   readForm,
   writeForm,
   differencesFrom,
+  emptyFieldIds,
+  clearedFields,
   takeFromWork,
 }
 
@@ -278,12 +331,15 @@ const baselineMetadata = (data) =>
  * What the form says that the work does not.
  *
  * A field holding the work's own value is not an override and is left out
- * altogether; a field the user emptied is `null`, which is how an override
- * says "the work's value is wrong and there is no replacement" — see
- * `withOverrides` in `api/utils/export_view.js`, one of the two places a
- * stored override shadows the work.
+ * altogether, and so is an empty one: an override is never `null`. The submit
+ * button refuses a form with an emptied field before it gets here — see
+ * `clearedFields` — so leaving it out is what the draft and the link panel
+ * see, not what a save does.
  */
-const getOverrides = (work, type) => onlyOverrides(work, {
+const getOverrides = (work, type) => onlyOverrides(work, formMetadata(type))
+
+/** The metadata fields as this type's form reads them, before any comparison. */
+const formMetadata = (type) => ({
   englishTranslatedTitle: valueOf('title'),
   originalTitle: valueOf('original-title'),
   releaseYear: getIntOrNull('release-year'),
@@ -336,21 +392,15 @@ const onlyOverrides = (work, fields) =>
   )
 
 /**
- * One field: `undefined` for "not an override at all", `null` for "the user
- * cleared a value the work has", and the value itself for a real one.
+ * One field: `undefined` for "not an override at all", and the value itself
+ * for a real one. There is no third answer.
  *
- * Emptying a field the work has nothing in clears nothing, so it is left out
- * rather than stored as a null — which is what put `[""]` on the `directors`
- * of 538 TV shows.
+ * A blank is never stored, over a work with a value or without one. Storing
+ * the list of blanks the form reads an empty box as is what put `[""]` on the
+ * `directors` of 538 TV shows, and storing a `null` is #478.
  */
 const asOverride = (workVal, userVal) =>
-  isBlank(userVal)
-    ? isBlank(workVal)
-      ? undefined
-      : null
-    : isSameValue(workVal, userVal)
-    ? undefined
-    : userVal
+  isBlank(userVal) || isSameValue(workVal, userVal) ? undefined : userVal
 
 /** Nothing the user could have meant: no value, an empty box, an empty list. */
 const isBlank = (value) =>
@@ -358,6 +408,15 @@ const isBlank = (value) =>
   value === '' ||
   (typeof value === 'number' && Number.isNaN(value)) ||
   (isArray(value) && withoutBlanks(value).length === 0)
+
+/**
+ * Whether the work has something in this field that an empty box would hide.
+ * A `0` is not something: every numeric field is a year, a duration or an
+ * episode count, none has a meaningful zero, and a game's form shows a zero
+ * duration as an empty box — see `isEmptyValue` in
+ * `db_maintenance/work_collections.js`, which decides the same thing.
+ */
+const hasValue = (value) => !isBlank(value) && value !== 0
 
 const isSameValue = (workVal, userVal) =>
   isArray(workVal) || isArray(userVal)

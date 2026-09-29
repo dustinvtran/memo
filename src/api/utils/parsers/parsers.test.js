@@ -275,6 +275,23 @@ test('an override is a partial work, and junk in it is dropped', options, () => 
   assert.deepEqual(entry.overrides, { releaseYear: 1943 })
 })
 
+test('an override is never null, on a create or an update', options, () => {
+  // The work parser lets most fields be null, since an API may not know; an
+  // override that is null is a "hide the work's value" nothing can show and
+  // only the Year column ever read. #478.
+  rejected(parsers.bookEntries, { ...ENTRY, overrides: { releaseYear: null } })
+  rejected(updates.bookEntries, { overrides: { releaseYear: 1943, genres: null } })
+  assert.deepEqual(
+    parsed(updates.bookEntries, { overrides: { releaseYear: 1943 } }).overrides,
+    { releaseYear: 1943 },
+  )
+  // Junk is dropped before the check, so a null in it is not a refusal.
+  assert.deepEqual(
+    parsed(parsers.bookEntries, { ...ENTRY, overrides: { nonsense: null } }).overrides,
+    {},
+  )
+})
+
 test('a snapshot carries overrides of anything, so long as it is an object', options, () => {
   // Free-form because they mirror whichever work type the entry points at.
   assert.deepEqual(

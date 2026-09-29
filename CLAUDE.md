@@ -546,6 +546,14 @@ affected; strings and numbers cross realms fine.
   what keeps user text out of a work today, and the failure when a row is
   stored the other way round — the title guard refuses every refresh and the
   work is frozen silently, which is where #381's 93 came from.
+- **An override is a value, never a `null`.** A null used to be how a blank
+  box was saved, and meant "hide the work's value" — but only the Year column
+  honoured it, and the edit form showed the work's value in its place, so the
+  next save dropped it. All 1,477 in production were #317 leftovers. Since
+  #478 the form refuses to save a field emptied over a work's value, the API
+  refuses a null override, and `clear_null_overrides.js` is the backlog. Code
+  reading overrides may still meet a null until that has been applied, and
+  should read it as absent.
 - **A stored `duration` of `0` is not a duration.** It renders as `-` exactly
   as a missing one does, and since #318 `isEmptyValue` says so, so the audit
   reports it missing, `hasGaps` picks the work up and a `missingOnly` merge
