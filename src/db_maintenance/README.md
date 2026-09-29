@@ -21,7 +21,7 @@ The scripts, and the section below that explains each:
 | `retitle_work.js` | Renames a work whose ref is right and whose stored title is not, so the title guard stops refusing it. The new title must be exactly what the work's own ref answers with, so nothing is typed. The other half of `set_work_ref.js`, which renames only alongside an id change (#448). | `--apply` |
 | `upgrade_cover_urls.js` | Moves stored book covers from `http://` to `https://` — the scheme only, and only on hosts known to serve the same image over TLS (#394). | `--apply` |
 | `link_entry.js` | Attaches a named entry to the work it belongs on, moves one off a sub-work that should never have been a work, and deletes a duplicate row. Takes its operations from a file a person filled in. | `--apply` |
-| `restore_backup.js` | Puts a snapshot, or one collection of it, back — matching on `_id`. | `--apply` |
+| `restore_backup.js` | Puts a snapshot, or one collection of it, back — matching on `_id`. Needs `--target` naming the host it writes to, and `--production` too when that is production. Skips `apiTokens` unless `--only` names it. | `--apply` |
 | `ensure_indexes.js` | Creates the indexes the site's queries need. Re-running is a no-op. | `--apply` |
 | `backfill_work_metadata.js` | Re-runs the API adapters over cached works, filling gaps and refreshing stale metadata. | `--apply` |
 | `backfill_game_playtimes.js` | Fills in games with no playtime, from IGDB's `/game_time_to_beats`. | `--apply` |
@@ -1879,10 +1879,34 @@ whose files don't match its manifest, and it takes a fresh snapshot of the
 current data before writing anything.
 
 ```
-node scripts/restore_backup.js                           # dry run, newest snapshot
-node scripts/restore_backup.js --only=bookEntries,bookReviews
-node scripts/restore_backup.js --from=snapshot-2024-06-30T04-17-00-000Z --apply
+node scripts/restore_backup.js --target=<host> --production                  # dry run, newest snapshot
+node scripts/restore_backup.js --target=<host> --production --only=bookEntries,bookReviews
+node scripts/restore_backup.js --target=<host> --production --from=snapshot-2024-06-30T04-17-00-000Z --apply
 ```
+
+**It writes only where `--target` says, and never to production by
+default** (#466). `--target` is required, dry run included, and must be the
+host `MONGODB_URL` actually points at — the first line the script prints is
+that host, and a mismatch refuses before anything is read. The production
+host is whichever one the `.env` that `env.js` would load names, read from
+the file itself rather than from `process.env`, since an inline
+`MONGODB_URL=` override is exactly what would hide it. Restoring there needs
+`--production` as well, the same shape as `--apply`; `--production` aimed
+anywhere else is refused too, so the flag always means what it says. With no
+`MONGODB_URL` in that `.env` the script cannot tell which host is production
+and refuses outright — point `MEMO_ENV_FILE` at the one that names it. The
+comparison is on the host text: a `mongodb+srv://` name and the seed list it
+resolves to are one cluster and do not match, which is why the target has to
+equal the URL's own host as well. The rules are in `restore_plan.js`, pure
+and tested.
+
+**It skips `apiTokens` unless `--only` names it** (#465), and prints that it
+did. Restoring puts back what is missing, and a revoked token is exactly a
+document that is missing — so a default restore of a snapshot taken before a
+revocation would make that token valid again. The rest of this folder treats
+"a restore undoes it" as what makes a write safe; for this collection a
+restore puts back a credential rather than data. `--only=apiTokens` restores
+it when that really is the point, say after the collection itself was lost.
 
 A document in the snapshot is written over whatever the database holds under
 that id; a document the database has and the snapshot doesn't is left alone
@@ -1895,8 +1919,9 @@ identify a work (an apiRef, a title) do not: the database really does hold
 27 games sharing `hltb__N/A` and two seasons of Fargo under one tmdb id, so
 anything that grouped documents by those would merge unrelated records.
 
-Useful flags: `--dir=path`, `--from=name|path`, `--only=a,b`, `--prune`,
-`--no-safety-backup`, `--skip-verify`.
+Useful flags: `--target=host`, `--production`, `--dir=path`,
+`--from=name|path`, `--only=a,b`, `--prune`, `--no-safety-backup`,
+`--skip-verify`.
 
 ### The restore drill
 
@@ -1915,7 +1940,9 @@ about: a local `mongod`, or a throwaway Atlas cluster. And pass
 `MONGODB_URL` inline on the command, which beats the `.env` in this folder
 (dotenv never overwrites a variable that is already set — see "How a script
 finds it"), rather than editing the `.env` and hoping to remember to put it
-back.
+back. Since #466 the script checks this as well: `--target` must name the
+scratch host, and the production one is refused without `--production`, so a
+mistyped or unexported variable fails instead of restoring into production.
 
 1. **Verify the snapshot you are about to drill with**, so a failure later is
    the restore's fault and not the snapshot's.
@@ -1925,7 +1952,8 @@ back.
    ```
 
 2. **Point `MONGODB_URL` at the scratch deployment** and confirm what you are
-   aimed at before writing anything. An empty database is the clearest start:
+   aimed at before writing anything — the restore's first line, `Target:`,
+   is the host it will write to. An empty database is the clearest start:
    the counts afterwards should equal the manifest's exactly, with nothing to
    subtract.
 
@@ -1935,8 +1963,8 @@ back.
    would drop an empty snapshot into `backups/`.
 
    ```
-   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot>
-   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot> --apply --no-safety-backup
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --target=<scratch host> --from=<snapshot>
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --target=<scratch host> --from=<snapshot> --apply --no-safety-backup
    ```
 
 4. **Check the counts against the manifest**, which is what
@@ -1959,8 +1987,8 @@ back.
    scratch database, then put that collection back:
 
    ```
-   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot> --only=bookReviews
-   MONGODB_URL=<scratch> node scripts/restore_backup.js --from=<snapshot> --only=bookReviews --apply --no-safety-backup
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --target=<scratch host> --from=<snapshot> --only=bookReviews
+   MONGODB_URL=<scratch> node scripts/restore_backup.js --target=<scratch host> --from=<snapshot> --only=bookReviews --apply --no-safety-backup
    ```
 
    The assertion is in the dry run: it should report exactly the number you
