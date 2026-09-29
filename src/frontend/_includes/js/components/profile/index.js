@@ -1,7 +1,7 @@
 const { initComponent, WithRemoteData, Error404, NotFoundOrFailure } = Components
 const { Base } = Components.UI
 const { getUserFromName } = Netlify
-const { ProfileLists, ProfileStats, Biography } = Components.Profile
+const { ProfileLists, ProfileStats, Biography, ApiTokensSection } = Components.Profile
 const { getNameFromUrl } = Http
 
 const ProfilePage = () => initComponent({
@@ -13,6 +13,7 @@ const ProfilePage = () => initComponent({
         Biography(data),
         ProfileLists(getNameFromUrl()),
         ProfileStats(getNameFromUrl()),
+        ApiTokensSection(data),
       ])
         : Error404(),
       errorComponent: NotFoundOrFailure,

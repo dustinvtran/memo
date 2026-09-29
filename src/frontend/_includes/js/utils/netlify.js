@@ -24,6 +24,20 @@ const setBio = (newBio) => Http.post(ENDPOINTS.bio, { newBio })
    `controllers/sessions.js`. */
 const signOutEverywhere = () => Http.post(ENDPOINTS.logoutEverywhere)
 
+/* The signed-in user's personal API tokens. A session only: none of the
+   three accepts a token, so a script cannot mint itself more. See
+   `controllers/tokens.js`. */
+const getApiTokens = () => Http.get(ENDPOINTS.tokens)
+
+/* The answer carries `token` beside the listed fields, and this is the only
+   time it exists anywhere but its hash. Nothing that calls this may store it. */
+const createApiToken = (name, expiresInSeconds) => Http.post(
+  ENDPOINTS.tokens,
+  { name, expiresInSeconds }
+)
+
+const revokeApiToken = (id) => Http.del(ENDPOINTS.token(id))
+
 const searchWorks = (type, query) => Http.get(
   ENDPOINTS.searchWorks(type, encodeURIComponent(query))
 )
@@ -91,6 +105,9 @@ Netlify = {
   getStats,
   setBio,
   signOutEverywhere,
+  getApiTokens,
+  createApiToken,
+  revokeApiToken,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -110,6 +127,8 @@ const ENDPOINTS = {
   stats: (username) => `${API_URL_BASE}/stats/${username}`,
   bio: `${API_URL_BASE}/bio/`,
   logoutEverywhere: `${API_URL_BASE}/auth/logout-everywhere`,
+  tokens: `${API_URL_BASE}/tokens`,
+  token: (id) => `${API_URL_BASE}/tokens/${encodeURIComponent(id)}`,
   retrieveReview: (type, entryRef) => `${API_URL_BASE}/reviews/${type}/${entryRef}`,
   versions: (type, dbRef) => `${API_URL_BASE}/revisions/${type}/${dbRef}`,
   draft: (type, dbRef) => `${API_URL_BASE}/revisions/${type}/${dbRef}/draft`,

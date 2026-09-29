@@ -316,6 +316,57 @@ const versionsOf = (dbRef) => {
   };
 };
 
+/**
+ * `GET /api/tokens` as `describe` in `src/api/controllers/tokens.js` answers
+ * it: a **raw array**, no envelope, never a `tokenHash` and never a `token`.
+ * `expiresAt` and `lastUsedAt` are `null` rather than absent when there is
+ * nothing to say — `expiresAtOf` turns a missing field into `null`, so the
+ * legacy row below is the same shape as a token made to last and the page
+ * cannot tell them apart. One row per case #502 asks for. Kept in a `let` so
+ * that a mint or a revoke from the page shows up in the next list, which the
+ * page asks for straight after either.
+ */
+let apiTokens = [
+  {
+    // Never used: `lastUsedAt` is `null` until the first request with it.
+    id: "3f1c2b7e-8a4d-4e6f-9b0a-1c2d3e4f5a61",
+    name: "backup script",
+    createdAt: Date.now() - 2 * DAY,
+    expiresAt: Date.now() + 28 * DAY,
+    lastUsedAt: null,
+  },
+  {
+    // Used, and set never to expire.
+    id: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c62",
+    name: "claude",
+    createdAt: Date.now() - 40 * DAY,
+    expiresAt: null,
+    lastUsedAt: Date.now() - 3 * 3600 * 1000,
+  },
+  {
+    // Expired: still listed until revoked, so its owner can see what stopped.
+    id: "5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b63",
+    name: "one-off import",
+    createdAt: Date.now() - 120 * DAY,
+    expiresAt: Date.now() - 30 * DAY,
+    lastUsedAt: Date.now() - 95 * DAY,
+  },
+  {
+    // Legacy: minted before `expiresAt` existed, so the stored document has
+    // no such field and the API answers `null` for it. The markup in the
+    // name is there to be escaped — in the cell, the button's data attribute
+    // and the confirm and notification text alike.
+    id: "0b1a2c3d-4e5f-4061-8a7b-9c8d7e6f5a64",
+    name: "<b>old</b> & forgotten",
+    createdAt: Date.parse("2026-08-20T10:00:00Z"),
+    expiresAt: null,
+    lastUsedAt: Date.parse("2026-08-21T09:12:00Z"),
+  },
+];
+
+/** `MAX_API_TOKENS_PER_USER` and the refusal `createApiToken` answers with. */
+const MAX_API_TOKENS = 20;
+
 const send = (res, code, body, type = "application/json") => {
   res.writeHead(code, { "content-type": type });
   res.end(typeof body === "string" ? body : JSON.stringify(body));
@@ -332,7 +383,7 @@ const emptyTally = () =>
  * three bugs in the header all shipped past a fixture that was confidently
  * the wrong shape.
  */
-const api = (url, method, res) => {
+const api = (url, method, res, body = "") => {
   const [, , route, ...rest] = url.pathname.split("/").filter(Boolean);
 
   if (route === "__stub") {
@@ -437,6 +488,47 @@ const api = (url, method, res) => {
       : send(res, 404, { message: `no work for ${rest[2]}` });
   }
 
+  // The three token routes. A mint answers the listed fields and `token`
+  // beside them, once; a revoke answers the listed fields of what it removed;
+  // an id that is not one of these is a 404, as someone else's is for real.
+  // A name that will not parse is the 400 `validate` gives every bad body.
+  if (route === "tokens") {
+    if (method === "GET" && rest.length === 0) return send(res, 200, apiTokens);
+    if (method === "POST" && rest.length === 0) {
+      let parsed = {};
+      try { parsed = JSON.parse(body || "{}"); } catch (e) { parsed = {}; }
+      const name = typeof parsed.name === "string" ? parsed.name.trim() : "";
+      const lifetime = parsed.expiresInSeconds ?? null;
+      if (!name || name.length > 64 || (lifetime !== null && !(Number.isInteger(lifetime) && lifetime > 0))) {
+        return send(res, 400, { error: "RequestError", message: "the request body is not valid" });
+      }
+      const now = Date.now();
+      if (apiTokens.filter((t) => t.expiresAt === null || now < t.expiresAt).length >= MAX_API_TOKENS) {
+        return send(res, 409, { error: "Conflict", message: `there are already ${MAX_API_TOKENS} API tokens; revoke one first` });
+      }
+      const created = {
+        id: require("node:crypto").randomUUID(),
+        name,
+        createdAt: now,
+        expiresAt: lifetime === null ? null : now + lifetime * 1000,
+        lastUsedAt: null,
+      };
+      apiTokens = [...apiTokens, created];
+      // Shaped like `generateApiToken`'s output and minted per request, so no
+      // token-shaped string is ever written into this file for a secret
+      // scanner to find.
+      const token = "memo_pat_" + require("node:crypto").randomBytes(32).toString("base64url");
+      return send(res, 200, { ...created, token });
+    }
+    if (method === "DELETE" && rest.length === 1) {
+      const found = apiTokens.find((t) => t.id === rest[0]);
+      if (!found) return send(res, 404, NOT_FOUND);
+      apiTokens = apiTokens.filter((t) => t !== found);
+      return send(res, 200, found);
+    }
+    return send(res, 404, NOT_FOUND);
+  }
+
   // Writes are accepted and discarded. Saving ends in `location.reload()`, so
   // a change made in the form does not survive; to see one persist, keep it
   // in `entries` above.
@@ -464,7 +556,7 @@ http
       req.on("data", (chunk) => (body += chunk));
       return req.on("end", () => {
         if (process.env.STUB_LOG) console.log(`${req.method} ${url.pathname}\n${body}`);
-        api(url, req.method, res);
+        api(url, req.method, res, body);
       });
     }
 
