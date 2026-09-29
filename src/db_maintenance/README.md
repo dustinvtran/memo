@@ -680,8 +680,10 @@ reads carries no write access (#487):
 
 The scripts read the environment variable `MONGODB_URL` whichever secret is
 behind it, so nothing under `scripts/` knows the difference. The `.env` keeps
-the readWrite `MONGODB_URL` for hand-run maintenance; the read-only one lives
-only in the repository's secrets.
+the readWrite `MONGODB_URL` for hand-run maintenance, and a copy of the
+read-only one as `MONGODB_URL_READONLY`, which no script reads: it is there so
+every credential is on one list, and so the value is somewhere it can be read
+back from, which a GitHub secret is not.
 
 ### Creating the read-only credential
 
@@ -693,7 +695,7 @@ it, which for the backup means a day with no off-machine copy.
    Authentication: Password. A name that says what it is for, such as
    `memo-actions-readonly`.
 2. **A long random password.** Atlas's *Autogenerate Secure Password*, or
-   `openssl rand -hex 32` — hex so that nothing in it needs percent-encoding
+   `openssl rand -hex 32` — either way nothing in it needs percent-encoding
    in a connection string. Keep it out of chat, issues and shell history.
 3. **Privileges: the built-in `read` role on database `memo`, and nothing
    else.** Under *Database User Privileges*, *Specific Privileges* → *Add
@@ -713,6 +715,8 @@ it, which for the backup means a day with no off-machine copy.
    With no `--body` it prompts for the value and reads it without echoing, so
    it reaches neither the terminal nor the shell history. `gh secret list
    --repo dustinvtran/memo` should then show the name (never the value).
+   Keep a copy in the `.env` as `MONGODB_URL_READONLY` — see
+   `../../.env.example`.
 6. **Merge, then run both jobs once by hand** rather than waiting for the
    schedule: `gh workflow run backup_database.yml` and `gh workflow run
    audit_database.yml`. Both green means the new user can read everything the
