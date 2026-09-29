@@ -19,9 +19,16 @@
  */
 import { unique } from './unique.js'
 
-/** The poster sizes: the small one for a search row, the large one for a work. */
-const SEARCH_IMAGE_URL_PREFIX = 'https://www.themoviedb.org/t/p/w116_and_h174_face'
-const POSTER_IMAGE_URL_PREFIX = 'https://www.themoviedb.org/t/p/w300_and_h450_bestv2'
+/**
+ * The poster sizes: the small one for a search row, the large one for a work.
+ *
+ * On `image.tmdb.org`, TMDB's image CDN, because `www.themoviedb.org/t/p/…`
+ * answers every request with a 301 to the same path there (#483). Works stored
+ * before this carry the old host and pick up the new one on their next
+ * refresh; the list's thumbnail rewrites either host, so nothing waits on it.
+ */
+const SEARCH_IMAGE_URL_PREFIX = 'https://image.tmdb.org/t/p/w116_and_h174_face'
+const POSTER_IMAGE_URL_PREFIX = 'https://image.tmdb.org/t/p/w300_and_h450_bestv2'
 
 /** "The top ten billed actors": at most this many, in the order TMDB bills them. */
 const MAX_ACTORS = 10
