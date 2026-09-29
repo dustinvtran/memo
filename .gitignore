@@ -26,3 +26,7 @@
 # Written into the project root by `netlify dev`, which bootstraps the
 # edge-functions runtime whether or not there are any. There are none.
 /deno.lock
+
+# The private key snapshot artifacts are encrypted to. It belongs in a
+# password manager, never in the repository. See src/db_maintenance/README.md.
+memo-backup-key.txt

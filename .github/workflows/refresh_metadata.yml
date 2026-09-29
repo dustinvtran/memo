@@ -202,13 +202,23 @@ jobs:
       # daily cadence the retention policy was written for, and no restore has
       # been drilled from one — but it is the first snapshot that survives
       # whatever takes out that directory.
+      #
+      # Encrypted first, because this repository is public and so are its
+      # artifacts — the same step as `backup_database.yml`, which says why.
+      - name: Encrypt the snapshot
+        if: steps.mode.outputs.apply == 'true'
+        run: |
+          sudo apt-get install -y --no-install-recommends age > /dev/null
+          .github/scripts/encrypt_snapshot.sh "$RUNNER_TEMP/backups" "$RUNNER_TEMP/snapshot.tar.gz.age"
+
       - name: Keep the snapshot
         if: steps.mode.outputs.apply == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: snapshot-${{ github.run_id }}
-          path: ${{ runner.temp }}/backups
+          name: encrypted-snapshot-${{ github.run_id }}
+          path: ${{ runner.temp }}/snapshot.tar.gz.age
           retention-days: 90
+          if-no-files-found: error
 
       # The crawl. Which works and in what order is
       # `src/db_maintenance/metadata_refresh_plan.js`; what may be written onto

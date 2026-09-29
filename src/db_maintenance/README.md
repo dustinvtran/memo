@@ -606,10 +606,10 @@ the site does not have anywhere to put.
 It follows the same discipline as a hand-run `--apply`, in the same order:
 snapshot with `backup_database.js`, verify with `verify_backup.js --live`
 (which exits non-zero on a bad snapshot, so the run stops before it writes),
-then refresh, then audit. The snapshot is kept as a workflow artifact for 90
-days. That, and the daily one `backup_database.yml` keeps, are the only
-current copies of this database away from the machine that holds the code
-and the credentials — see [Where snapshots live](#where-snapshots-live) for
+then refresh, then audit. The snapshot is kept as an encrypted workflow
+artifact for 90 days. That, and the daily one `backup_database.yml` keeps, are
+the only current copies of this database away from the machine that holds the
+code and the credentials — see [Where snapshots live](#where-snapshots-live) for
 what that does and does not buy.
 
 **A scheduled run is a dry run until `METADATA_REFRESH_APPLY` is `true`.**
@@ -1725,10 +1725,9 @@ is never deleted.
 **Scheduling.** The script has no state of its own, so `cron`, Task
 Scheduler or any runner works — just give it `MONGODB_URL` and a `--out` that
 is backed up itself. Don't publish the snapshots: a full dump includes the
-`users` collection. That is the rule `backup_database.yml` and
-`refresh_metadata.yml` do not follow today: this repository is public, its
-Actions artifacts are downloadable by anyone signed in to GitHub, and both
-workflows upload a full snapshot as one. See below.
+`users` collection. This repository is public and so are its Actions
+artifacts, which is why the two workflows that upload a snapshot encrypt it
+first — see "Encrypted snapshot artifacts".
 
 Daily is the cadence the retention policy was written for: "every snapshot
 from the last 14 days" assumes there is one most days. The snapshots taken
@@ -1750,25 +1749,21 @@ scheduled copy off this machine that the owner controls:
   somebody remembered.
 - **Workflow artifacts.** `backup_database.yml` uploads one snapshot a day
   and `refresh_metadata.yml` one before each applied crawl, each kept 90 days.
-  These are the only current copies away from this machine. They are also,
-  as above, readable by anyone signed in to GitHub, and they exist only as
-  long as the repository's Actions storage does.
+  These are the only current copies away from this machine. The repository
+  is public, so each is encrypted to the owner's key before upload (see
+  "Encrypted snapshot artifacts"); they exist only as long as the
+  repository's Actions storage does.
 
 Atlas keeps nothing: the cluster is M0 and its `Disaster Recovery` page reads
 `Backups Inactive` (#303).
 
-**What is not decided** is whether to keep a scheduled off-machine copy that
-does not depend on the artifacts, and where. That is the owner's call, and
-this file does not make it. The options raised so far:
+**Decided on 2026-09-29: the artifacts, encrypted.** Same schedule and
+storage as before, with the snapshot unreadable without the owner's key —
+kept as `MEMO_BACKUP_AGE_KEY` in the `.env`, which is also why that key wants
+a second copy somewhere that is not this machine. The history stays 90 days
+deep and lives on GitHub's account rather than the owner's; if that stops
+being enough, the options raised alongside it were:
 
-- **Leave it at the artifacts.** Nothing new to run or pay for, and the
-  copies are already daily and verified. What it keeps is a public download
-  of the `users` collection, and a history that is 90 days deep and lives on
-  GitHub's account rather than the owner's.
-- **Encrypt the artifact before upload.** Same schedule and storage, with the
-  snapshot unreadable without a key held outside the repository. The key then
-  has to be kept somewhere a restore can reach, and a lost key is a lost
-  backup.
 - **An encrypted copy to a private bucket** — S3, R2, B2 or similar — pushed
   by the scheduled workflow or by a host that is awake on the schedule. Real
   retention under the owner's control, at the cost of one more account, one
@@ -1922,6 +1917,56 @@ anything that grouped documents by those would merge unrelated records.
 Useful flags: `--target=host`, `--production`, `--dir=path`,
 `--from=name|path`, `--only=a,b`, `--prune`, `--no-safety-backup`,
 `--skip-verify`.
+
+### Encrypted snapshot artifacts
+
+`backup_database.yml` (daily) and `refresh_metadata.yml` (before an apply)
+keep their snapshot as a workflow artifact named `encrypted-snapshot-<run
+id>`, for 90 days. It is the copy that is off this machine. The repository is
+public, so its artifacts can be downloaded by anyone signed in to GitHub, and
+the artifact is therefore one file, `snapshot.tar.gz.age`: the snapshot
+directory tarred and encrypted with [age](https://age-encryption.org) to the
+public key in `.github/backup_recipients.txt`. Nothing on GitHub holds the
+private key, so nothing on GitHub can read it.
+
+**The private key is the backup.** Without it every artifact is noise. It is
+`MEMO_BACKUP_AGE_KEY` in the main checkout's `.env` (see `.env.example`), which
+puts it on the same laptop the artifacts exist to outlive — so it also wants a
+copy that is not there: a password manager, or printed. Its public half is in
+`.github/backup_recipients.txt`. Making a new one, which is also how to rotate:
+
+```
+winget install FiloSottile.age        # or: brew install age / apt install age
+age-keygen -o memo-backup-key.txt     # prints "Public key: age1…"
+```
+
+Add the `age1…` line to `.github/backup_recipients.txt`, put the
+`AGE-SECRET-KEY-1…` line in the `.env` as `MEMO_BACKUP_AGE_KEY`, and delete
+the file. More than one recipient line is allowed — any one of the keys
+decrypts — so rotating is: add the new key, let a run go by, remove the old.
+Without any, `.github/scripts/encrypt_snapshot.sh` fails the run rather than
+upload plaintext.
+
+To restore from one, download it and decrypt into the backups directory, where
+it unpacks as an ordinary `snapshot-<timestamp>` folder that `verify_backup.js`
+and `restore_backup.js --from=` read as usual. The key goes from the `.env` to
+`age` on stdin (`--identity -`), so it never lands in a file of its own. Not
+`<(…)`: the Windows build of `age` cannot open the `/proc` path Git Bash hands
+it for a process substitution.
+
+```
+gh run download <run id> --repo dustinvtran/memo --name encrypted-snapshot-<run id>
+sed -n 's/^MEMO_BACKUP_AGE_KEY=//p' /path/to/.env \
+  | age --decrypt --identity - snapshot.tar.gz.age | tar -xz -C backups
+```
+
+Drilled on 2026-09-29 from run 36601658165: downloaded, decrypted with the
+`.env` key, and `verify_backup.js --live` agreed on manifest, files, `sha256`
+and live counts across all 15 collections (9,554 documents).
+
+The `snapshot-<run id>` artifacts from before this — plaintext — should be
+deleted rather than left to expire: `gh api
+repos/dustinvtran/memo/actions/artifacts --paginate` lists them.
 
 ### The restore drill
 
