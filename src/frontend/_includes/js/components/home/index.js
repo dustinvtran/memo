@@ -30,7 +30,7 @@ Components.Home.HomePage = HomePage
  * `/profile/undefined`. See #216.
  *
  * The 401 is the case worth naming, and the status is there to name it with
- * as of #234. `isLoggedIn` is the presence of the `nf_jwt` cookie and nothing
+ * as of #234. `isLoggedIn` is the presence of the session hint and nothing
  * about whether it still verifies, so this page is where a session that ended
  * while nobody was looking is found out, and the answer to that is to log in
  * again rather than to try again — the same reading `sessionOver()` takes on

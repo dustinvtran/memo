@@ -70,9 +70,13 @@ const sign = ({ key = new TextEncoder().encode(process.env.TOKEN_SECRET) } = {})
     .sign(key)
 }
 
+/** The `Set-Cookie` a response writes for the session cookie. */
+const sessionSetCookie = (response) =>
+  response.multiValueHeaders?.['Set-Cookie']
+    ?.find((cookie) => cookie.startsWith(`${NETLIFY_COOKIE_NAME}=`))
+
 test('logging out clears the session cookie', options, async () => {
-  const { headers } = await handleLogout()
-  const setCookie = headers['Set-Cookie']
+  const setCookie = sessionSetCookie(await handleLogout())
 
   // `Max-Age=0` is the whole point: an empty value alone leaves a cookie the
   // browser keeps sending. Anything other than 0 here is a session that does
@@ -91,12 +95,12 @@ test('a session past saving is cleared the same way', options, async () => {
   // The 401 branch of renew. It clears rather than merely refusing, so that a
   // token the server will never accept again stops being sent.
   const stale = await sign({ key: new TextEncoder().encode('another secret') })
-  const { statusCode, headers } = await handleRenew({
+  const response = await handleRenew({
     headers: { authorization: `Bearer ${stale}` },
   })
 
-  assert.equal(statusCode, 401)
-  const cleared = parseSetCookie(headers['Set-Cookie'])
+  assert.equal(response.statusCode, 401)
+  const cleared = parseSetCookie(sessionSetCookie(response))
   assert.equal(cleared.name, NETLIFY_COOKIE_NAME)
   assert.equal(cleared.value, '')
   assert.equal(cleared.maxAge, 0)
@@ -109,21 +113,24 @@ test('a renewed token survives the round trip through a cookie', options, async 
      default encoder: it now skips `encodeURIComponent` for values that survive
      the round trip unchanged, rather than always calling it. The header is
      different because of that, and a token read back out of it must not be. */
-  const { statusCode, headers, body } = await handleRenew({
-    headers: { authorization: `Bearer ${await sign()}` },
+  const token = await sign()
+  const response = await handleRenew({
+    headers: { authorization: `Bearer ${token}` },
   })
-  const setCookie = headers['Set-Cookie']
+  const setCookie = sessionSetCookie(response)
+  const renewed = parseSetCookie(setCookie).value
 
-  assert.equal(statusCode, 200)
-  assert.equal(parseSetCookie(setCookie).value, JSON.parse(body).token)
+  assert.equal(response.statusCode, 200)
+  assert.equal((await jose.jwtVerify(renewed, new TextEncoder().encode(process.env.TOKEN_SECRET))).payload.sub, 'auth0|nil')
   // The renewed cookie is the one whose `maxAge` is a real duration, so it
   // pins the units as well: seconds, not milliseconds.
   assert.equal(parseSetCookie(setCookie).maxAge, 14 * 24 * 3600)
 })
 
 test('no token at all is refused without a cookie to clear', options, async () => {
-  const { statusCode, headers } = await handleRenew({ headers: {} })
+  const { statusCode, headers, multiValueHeaders } = await handleRenew({ headers: {} })
 
   assert.equal(statusCode, 401)
   assert.equal(headers['Set-Cookie'], undefined)
+  assert.equal(multiValueHeaders, undefined)
 })

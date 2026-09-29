@@ -182,16 +182,18 @@ you did not expect to see used shows up in the list. An expired token
 answers 401 saying so, stays listed until revoked, and does not count
 towards the 20 a user may hold.
 
-These three want the `nf_jwt` session. The quickest way to send it is from the
-browser console on the site while signed in, where the frontend's own request
-helper attaches it:
+These three want the `nf_jwt` session. It is an `httpOnly` cookie, so nothing
+on the page can read it, but the browser sends it — and the frontend's own
+request helper adds the `X-Requested-With` header a write signed in by cookie
+has to carry — so the quickest way is the browser console on the site while
+signed in:
 
 ```
 (await Http.post('/api/tokens', { name: 'claude' })).value.token
 ```
 
-Then send the token as `Authorization: Bearer memo_pat_…` to any other route,
-exactly as the frontend sends its session. `POST /api/entries/:type` with the
+Then send the token as `Authorization: Bearer memo_pat_…` to any other route;
+a request with an `Authorization` header needs no `X-Requested-With`. `POST /api/entries/:type` with the
 body the edit form builds adds an entry; `utils/api_token.js` says why a token
 is not a longer-lived JWT.
 

@@ -100,8 +100,8 @@ test('a percent-encoded value is decoded', () => {
 })
 
 test('a value that cannot be decoded is left alone rather than thrown over', () => {
-  // Every request reads the token through here, so a stray `%` in some other
-  // service's cookie must not take the session with it.
+  // Every request reads the session hint through here, so a stray `%` in some
+  // other service's cookie must not take the session with it.
   assert.equal(withCookie('nf_jwt=token; other=100%').nf_jwt, 'token')
   assert.equal(withCookie('nf_jwt=token; other=100%').other, '100%')
 })
@@ -117,7 +117,7 @@ test('no cookies at all is no cookies, rather than one empty one', () => {
 ///////////////////////////////////////////////////////////////////////////////
 // The request itself, against a `fetch` that answers from a script.
 
-/** Where `renewToken` goes. Named here so a test can answer that url alone. */
+/** Where `renewSession` goes. Named here so a test can answer that url alone. */
 const RENEWAL_URL = '/.netlify/functions/auth/renew'
 
 /** Enough of a `Response` for `request` to read: `ok`, `status` and `text`. */
@@ -146,22 +146,17 @@ const loadWithFetch = (answer) => {
   const context = vm.createContext({
     document: { cookie: '' },
     // A vm context is its own realm, so it has none of what Node adds to the
-    // global: no `fetch`, and no `atob` for `secondsUntilExpiry` to read the
-    // token's expiry with.
+    // global: no `fetch`, and no `atob` for `expOfJwt` to read a pre-#501
+    // session's expiry with.
     atob: (text) => Buffer.from(text, 'base64').toString('binary'),
     fetch: async (url, options) => {
       calls.push({ url, ...options })
       return asResponse(answer(url, options))
     },
-    // Two globals belonging to other bundled files. `Nullable.map` is
-    // nullable.js's, to the letter; `NT` is the vendored neverthrow, and the
-    // only thing this file asks of `fromPromise` is that the mapper runs on a
-    // rejection and not on a value — which is exactly what the port below
-    // turns on, so it is worth the stub saying so rather than mocking it away.
-    Nullable: {
-      map: (value, fn) =>
-        value === null || value === undefined ? value : fn(value),
-    },
+    // The vendored neverthrow, and the only thing this file asks of
+    // `fromPromise` is that the mapper runs on a rejection and not on a value
+    // — which is exactly what the port below turns on, so it is worth the stub
+    // saying so rather than mocking it away.
     NT: {
       ResultAsync: {
         fromPromise: (promise, mapErr) =>
@@ -173,18 +168,23 @@ const loadWithFetch = (answer) => {
     },
   })
 
-  const { Http, renewToken } = vm.runInContext(
-    `(() => {\n${source}\n;return ({ Http, renewToken })\n})()`,
+  const { Http } = vm.runInContext(
+    `(() => {\n${source}\n;return ({ Http })\n})()`,
     context
   )
 
-  return { Http, renewToken, calls, context }
+  return { Http, calls, context }
 }
 
-/** A token with a real `exp`, since that is what decides whether to renew. */
-const jwtExpiringIn = (seconds) => {
+const nowSeconds = () => Math.floor(Date.now() / 1000)
+
+/** The hint the server sets beside the session: its `exp`, and nothing else. */
+const hintExpiringIn = (seconds) => `memo_session=${nowSeconds() + seconds}`
+
+/** A readable session cookie from before #501, with a real `exp`. */
+const legacyJwtExpiringIn = (seconds) => {
   const payload = Buffer.from(
-    JSON.stringify({ exp: Math.floor(Date.now() / 1000) + seconds })
+    JSON.stringify({ exp: nowSeconds() + seconds })
   ).toString('base64url')
   return `header.${payload}.signature`
 }
@@ -192,19 +192,23 @@ const jwtExpiringIn = (seconds) => {
 const WEEKS = 30 * 24 * 3600
 const AN_HOUR = 3600
 
-test('a patch goes out as one, with a JSON body and the token', async () => {
-  const token = jwtExpiringIn(WEEKS)
+test('a patch goes out as one, with a JSON body, the cookie and the CSRF header', async () => {
   const { Http, calls, context } = loadWithFetch(() => ({ body: { score: 9 } }))
-  context.document.cookie = `nf_jwt=${token}`
+  context.document.cookie = hintExpiringIn(WEEKS)
 
   const result = await Http.patch('/.netlify/functions/entries/films/abc', {
     score: 9,
   })
 
-  // One call: the token has weeks left, so nothing is renewed first.
+  // One call: the session has weeks left, so nothing is renewed first.
   assert.equal(calls.length, 1)
   assert.equal(calls[0].method, 'PATCH')
-  assert.equal(calls[0].headers.Authorization, `Bearer ${token}`)
+  // The session travels as the cookie, which the page cannot read and so
+  // cannot repeat; the header is what lets the API accept a cookie-signed
+  // write at all.
+  assert.equal(calls[0].credentials, 'same-origin')
+  assert.equal(calls[0].headers.Authorization, undefined)
+  assert.equal(calls[0].headers['X-Requested-With'], 'memo')
   assert.equal(calls[0].headers['Content-Type'], 'application/json')
   assert.deepEqual(JSON.parse(calls[0].body), { score: 9 })
   assert.equal(result.ok, true)
@@ -219,8 +223,6 @@ test('a read carries no body and no content type', async () => {
   assert.equal(calls[0].method, 'GET')
   assert.equal(calls[0].body, undefined)
   assert.equal(calls[0].headers['Content-Type'], undefined)
-  // Logged out: there is no token to send, and an `Authorization: Bearer
-  // undefined` is worse than no header at all.
   assert.equal(calls[0].headers.Authorization, undefined)
 })
 
@@ -275,62 +277,69 @@ test('a 200 with nothing in it is an answer, not a parse error', async () => {
   assert.deepEqual(plain(result), { ok: true, value: undefined })
 })
 
-test('a renewal that fails hands back the token, not undefined', async () => {
-  // The bug a literal port ships: a renewal fails with a 401, `fetch` resolves
-  // on it, the `.catch(() => token)` never runs, and `body.token` off the
-  // *error* body is `undefined` — a renewal reporting success and handing back
-  // nothing. Asked of `renewToken` directly, because the caller's
-  // `jwt ?? getToken()` reads the cookie when this resolves undefined and so
-  // hides it: the next test is the one that would still pass.
-  const token = jwtExpiringIn(AN_HOUR)
-  const { renewToken } = loadWithFetch(() => ({
-    status: 401,
-    body: { error: 'UnauthorizedError', message: 'not authorized' },
-  }))
+///////////////////////////////////////////////////////////////////////////////
+// Whether there is a session, and keeping it alive
 
-  assert.equal(await renewToken(token), token)
+test('the hint is what says someone is signed in', () => {
+  const { Http, context } = loadWithFetch(() => ({}))
+
+  context.document.cookie = ''
+  assert.equal(Http.hasSession(), false)
+
+  context.document.cookie = hintExpiringIn(WEEKS)
+  assert.equal(Http.hasSession(), true)
+
+  // A hint that is not a number is no session, rather than one expiring at NaN.
+  context.document.cookie = 'memo_session=garbage'
+  assert.equal(Http.hasSession(), false)
 })
 
-test('a failed renewal leaves the request carrying the token it had', async () => {
-  // The end of that path: whatever `renewToken` decides, the request it held
-  // up goes out with a usable token on it and succeeds.
-  const token = jwtExpiringIn(AN_HOUR)
+test('a readable session from before #501 still counts, until it is renewed', () => {
+  const { Http, context } = loadWithFetch(() => ({}))
+
+  context.document.cookie = `nf_jwt=${legacyJwtExpiringIn(WEEKS)}`
+  assert.equal(Http.hasSession(), true)
+})
+
+test('a session near its expiry is renewed before the request', async () => {
+  const { Http, calls, context } = loadWithFetch(() => ({ body: {} }))
+  context.document.cookie = hintExpiringIn(AN_HOUR)
+
+  await Http.get('/.netlify/functions/name')
+
+  assert.deepEqual(calls.map(({ url }) => url), [RENEWAL_URL, '/.netlify/functions/name'])
+  assert.equal(calls[0].credentials, 'same-origin')
+})
+
+test('a pre-#501 session is renewed on the first request, however long it has left', async () => {
+  // The renewal is what replaces the readable cookie with the httpOnly one and
+  // sets the hint, so it cannot wait for the halfway mark.
+  const { Http, calls, context } = loadWithFetch(() => ({ body: {} }))
+  context.document.cookie = `nf_jwt=${legacyJwtExpiringIn(WEEKS)}`
+
+  await Http.get('/.netlify/functions/name')
+
+  assert.equal(calls[0].url, RENEWAL_URL)
+})
+
+test('a failed renewal does not fail the request it held up', async () => {
   const { Http, calls, context } = loadWithFetch((url) =>
     url === RENEWAL_URL
       ? { status: 401, body: { error: 'UnauthorizedError', message: 'not authorized' } }
-      : { body: {} }
+      : { body: { username: 'nil' } }
   )
-  context.document.cookie = `nf_jwt=${token}`
+  context.document.cookie = hintExpiringIn(AN_HOUR)
 
   const result = await Http.get('/.netlify/functions/name')
 
   assert.equal(calls.length, 2)
-  assert.equal(calls[0].url, RENEWAL_URL)
-  assert.notEqual(calls[1].headers.Authorization, 'Bearer undefined')
-  assert.equal(calls[1].headers.Authorization, `Bearer ${token}`)
-  // And the request itself is unharmed: a renewal that fails is not a failure.
   assert.equal(result.ok, true)
-})
-
-test('a renewal that succeeds puts the new token on the request', async () => {
-  const token = jwtExpiringIn(AN_HOUR)
-  const { Http, calls, context } = loadWithFetch((url) =>
-    url === RENEWAL_URL ? { body: { token: 'renewed.jwt.here' } } : { body: {} }
-  )
-  context.document.cookie = `nf_jwt=${token}`
-
-  await Http.get('/.netlify/functions/name')
-
-  assert.equal(calls[0].headers.Authorization, `Bearer ${token}`)
-  assert.equal(calls[1].headers.Authorization, 'Bearer renewed.jwt.here')
+  assert.deepEqual(plain(result.value), { username: 'nil' })
 })
 
 test('two requests at once renew once', async () => {
-  const token = jwtExpiringIn(AN_HOUR)
-  const { Http, calls, context } = loadWithFetch((url) =>
-    url === RENEWAL_URL ? { body: { token: 'renewed.jwt.here' } } : { body: {} }
-  )
-  context.document.cookie = `nf_jwt=${token}`
+  const { Http, calls, context } = loadWithFetch(() => ({ body: {} }))
+  context.document.cookie = hintExpiringIn(AN_HOUR)
 
   await Promise.all([
     Http.get('/.netlify/functions/name'),
@@ -338,4 +347,12 @@ test('two requests at once renew once', async () => {
   ])
 
   assert.equal(calls.filter(({ url }) => url === RENEWAL_URL).length, 1)
+})
+
+test('signed out, nothing is renewed', async () => {
+  const { Http, calls } = loadWithFetch(() => ({ body: {} }))
+
+  await Http.get('/.netlify/functions/name')
+
+  assert.deepEqual(calls.map(({ url }) => url), ['/.netlify/functions/name'])
 })

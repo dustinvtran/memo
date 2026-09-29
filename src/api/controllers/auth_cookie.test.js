@@ -14,10 +14,10 @@
  * and is not sent there, so the flow fails on the preview whatever the branch
  * says — which leaves this file and, after a merge, a real login.
  *
- * The `httpOnly` assertion is inverted on purpose: it is deliberately absent,
- * because `Http.getToken` reads this cookie out of `document.cookie`. Turning
- * it on is a separate change that has to move the API to cookie-borne auth
- * first, and this test is what makes that a decision rather than a surprise.
+ * The session cookie is `httpOnly` since #501, so script on the page cannot
+ * read it, and a second cookie — the hint — carries the one thing the page
+ * does need, the session's expiry. The two are set and cleared together, and
+ * this file is what holds them to that.
  *
  * It needs the dependencies, so it **skips itself** when they aren't
  * installed — which is how CI runs the suite.
@@ -76,13 +76,25 @@ const attributesOf = (setCookie) =>
     .slice(1)
     .map((part) => part.trim().split('=')[0].toLowerCase())
 
-const renewedCookie = async () => {
+/** Every `Set-Cookie` a response writes, named. */
+const setCookiesOf = (response) =>
+  Object.fromEntries(
+    (response.multiValueHeaders?.['Set-Cookie'] ?? []).map((cookie) => [
+      cookie.slice(0, cookie.indexOf('=')),
+      cookie,
+    ])
+  )
+
+const renewal = async () => {
+  const token = await sign()
   const response = await handleRenew({
-    headers: { authorization: `Bearer ${await sign()}` },
+    headers: { authorization: `Bearer ${token}` },
   })
   assert.equal(response.statusCode, 200)
-  return response.headers['Set-Cookie']
+  return { response, token, cookies: setCookiesOf(response) }
 }
+
+const renewedCookie = async () => (await renewal()).cookies.nf_jwt
 
 test('the session cookie is SameSite=Lax', options, async () => {
   // Lax rather than Strict: the Auth0 callback answers with a redirect and the
@@ -93,24 +105,50 @@ test('the session cookie is SameSite=Lax', options, async () => {
   assert.match(await renewedCookie(), /;\s*SameSite=Lax/i)
 })
 
-test('the session cookie is Secure, site-wide, and not HttpOnly', options, async () => {
+test('the session cookie is Secure, site-wide, and HttpOnly', options, async () => {
   const cookie = await renewedCookie()
   const attributes = attributesOf(cookie)
 
   assert.equal(attributes.includes('secure'), true)
   assert.match(cookie, /;\s*Path=\//i)
   assert.match(cookie, /;\s*Max-Age=1209600/i)
-  // Not a wish list: the frontend reads this cookie from `document.cookie`, so
-  // `httpOnly` here would log everyone out. See the file comment.
-  assert.equal(attributes.includes('httponly'), false)
+  // The point of #501: nothing on the page can read the session.
+  assert.equal(attributes.includes('httponly'), true)
 })
 
-test('logging out clears the same cookie', options, async () => {
-  // Same name and path, or the browser keeps the one it has alongside it and
-  // the session outlives the logout.
-  const response = await handleLogout()
-  const cookie = response.headers['Set-Cookie']
+test('the hint beside it carries the expiry and nothing else, readably', options, async () => {
+  const { response, cookies } = await renewal()
+  const hint = cookies.memo_session
+  const attributes = attributesOf(hint)
 
-  assert.match(cookie, /^nf_jwt=;/)
-  assert.match(cookie, /;\s*Path=\//i)
+  const { exp } = jose.decodeJwt(cookies.nf_jwt.split(';')[0].slice('nf_jwt='.length))
+  assert.equal(hint.split(';')[0], `memo_session=${exp}`)
+  assert.deepEqual(JSON.parse(response.body), { exp })
+  // Readable by the page, which is its whole job, and otherwise the session
+  // cookie's twin, so the two come and go together.
+  assert.equal(attributes.includes('httponly'), false)
+  assert.equal(attributes.includes('secure'), true)
+  assert.match(hint, /;\s*Path=\//i)
+  assert.match(hint, /;\s*Max-Age=1209600/i)
+  assert.match(hint, /;\s*SameSite=Lax/i)
+})
+
+test('a renewal no longer answers the token in its body', options, async () => {
+  const { response, token } = await renewal()
+
+  assert.equal(response.body.includes(token.split('.')[0] + '.'), false)
+  assert.equal('token' in JSON.parse(response.body), false)
+})
+
+test('logging out clears both cookies', options, async () => {
+  // Same name and path, or the browser keeps the one it has alongside it and
+  // the session outlives the logout; and a hint left behind would tell the
+  // page somebody is still signed in.
+  const cookies = setCookiesOf(await handleLogout())
+
+  for (const name of ['nf_jwt', 'memo_session']) {
+    assert.match(cookies[name], new RegExp(`^${name}=;`))
+    assert.match(cookies[name], /;\s*Path=\//i)
+    assert.match(cookies[name], /;\s*Max-Age=0/i)
+  }
 })

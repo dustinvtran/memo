@@ -91,13 +91,13 @@ const { MAX_API_TOKEN_LIFETIME_SECONDS, LAST_USED_RESOLUTION_MS } = dependencies
  * `as` is a user id, for which a real session token is minted; `bearer` is a
  * credential sent exactly as given.
  */
-const callRoute = async (route, method, url, { as, bearer, body, scheme = 'Bearer' } = {}) => {
+const callRoute = async (route, method, url, { as, bearer, body, scheme = 'Bearer', headers } = {}) => {
   const credential = bearer ?? (as ? await tokenFor(as) : undefined)
   const response = await route.handler(
     {
       httpMethod: method,
       path: `/.netlify/functions/${url}`,
-      headers: credential ? { authorization: `${scheme} ${credential}` } : {},
+      headers: headers ?? (credential ? { authorization: `${scheme} ${credential}` } : {}),
       body: body === undefined ? null : JSON.stringify(body),
     },
     {}
@@ -386,4 +386,74 @@ test('the Bearer scheme is recognised whatever its case', options, async () => {
     const withSession = await callRoute(name, 'GET', 'name', { as: 'u1', scheme })
     assert.equal(withSession.statusCode, 200, scheme)
   }
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// The session as the browser sends it: a cookie, since #501 made it httpOnly.
+
+const cookieFor = async (userId) => `other=1; nf_jwt=${await tokenFor(userId)}; memo_session=1`
+
+test('a session cookie with no Authorization header signs a read in', options, async () => {
+  seed()
+
+  const { statusCode, body } = await callRoute(name, 'GET', 'name', {
+    headers: { cookie: await cookieFor('u1') },
+  })
+
+  assert.equal(statusCode, 200)
+  assert.equal(body.username, 'nil')
+})
+
+test('a write signed in by cookie needs the X-Requested-With header', options, async () => {
+  seed()
+  const cookie = await cookieFor('u1')
+  const write = (headers) => callRoute(bio, 'POST', 'bio', {
+    headers,
+    body: { newBio: 'written by cookie' },
+  })
+
+  const forged = await write({ cookie })
+  assert.equal(forged.statusCode, 401)
+  assert.match(forged.body.message, /x-requested-with/)
+  assert.equal(store.users[0].biography, undefined)
+
+  const ours = await write({ cookie, 'x-requested-with': 'memo' })
+  assert.equal(ours.statusCode, 200)
+  assert.equal(store.users[0].biography, 'written by cookie')
+})
+
+test('the hint cookie alone is no session', options, async () => {
+  seed()
+
+  const { statusCode } = await callRoute(name, 'GET', 'name', {
+    headers: { cookie: 'memo_session=9999999999' },
+  })
+
+  assert.equal(statusCode, 401)
+})
+
+test('a session cookie can manage tokens, as the profile page will', options, async () => {
+  seed()
+  const cookie = await cookieFor('u1')
+
+  const issued = await callRoute(tokens, 'POST', 'tokens', {
+    headers: { cookie, 'x-requested-with': 'memo' },
+    body: { name: 'from the browser' },
+  })
+  assert.equal(issued.statusCode, 200)
+
+  const listed = await callRoute(tokens, 'GET', 'tokens', { headers: { cookie } })
+  assert.deepEqual(listed.body.map((t) => t.name), ['from the browser'])
+})
+
+test('an API token needs no X-Requested-With, since a forged request cannot carry one', options, async () => {
+  seed()
+  const { body: { token } } = await issue()
+
+  const { statusCode } = await callRoute(bio, 'POST', 'bio', {
+    headers: { authorization: `Bearer ${token}` },
+    body: { newBio: 'from a script' },
+  })
+
+  assert.equal(statusCode, 200)
 })
