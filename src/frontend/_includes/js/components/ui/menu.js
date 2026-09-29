@@ -32,7 +32,7 @@ const Menu = () => initComponent({
     </div>
   `,
   initializer: () => {
-    const isLoggedIn = Netlify.getToken()
+    const isLoggedIn = Netlify.isLoggedIn()
     // `String` on both of these: `insertAdjacentHTML` takes a string of
     // markup, and markup is not a string until it is asked for.
     const menuAuthLink = isLoggedIn

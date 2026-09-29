@@ -64,12 +64,9 @@ const deleteDraft = (type, ref) => Http.del(ENDPOINTS.draft(type, ref))
  */
 const entryTypes = Conversions.TYPES
 
-const getToken = Http.getToken
-
-const isLoggedIn = () => getToken() != null
+const isLoggedIn = Http.hasSession
 
 Netlify = {
-  getToken,
   getUserName,
   getEntries,
   getUserIdFromName,

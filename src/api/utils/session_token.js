@@ -30,6 +30,42 @@
  */
 const MAX_SESSION_SECONDS = 90 * 24 * 3600
 
+/**
+ * The session cookie. `httpOnly`, so script on the page cannot read it and a
+ * cross-site scripting bug cannot carry it off — which, since a session can
+ * mint API tokens that never expire, would otherwise be a way to a permanent
+ * credential (#501). The browser sends it on every same-origin request, and
+ * the API reads it there when a request carries no `Authorization` header.
+ */
+const SESSION_COOKIE_NAME = 'nf_jwt'
+
+/**
+ * The half of the session the page *can* read: the session token's `exp`, in
+ * seconds, and nothing else. It is how the page knows someone is signed in and
+ * when to renew, which it used to learn by reading `nf_jwt` itself. It
+ * authenticates nothing — anyone may set it, and a request carrying only it
+ * is a request with no session.
+ */
+const SESSION_HINT_COOKIE_NAME = 'memo_session'
+
+/**
+ * The header a write signed in by cookie has to carry.
+ *
+ * A cookie goes wherever the browser sends it, and a page on another site can
+ * make the browser send it — that is cross-site request forgery. `SameSite=Lax`
+ * already keeps the cookie off a cross-site `POST`, but that is one browser
+ * rule standing alone, and sibling hosts of the site count as same-site under
+ * it. A custom header is the second rule: a page on another origin cannot add
+ * one to a request without a CORS preflight, and this API answers none. The
+ * value is not checked, only its presence — the defence is that it could be
+ * sent at all.
+ *
+ * Reads are exempt because nothing a `GET` answers is readable across origins,
+ * and a `GET` writes nothing. A request with an `Authorization` header is
+ * exempt because a forged request cannot carry one either.
+ */
+const CSRF_HEADER = 'x-requested-with'
+
 /* Naming the algorithm on the way in is what stops a caller choosing it for
    us by sending a token whose header says something else. */
 const VERIFY_OPTIONS = { algorithms: ['HS256'] }
@@ -95,6 +131,9 @@ const isWithinAbsoluteLifetime = (claims, nowSeconds) => {
 }
 
 export {
+  SESSION_COOKIE_NAME,
+  SESSION_HINT_COOKIE_NAME,
+  CSRF_HEADER,
   MAX_SESSION_SECONDS,
   VERIFY_OPTIONS,
   tokenSecret,

@@ -1,6 +1,6 @@
 // file mostly copypasted from:
 // https://github.com/jamesqquick/netlify-auth0-rbac-integration-demo/blob/master/functions/AuthUtils.js
-import { SignJWT, jwtVerify } from 'jose'
+import { SignJWT, decodeJwt, jwtVerify } from 'jose'
 /* `cookie` 2 is ESM-only and has no default export, so `import cookie from
    'cookie'` is a SyntaxError at load — the #162 failure again, 502ing every
    route rather than this one. Named imports are the only way in.
@@ -17,7 +17,14 @@ import { parseCookie, stringifySetCookie } from 'cookie'
 import * as errors from '../utils/errors.js'
 import * as openidClient from '../utils/openid_client.js'
 import * as responses from '../utils/responses.js'
-import { VERIFY_OPTIONS, isWithinAbsoluteLifetime, sessionStartedAt, tokenSecret } from '../utils/session_token.js'
+import {
+  SESSION_COOKIE_NAME,
+  SESSION_HINT_COOKIE_NAME,
+  VERIFY_OPTIONS,
+  isWithinAbsoluteLifetime,
+  sessionStartedAt,
+  tokenSecret,
+} from '../utils/session_token.js'
 import { bearerCredential } from '../utils/bearer.js'
 /* `openid-client` 6 is ESM-only — its exports map has no `require` condition —
    so it is loaded with `import()`, through the seam in `utils/openid_client`
@@ -42,7 +49,7 @@ const NETLIFY_JWT_EXPIRATION_SECONDS = 14 * 24 * 3600
 // cookie's maxAge is in seconds
 const LOGIN_COOKIE_MAX_AGE = 30 * 60
 const AUTH0_LOGIN_COOKIE_NAME = "auth0_login_cookie"
-const NETLIFY_COOKIE_NAME = "nf_jwt"
+const NETLIFY_COOKIE_NAME = SESSION_COOKIE_NAME
 const isRunningLocally = process.env.NETLIFY_DEV === "true"
 
 /* These two handlers used to `throw` at a request they couldn't read, and an
@@ -311,16 +318,25 @@ const generateAuth0LoginResetCookie = () => {
   })
 }
 
-const generateLogoutCookie = () => {
-  return stringifySetCookie({
+/* Both halves of the session, cleared together: a hint left behind would tell
+   the page someone is still signed in. */
+const generateLogoutCookies = () => [
+  stringifySetCookie({
     name: NETLIFY_COOKIE_NAME,
     value: "",
     secure: !isRunningLocally,
     path: "/",
     maxAge: 0,
     httpOnly: true,
-  })
-}
+  }),
+  stringifySetCookie({
+    name: SESSION_HINT_COOKIE_NAME,
+    value: "",
+    secure: !isRunningLocally,
+    path: "/",
+    maxAge: 0,
+  }),
+]
 
 const generateNetlifyCookie = (netlifyToken) =>
   stringifySetCookie({
@@ -330,8 +346,7 @@ const generateNetlifyCookie = (netlifyToken) =>
     path: "/",
     maxAge: NETLIFY_JWT_EXPIRATION_SECONDS,
     // Unlike the login cookie above, this one is only ever sent to us by our
-    // own pages: the API is same-origin and the frontend reads the cookie and
-    // repeats it as a bearer header anyway. So the widest thing SameSite has
+    // own pages: the API is same-origin. So the widest thing SameSite has
     // to allow is a top-level navigation back to the site, and Lax allows
     // exactly that. It does not get in the way of the Auth0 callback either —
     // SameSite decides when a cookie is *sent*, and setting one on that
@@ -342,16 +357,31 @@ const generateNetlifyCookie = (netlifyToken) =>
     // changes nothing and is written down instead of assumed. Elsewhere the
     // default is still None, which is where it was worth something.
     //
-    // Not `httpOnly`, which is the change this cookie actually wants and
-    // cannot have yet: `Http.getToken` reads it from `document.cookie` and
-    // `refreshTokenIfNecessary` parses its `exp` there, so hiding it means
-    // moving the API to the cookie `getNetlifyJWTFromEvent` already accepts.
-    // Its own issue, not this one (#173): #501.
+    // `httpOnly` since #501, so that script on the page cannot read it. The
+    // page learns what it needs from the hint cookie below instead, and the
+    // API reads this one off the request (see `getCredential`).
+    httpOnly: true,
     sameSite: "lax",
   })
 
-const generateNetlifyCookieFromAuth0Token = async (tokenData) =>
-  generateNetlifyCookie(await generateNetlifyJWT(tokenData))
+/* What the page may know about the session, beside the session itself: its
+   expiry, so that it can tell someone is signed in and renew before the
+   token lapses. See `SESSION_HINT_COOKIE_NAME`. Same lifetime, path and
+   SameSite as the session cookie, so the two come and go together. */
+const generateSessionHintCookie = (netlifyToken) =>
+  stringifySetCookie({
+    name: SESSION_HINT_COOKIE_NAME,
+    value: String(decodeJwt(netlifyToken).exp),
+    secure: !isRunningLocally,
+    path: "/",
+    maxAge: NETLIFY_JWT_EXPIRATION_SECONDS,
+    sameSite: "lax",
+  })
+
+const generateSessionCookies = (netlifyToken) => [
+  generateNetlifyCookie(netlifyToken),
+  generateSessionHintCookie(netlifyToken),
+]
 
 const getNetlifyJWTFromEvent = (event) => {
   const authHeader = event.headers?.authorization
@@ -475,7 +505,7 @@ const handleCallback = async (event) => {
     return loginNotCompleted()
   }
 
-  const netlifyCookie = await generateNetlifyCookieFromAuth0Token(claims)
+  const sessionCookies = generateSessionCookies(await generateNetlifyJWT(claims))
 
   const auth0LoginCookie = generateAuth0LoginResetCookie()
 
@@ -489,20 +519,21 @@ const handleCallback = async (event) => {
       "Cache-Control": "no-cache",
     },
     multiValueHeaders: {
-      "Set-Cookie": [netlifyCookie, auth0LoginCookie],
+      "Set-Cookie": [...sessionCookies, auth0LoginCookie],
     },
   }
 }
 
-/* Clears the cookie and says so. The frontend keeps using the token it has for
-   the request in flight, and the cleared cookie is what stops it asking
-   again. */
+/* Clears the cookies and says so. The cleared hint is what stops the page
+   asking again. */
 const sessionOver = () => ({
   statusCode: 401,
   headers: {
     ...responses.SECURITY_HEADERS,
     "Cache-Control": "no-store",
-    "Set-Cookie": generateLogoutCookie(),
+  },
+  multiValueHeaders: {
+    "Set-Cookie": generateLogoutCookies(),
   },
   body: JSON.stringify({ error: "Session expired" }),
 })
@@ -553,15 +584,20 @@ const handleRenew = async (event) => {
     startedAt: sessionStartedAt(claims),
   })
 
+  /* The token goes back only as the cookie. Answering it in the body too, as
+     this used to, would hand script on the page the very thing `httpOnly`
+     keeps from it; the expiry is all the page needs, and it is not a secret. */
   return {
     statusCode: 200,
     headers: {
       ...responses.SECURITY_HEADERS,
       "Cache-Control": "no-store",
       "Content-Type": "application/json",
-      "Set-Cookie": generateNetlifyCookie(renewedToken),
     },
-    body: JSON.stringify({ token: renewedToken }),
+    multiValueHeaders: {
+      "Set-Cookie": generateSessionCookies(renewedToken),
+    },
+    body: JSON.stringify({ exp: decodeJwt(renewedToken).exp }),
   }
 }
 
@@ -572,7 +608,9 @@ const handleLogout = async () => {
       ...responses.SECURITY_HEADERS,
       Location: generateAuth0LogoutUrl(),
       "Cache-Control": "no-cache",
-      "Set-Cookie": generateLogoutCookie(),
+    },
+    multiValueHeaders: {
+      "Set-Cookie": generateLogoutCookies(),
     },
   }
 }

@@ -6,18 +6,18 @@ import { Result, ResultAsync, err, errAsync, ok, okAsync } from 'neverthrow'
 import * as errors from '../utils/errors.js'
 import * as db from '../utils/db/index.js'
 import * as workTypes from '../utils/work_types.js'
-import { validateExists } from '../utils/general.js'
 import { identity } from 'ramda'
 import { jwtVerify } from 'jose'
-import { tokenSecret, VERIFY_OPTIONS } from '../utils/session_token.js'
+import { parseCookie } from 'cookie'
+import { CSRF_HEADER, SESSION_COOKIE_NAME, tokenSecret, VERIFY_OPTIONS } from '../utils/session_token.js'
 import { hashApiToken, isExpired, looksLikeApiToken, shouldRecordUse } from '../utils/api_token.js'
 import { bearerCredential } from '../utils/bearer.js'
 /**
- * The user behind the bearer credential, or an unauthorized error.
+ * The user behind the request's credential, or an unauthorized error.
  *
- * The credential is either a session token — the `nf_jwt` the frontend sends,
- * whose `sub` is the answer — or a personal API token, told apart by its
- * prefix and looked up by its hash; `utils/api_token.js` says why the two
+ * The credential is either a session token — the `nf_jwt` cookie the browser
+ * sends, or the same token as a bearer header, whose `sub` is the answer — or
+ * a personal API token, told apart by its prefix and looked up by its hash; `utils/api_token.js` says why the two
  * differ. Every route that takes one takes the other, except the ones that
  * manage API tokens, which ask `getSessionUserId` below.
  *
@@ -43,7 +43,7 @@ import { bearerCredential } from '../utils/bearer.js'
  * @type {(event: Event) => ResultAsync<string, Error>}
  */
 const getUserId = (event) =>
-  getBearer(event)
+  getCredential(event)
     .asyncAndThen((credential) =>
       looksLikeApiToken(credential)
         ? userIdOfApiToken(credential)
@@ -58,7 +58,7 @@ const getUserId = (event) =>
  * @type {(event: Event) => ResultAsync<string, Error>}
  */
 const getSessionUserId = (event) =>
-  getBearer(event)
+  getCredential(event)
     .asyncAndThen((credential) =>
       looksLikeApiToken(credential)
         ? errAsync(errors.unauthorized(
@@ -236,11 +236,49 @@ const describeBody = (body) =>
   body === null ? 'null'
     : Array.isArray(body) ? 'an array'
     : `a ${typeof body}`
-/** @type {(event: Event) => Result<string, Error>} */
-const getBearer = (event) =>
-  validateExists(event.headers?.authorization)
-    .map(bearerCredential)
-    .mapErr(errors.unauthorized)
+/**
+ * The credential a request carries: its `Authorization` header when it has
+ * one, which is how a script or an agent sends an API token, and otherwise the
+ * session cookie, which is how the browser sends a session now that the page
+ * cannot read it to repeat as a header (#501).
+ *
+ * A write signed in by the cookie alone must also carry `CSRF_HEADER`, for the
+ * reason `session_token.js` gives. Its absence is a 401 with a message, rather
+ * than the silent one a missing credential gets, because the only callers who
+ * see it are hand-written ones that can do something about it.
+ * @type {(event: Event) => Result<string, Error>}
+ */
+const getCredential = (event) => {
+  const header = event.headers?.authorization
+  if (header) return ok(bearerCredential(header))
+
+  const session = sessionCookieOf(event.headers?.cookie)
+  if (!session) return err(errors.unauthorized())
+
+  return SAFE_METHODS.has(event.httpMethod?.toUpperCase()) || event.headers?.[CSRF_HEADER]
+    ? ok(session)
+    : err(errors.unauthorized(
+        undefined,
+        `a write signed in by cookie must carry an ${CSRF_HEADER} header`
+      ))
+}
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+
+/**
+ * `parseCookie` rather than a split on `;`, because only the first `=` in a
+ * pair separates the name from the value. A header that will not parse is no
+ * session rather than a thrown handler.
+ * @type {(cookieHeader: string | undefined) => string | undefined}
+ */
+const sessionCookieOf = (cookieHeader) => {
+  if (typeof cookieHeader !== 'string') return undefined
+  try {
+    return parseCookie(cookieHeader)[SESSION_COOKIE_NAME] || undefined
+  } catch (error) {
+    return undefined
+  }
+}
 
 /** @type {(jwt: string) => ResultAsync<string, Error>} */
 const userIdOfSession = (jwt) =>

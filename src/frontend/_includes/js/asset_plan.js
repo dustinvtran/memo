@@ -23,7 +23,6 @@ const BUNDLED_FILES = [
   "js/utils/general.js",
   "js/utils/icons.js",
   "js/utils/dom.js",
-  "js/utils/nullable.js",
   "js/utils/deep_equal.js",
   "js/utils/load_script.js",
   "js/utils/conversions.js",

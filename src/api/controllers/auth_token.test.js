@@ -148,6 +148,16 @@ const callbackEvent = (state) => ({
 const claimsOf = async (token) =>
   (await jose.jwtVerify(token, secret(), { algorithms: ['HS256'] })).payload
 
+/** Every `Set-Cookie` a response writes, in order. */
+const setCookiesOf = (response) => response.multiValueHeaders?.['Set-Cookie'] ?? []
+
+/**
+ * The session token a response set. Only the cookie carries it since #501; a
+ * renewal's body used to as well, and page script could read it there.
+ */
+const sessionTokenOf = (response) =>
+  parseSetCookie(setCookiesOf(response).find((c) => c.startsWith('nf_jwt='))).value
+
 /** Runs `fn` with TOKEN_SECRET set to `value`, or unset when it is undefined. */
 const withSecret = async (value, fn) => {
   const previous = process.env.TOKEN_SECRET
@@ -304,7 +314,7 @@ test('renewal slides the expiry forward but not the session start', options, asy
   )
 
   assert.equal(response.statusCode, 200)
-  const claims = await claimsOf(JSON.parse(response.body).token)
+  const claims = await claimsOf(sessionTokenOf(response))
   assert.equal(claims.sub, 'auth0|somebody')
   assert.deepEqual(claims.app_metadata.authorization.roles, ['user'])
   // The window moved; the thing that bounds it did not.
@@ -327,15 +337,15 @@ test('a session past the cap is not renewed again', options, async () => {
   })))
 
   assert.equal(response.statusCode, 401)
-  // The cleared cookie is what stops the frontend asking again every request.
-  assert.match(response.headers['Set-Cookie'], /nf_jwt=;/)
+  // The cleared hint is what stops the frontend asking again every request.
+  assert.deepEqual(setCookiesOf(response), CLEARED_SESSION)
 })
 
 test('a token from before the claim existed renews, and carries a start from then on', options, async () => {
   const response = await handleRenew(asEvent(await sign()))
 
   assert.equal(response.statusCode, 200)
-  const claims = await claimsOf(JSON.parse(response.body).token)
+  const claims = await claimsOf(sessionTokenOf(response))
   assert.ok(Math.abs(claims.session_started_at - now()) < 60)
 })
 
@@ -394,7 +404,7 @@ test('a login and the renewals after it share one session start', options, async
   for (let i = 0; i < 2; i++) {
     const renewal = await handleRenew(asEvent(token))
     assert.equal(renewal.statusCode, 200)
-    token = JSON.parse(renewal.body).token
+    token = sessionTokenOf(renewal)
     assert.equal((await claimsOf(token)).session_started_at, startedAt)
   }
 })
@@ -420,14 +430,19 @@ test('a login and the renewals after it share one session start', options, async
    attribute by attribute — which fails on an attribute appearing as well as on
    one going missing. */
 
-/** What `generateNetlifyCookie` writes for `token`. */
+/** What `generateNetlifyCookie` writes for `token`: HttpOnly since #501. */
 const sessionCookie = (token) =>
-  // Deliberately not HttpOnly: `Http.getToken` reads this out of
-  // `document.cookie`. See the file comment in `auth_cookie.test.js` (#173).
-  `nf_jwt=${token}; Max-Age=1209600; Path=/; Secure; SameSite=Lax`
+  `nf_jwt=${token}; Max-Age=1209600; Path=/; HttpOnly; Secure; SameSite=Lax`
+
+/** And the hint beside it, which the page reads and so is not HttpOnly. */
+const hintCookie = (token) =>
+  `memo_session=${jose.decodeJwt(token).exp}; Max-Age=1209600; Path=/; Secure; SameSite=Lax`
 
 /** And what clearing a cookie looks like: same name and path, `Max-Age=0`. */
 const cleared = (name) => `${name}=; Max-Age=0; Path=/; HttpOnly; Secure`
+
+/** Both halves of the session, cleared together wherever a session ends. */
+const CLEARED_SESSION = [cleared('nf_jwt'), 'memo_session=; Max-Age=0; Path=/; Secure']
 
 test('a login sets the session cookie and clears the login cookie', options, async () => {
   const state = Buffer.from(
@@ -435,7 +450,7 @@ test('a login sets the session cookie and clears the login cookie', options, asy
   ).toString('base64')
 
   const response = await handleCallback(callbackEvent(state))
-  const [netlifyCookie, loginCookie] = response.multiValueHeaders['Set-Cookie']
+  const [netlifyCookie, hint, loginCookie] = response.multiValueHeaders['Set-Cookie']
 
   /* A JWT is base64url and dots, all of which `cookie` leaves unencoded — but
      that is its judgement rather than ours, so the value is read back out and
@@ -443,6 +458,7 @@ test('a login sets the session cookie and clears the login cookie', options, asy
   const token = parseSetCookie(netlifyCookie).value
   assert.equal((await claimsOf(token)).sub, 'auth0|somebody')
   assert.equal(netlifyCookie, sessionCookie(token))
+  assert.equal(hint, hintCookie(token))
 
   /* The login cookie has done its job by here and is half a login's worth of
      state that a browser would otherwise keep for another half hour. Cleared
@@ -457,14 +473,12 @@ test('a renewal sets the same cookie, with the same attributes', options, async 
   const response = await handleRenew(asEvent(await sign()))
 
   assert.equal(response.statusCode, 200)
-  assert.equal(
-    response.headers['Set-Cookie'],
-    sessionCookie(JSON.parse(response.body).token),
-  )
+  const token = sessionTokenOf(response)
+  assert.deepEqual(setCookiesOf(response), [sessionCookie(token), hintCookie(token)])
 })
 
 test('logging out clears the session cookie', options, async () => {
-  assert.equal((await handleLogout()).headers['Set-Cookie'], cleared('nf_jwt'))
+  assert.deepEqual(setCookiesOf(await handleLogout()), CLEARED_SESSION)
 })
 
 test('and so does a session that has run past its cap', options, async () => {
@@ -478,7 +492,7 @@ test('and so does a session that has run past its cap', options, async () => {
   })))
 
   assert.equal(response.statusCode, 401)
-  assert.equal(response.headers['Set-Cookie'], cleared('nf_jwt'))
+  assert.deepEqual(setCookiesOf(response), CLEARED_SESSION)
 })
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -492,7 +506,7 @@ test('the session cookie is read back off a real Cookie header', options, async 
   const response = await handleRenew(asCookieEvent(await sign()))
 
   assert.equal(response.statusCode, 200)
-  assert.equal((await claimsOf(JSON.parse(response.body).token)).sub, 'auth0|somebody')
+  assert.equal((await claimsOf(sessionTokenOf(response))).sub, 'auth0|somebody')
 })
 
 test('a cookie holding a token of somebody else\'s is refused like any other', options, async () => {
@@ -503,8 +517,8 @@ test('a cookie holding a token of somebody else\'s is refused like any other', o
 })
 
 test('the Authorization header wins over the cookie', options, async () => {
-  /* Both can be present — the frontend reads the cookie and repeats it as a
-     bearer header — and which one is believed decides whose session it is.
+  /* Both can be present — a caller that sends a bearer header from a browser
+     still has the cookie — and which one is believed decides whose session it is.
      A stale cookie left over from an earlier login must not be the one that
      counts when the caller has said which token it means. */
   const bearer = await sign({ sub: 'auth0|the-header' })
@@ -515,7 +529,7 @@ test('the Authorization header wins over the cookie', options, async () => {
   )
 
   assert.equal(response.statusCode, 200)
-  assert.equal((await claimsOf(JSON.parse(response.body).token)).sub, 'auth0|the-header')
+  assert.equal((await claimsOf(sessionTokenOf(response))).sub, 'auth0|the-header')
 })
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -575,7 +589,7 @@ test('the callback redirect carries the site-wide security headers', options, as
      login working. */
   assert.equal(response.headers.Location, '/films/nil')
   assert.equal(response.headers['Cache-Control'], 'no-cache')
-  assert.equal(response.multiValueHeaders['Set-Cookie'].length, 2)
+  assert.equal(response.multiValueHeaders['Set-Cookie'].length, 3)
 })
 
 test('so does the 200 of a renewal', options, async () => {
@@ -585,7 +599,7 @@ test('so does the 200 of a renewal', options, async () => {
   assertSecurityHeaders(response.headers)
   assert.equal(response.headers['Cache-Control'], 'no-store')
   assert.equal(response.headers['Content-Type'], 'application/json')
-  assert.match(response.headers['Set-Cookie'], /^nf_jwt=/)
+  assert.match(setCookiesOf(response)[0], /^nf_jwt=/)
 })
 
 test('and both of the 401s a renewal can answer', options, async (t) => {
@@ -608,8 +622,8 @@ test('and both of the 401s a renewal can answer', options, async (t) => {
 
     assert.equal(response.statusCode, 401)
     assertSecurityHeaders(response.headers)
-    // The cleared cookie is the whole of what this response is for.
-    assert.equal(response.headers['Set-Cookie'], cleared('nf_jwt'))
+    // The cleared cookies are the whole of what this response is for.
+    assert.deepEqual(setCookiesOf(response), CLEARED_SESSION)
   })
 })
 
@@ -619,5 +633,5 @@ test('and the logout redirect, which is where a reader is sent to Auth0', option
   assert.equal(response.statusCode, 302)
   assertSecurityHeaders(response.headers)
   assert.match(response.headers.Location, /\/v2\/logout\?/)
-  assert.equal(response.headers['Set-Cookie'], cleared('nf_jwt'))
+  assert.deepEqual(setCookiesOf(response), CLEARED_SESSION)
 })

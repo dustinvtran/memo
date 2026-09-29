@@ -14,8 +14,13 @@ const put = (url, data) => makeRequest('put', url, data)
 
 const del = (url) => makeRequest('delete', url)
 
-/** Returns the Netlify token or undefined if not logged in */
-const getToken = () => cookies().nf_jwt
+/**
+ * Whether someone is signed in, as far as the page can tell. The session
+ * cookie itself is `httpOnly` and invisible from here (#501), so this is the
+ * hint the server sets beside it — see `sessionExpiry`. It says nothing about
+ * whether the session still verifies; the API is the judge of that.
+ */
+const hasSession = () => sessionExpiry() !== undefined
 
 /**
  * The one line to show someone about a failed request, and only that line:
@@ -73,7 +78,7 @@ Http = {
   patch,
   put,
   del,
-  getToken,
+  hasSession,
   errorMessage,
   getNameFromUrl,
   getEntryTypeFromUrl,
@@ -106,16 +111,24 @@ const toRequestError = (error) => ({
   message: error.response?.data?.message,
 })
 
-const toAuthHeader = (token) => ({ Authorization: `Bearer ${token}` })
-
+/**
+ * No `Authorization` header: the browser sends the session cookie on its own,
+ * and the page could not repeat it if it wanted to.
+ */
 const makeRequest = (method, url, data) => (
   NT.ResultAsync.fromPromise(
-    refreshTokenIfNecessary().then((jwt) =>
-      request(method, url, data, tokenIfLoggedIn(jwt))
-    ),
+    refreshSessionIfNecessary().then(() => request(method, url, data)),
     toRequestError
   )
 )
+
+/**
+ * Sent on every request, so that a write signed in by the session cookie is
+ * accepted. A page on another site cannot add a custom header to a request
+ * to this one without a CORS preflight the API never answers, and that is the
+ * whole of the defence; `CSRF_HEADER` in `session_token.js` says the rest.
+ */
+const CSRF_HEADERS = { 'X-Requested-With': 'memo' }
 
 /**
  * One request, as a promise that resolves with the body or rejects the way
@@ -129,11 +142,12 @@ const makeRequest = (method, url, data) => (
  * into a throw here, and the whole of the difference between the two clients
  * lives in these four lines.
  */
-const request = async (method, url, data, headers) => {
+const request = async (method, url, data) => {
   const response = await fetch(url, {
     method: method.toUpperCase(),
+    credentials: 'same-origin',
     headers: {
-      ...headers,
+      ...CSRF_HEADERS,
       ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
@@ -175,9 +189,6 @@ const readBody = async (response) => {
   }
 }
 
-const tokenIfLoggedIn = (jwt) =>
-  Nullable.map(jwt ?? getToken(), toAuthHeader) ?? {}
-
 const getLastPathnameSegment = () => {
   const segments = window.location.pathname?.split?.('/').filter(s => s)
   return segments?.[segments?.length - 1]
@@ -191,8 +202,8 @@ const getFirstPathnameSegment = () => {
 /**
  * Only the first `=` separates a cookie's name from its value — the value may
  * contain more of them — and the value is percent-encoded by whoever set it.
- * `nf_jwt` is unpadded base64url today, so it survives being split on every
- * `=` and read raw, which is precisely what makes that worth not relying on.
+ * A JWT is unpadded base64url, so it survives being split on every `=` and
+ * read raw, which is precisely what makes that worth not relying on.
  */
 const cookies = () =>
   Object.fromEntries(
@@ -223,11 +234,23 @@ const decodeCookieValue = (value) => {
 }
 
 
-/* The nf_jwt cookie is minted with a fixed lifetime, so without renewal it just
+/* The session is minted with a fixed lifetime, so without renewal it just
    expires and silently logs the user out. Renewing once it is past halfway
    through that lifetime keeps an active session sliding forward. */
 const RENEWAL_THRESHOLD_SECONDS = 7 * 24 * 3600
 const RENEWAL_URL = '/.netlify/functions/auth/renew'
+
+/* Written by the server beside the session cookie; `SESSION_HINT_COOKIE_NAME`
+   in `session_token.js`. */
+const SESSION_HINT_COOKIE = 'memo_session'
+
+/* The session cookie as it was before #501 made it `httpOnly`. A browser
+   that signed in before then still holds a readable one and no hint, and
+   would otherwise look signed out until it lapsed. It is read only for its
+   expiry, and the first request renews it, which replaces it with the
+   `httpOnly` cookie and the hint. Nothing can still hold one fourteen days
+   after that deploy, and this can go then. */
+const LEGACY_SESSION_COOKIE = 'nf_jwt'
 
 let pendingRenewal = null
 
@@ -237,46 +260,43 @@ const base64UrlDecode = (segment) => {
   return atob(base64.padEnd(base64.length + padding, '='))
 }
 
-const secondsUntilExpiry = (jwt) => {
+const expOfJwt = (jwt) => {
   try {
     const { exp } = JSON.parse(base64UrlDecode(jwt.split('.')[1]))
-    return exp - Math.floor(Date.now() / 1000)
+    return Number.isFinite(exp) ? exp : undefined
   } catch (e) {
     return undefined
   }
 }
 
-/* Falls back to the current token: it is still valid for a while, so a failed
-   renewal should not break the request that triggered it.
+/** The session's `exp`, in seconds, or undefined when there is none. */
+const sessionExpiry = () => {
+  const jar = cookies()
+  const hinted = Number(jar[SESSION_HINT_COOKIE])
+  if (jar[SESSION_HINT_COOKIE] && Number.isFinite(hinted)) return hinted
+  return jar[LEGACY_SESSION_COOKIE] ? expOfJwt(jar[LEGACY_SESSION_COOKIE]) : undefined
+}
 
-   That fallback has to be reachable, and under `fetch` it is not for free. A
-   renewal fails with a 401, which axios rejected on and `fetch` does not, so a
-   literal port never runs the `catch`: it reads `token` off the *error* body,
-   finds nothing, and resolves `undefined` — a renewal that reports success and
-   hands back nothing. What that costs is smaller than it looks, and only
-   because of a `??` in another function: `tokenIfLoggedIn` falls back to
-   `getToken()`, so the request still goes out on the cookie rather than as
-   `Bearer undefined`. That is one edit away from not being true, in a file
-   that has no reason to know this one leans on it, so both halves are explicit
-   here instead. `request` throwing on `!ok` is what keeps the `catch`
-   reachable; the `?? token` is the same answer for a 200 that somehow carries
-   no token. Neither path resolves undefined. */
-const renewToken = (token) =>
-  request('get', RENEWAL_URL, undefined, toAuthHeader(token))
-    .then((body) => body?.token ?? token)
-    .catch(() => token)
+/* A renewal that fails is not a failure of the request it held up: that goes
+   out on the cookie the browser already has, which is still good for a while,
+   and if it is not, the request's own 401 is the answer the page acts on. A
+   renewal the server refused has cleared the hint, which is what stops the
+   page asking again. */
+const renewSession = () =>
+  request('get', RENEWAL_URL)
+    .catch(() => undefined)
     .finally(() => { pendingRenewal = null })
 
-const refreshTokenIfNecessary = async () => {
-  const token = cookies().nf_jwt
-  if (!token) {
-    return undefined
+const refreshSessionIfNecessary = async () => {
+  const exp = sessionExpiry()
+  if (exp === undefined) {
+    return
   }
-  const remaining = secondsUntilExpiry(token)
-  if (remaining > RENEWAL_THRESHOLD_SECONDS) {
-    return token
+  const legacy = !cookies()[SESSION_HINT_COOKIE]
+  if (!legacy && exp - Math.floor(Date.now() / 1000) > RENEWAL_THRESHOLD_SECONDS) {
+    return
   }
   // in-flight renewal is shared so concurrent requests only renew once
-  pendingRenewal = pendingRenewal ?? renewToken(token)
+  pendingRenewal = pendingRenewal ?? renewSession()
   return pendingRenewal
 }
