@@ -270,6 +270,9 @@ const send = (res, code, body, type = "application/json") => {
   res.end(typeof body === "string" ? body : JSON.stringify(body));
 };
 
+/** What `responses.fromError` answers for `errors.notFound()`. */
+const NOT_FOUND = { error: "NotFound", message: "not found" };
+
 const emptyTally = () =>
   Object.fromEntries([...Array(10)].map((_, i) => [String(i + 1), 0]).concat([["unrated", 0]]));
 
@@ -295,7 +298,8 @@ const api = (url, method, res) => {
 
   // `/name` is the signed-in user; 401 here is what makes `isOwner` false and
   // hides the edit buttons. `/name/:name` wraps its answer in `data`, and a
-  // bare `{}` renders Error404.
+  // name nobody has taken is a 404, which the list page draws as Error404 —
+  // a bare `{}` until #477.
   //
   // It answers as the owner whatever the browser sends, with no `nf_jwt`
   // cookie and no `Authorization` header, which is deliberate — the edit
@@ -304,18 +308,22 @@ const api = (url, method, res) => {
   // logged-out reader sees is not what this route shows; the thing to watch
   // for #397 is whether the request is made at all.
   if (route === "name" && rest.length === 0) return send(res, 200, { username: USERNAME });
-  if (route === "name") return send(res, 200, { data: { username: rest[0] } });
+  if (route === "name") {
+    return rest[0] === USERNAME
+      ? send(res, 200, { data: { username: USERNAME } })
+      : send(res, 404, NOT_FOUND);
+  }
 
   // `/user/:name` is the profile page's first request and everything on that
   // page is inside it, so without this route the whole page was one error
   // line — the menu and the biography included, which is where #397's second
   // 401 came from. Only the public half of the document: `userId` and the
   // stats blob are deliberately not in the answer (#105), and a name nobody
-  // has taken is a bare `{}`, which is what the page turns into Error404.
+  // has taken is a 404, which is what the page turns into Error404 (#477).
   if (route === "user") {
-    return send(res, 200, rest[0] === USERNAME
-      ? { data: { username: USERNAME, biography: "Fixtures, mostly.\n\n## A heading\n\nMarkdown, because the biography is rendered through `marked`." } }
-      : {});
+    return rest[0] === USERNAME
+      ? send(res, 200, { data: { username: USERNAME, biography: "Fixtures, mostly.\n\n## A heading\n\nMarkdown, because the biography is rendered through `marked`." } })
+      : send(res, 404, NOT_FOUND);
   }
 
   // A **raw array**, not an envelope.
@@ -327,7 +335,14 @@ const api = (url, method, res) => {
       updatedDate: Date.now(),
     });
   }
-  if (route === "reviews" && method === "GET") return send(res, 200, { data: { text: "" } });
+  // A dbRef no fixture has is a 404, as the real route answers since #477.
+  // The real one also 400s an id with punctuation in it, which no fixture can
+  // produce; `reviews.test.js` has that half.
+  if (route === "reviews" && method === "GET") {
+    return Object.values(entries).flat().some((row) => row.dbRef === rest[1])
+      ? send(res, 200, { data: { text: "" } })
+      : send(res, 404, NOT_FOUND);
+  }
 
   // `versions[].changes` must be an array, or `chipsHtml` throws on its length
   // and the history panel sits on its loader for ever.

@@ -3,7 +3,7 @@
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/errors').Error} Error */
 import { okAsync, ResultAsync } from 'neverthrow'
-import { findOneByField_, updateByRef_, create_ } from '../utils/db/index.js'
+import { findOneByField_, findOneByFieldOrFail_, updateByRef_, create_ } from '../utils/db/index.js'
 import { pair, toAsync, toPromise } from '../utils/general.js'
 import * as responses from '../utils/responses.js'
 import { getUserId, getReqBody, getSegment } from './utils.js'
@@ -46,11 +46,15 @@ const findOwnName = (event) => toPromise(
  * The `data` wrapper is this route's wire contract, spelled out here because
  * it is no longer the shape the db module hands over: a bundle cached before
  * this change still reads `resp.data`.
+ *
+ * A name nobody has taken is a 404, as it is on the entries route since #253.
+ * It used to be `200 {}`, which a caller could only tell from a real answer
+ * by knowing to look inside. #477.
  * @type {(event: Event) => Promise<Response>}
  */
 const getUserIdFromName = (event) => toPromise(
-  findOneByField_('users', 'username', getSegment(0, event))
-    .map((user) => user ? { data: { username: user.username } } : {})
+  findOneByFieldOrFail_('users', 'username', getSegment(0, event))
+    .map((user) => ({ data: { username: user.username } }))
     .map(responses.ok)
     .mapErr(responses.fromError)
 )

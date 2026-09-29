@@ -12,15 +12,16 @@
 /** @typedef {import('@netlify/functions').HandlerEvent} Event */
 /** @typedef {import('../utils/responses').Response} Response */
 /** @typedef {import('../utils/errors').Error} Error */
-import { findOneByField_ } from '../utils/db/index.js'
+import { findOneByFieldOrFail_ } from '../utils/db/index.js'
 import * as responses from '../utils/responses.js'
 import { toPromise } from '../utils/general.js'
 import { getSegment } from './utils.js'
 /**
  * GET /api/user/:username
  *
- * A name nobody has taken still answers 200 with an empty body, which is what
- * the profile page turns into its own 404.
+ * A name nobody has taken is a 404, as it is on the entries route since #253.
+ * It used to answer 200 with an empty body, so a user with no biography and
+ * no user at all differed only in whether `data` was there. #477.
  *
  * The `data` wrapper is the wire contract rather than a shape the db module
  * hands over — the profile page reads `resp.data`, and a bundle cached before
@@ -28,11 +29,10 @@ import { getSegment } from './utils.js'
  * @type {(event: Event) => Promise<Response>}
  */
 const getUserFromName = (event) => toPromise(
-  findOneByField_('users', 'username', getSegment(0, event))
-    .map((user) => user
-      ? { data: { username: user.username, biography: user.biography } }
-      : {}
-    )
+  findOneByFieldOrFail_('users', 'username', getSegment(0, event))
+    .map((user) => ({
+      data: { username: user.username, biography: user.biography },
+    }))
     .map(responses.ok)
     .mapErr(responses.fromError)
 )

@@ -134,6 +134,7 @@ if (dependenciesInstalled) useClient(new MongoClient())
 
 const name = dependenciesInstalled ? await import('../routes/name.js') : undefined
 const bio = dependenciesInstalled ? await import('../routes/bio.js') : undefined
+const user = dependenciesInstalled ? await import('../routes/user.js') : undefined
 const { MAX_BIOGRAPHY_LENGTH } = dependenciesInstalled
   ? await import('../utils/parsers/users.js')
   : { MAX_BIOGRAPHY_LENGTH: 0 }
@@ -286,6 +287,69 @@ test('an account that has not picked a name is still a 200', options, async () =
 
   assert.equal(statusCode, 200)
   assert.equal(body.error, 'NoUsernameSet')
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// The two public probes on a name — `/api/name/:name` for the list page and
+// `/api/user/:name` for the profile. Both answered `200 {}` for a name nobody
+// has taken, which a caller could tell from a real user only by looking
+// inside; the entries route has answered 404 since #253. #477.
+
+test('asking after a name nobody has taken is a 404', options, async () => {
+  seed()
+
+  const { statusCode, body } = await call('GET', 'name/nobody')
+
+  assert.equal(statusCode, 404)
+  assert.equal(body.error, 'NotFound')
+})
+
+test('asking after a taken name answers with it and nothing else', options, async () => {
+  seed()
+
+  const { statusCode, body } = await call('GET', 'name/oldname')
+
+  assert.equal(statusCode, 200)
+  assert.deepEqual(body, { data: { username: 'oldname' } })
+})
+
+test('a profile nobody has is a 404', options, async () => {
+  seed()
+
+  const { statusCode, body } = await callRoute(user, 'GET', 'user/nobody')
+
+  assert.equal(statusCode, 404)
+  assert.equal(body.error, 'NotFound')
+})
+
+test('a profile with no biography is still a 200', options, async () => {
+  // The case the old `200 {}` was indistinguishable from.
+  seed()
+
+  const { statusCode, body } = await callRoute(user, 'GET', 'user/oldname')
+
+  assert.equal(statusCode, 200)
+  assert.deepEqual(body, { data: { username: 'oldname' } })
+})
+
+test('a database that does not answer a probe is a 500, not a 404', options, async () => {
+  seed()
+
+  readsFail = true
+
+  try {
+    const probes = await Promise.all([
+      call('GET', 'name/oldname'),
+      callRoute(user, 'GET', 'user/oldname'),
+    ])
+
+    for (const { statusCode, body } of probes) {
+      assert.equal(statusCode, 500)
+      assert.equal(body.error, 'DBError')
+    }
+  } finally {
+    readsFail = false
+  }
 })
 
 ///////////////////////////////////////////////////////////////////////////////
