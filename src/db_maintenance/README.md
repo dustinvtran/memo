@@ -1670,6 +1670,20 @@ retitled to one season, three game edits, one book title, and one
 `Diablo IV TEST` retitle. Each of the TV ones has `originalTitle: null` too,
 the blank-form signature.
 
+### Applied, 2026-09-29
+
+Against snapshot `snapshot-2026-09-29T18-06-05-285Z`, verified with
+`verify_backup.js --live` immediately beforehand: manifest counts, file
+counts, SHA-256s and live `countDocuments()` agreed across all 15
+collections. The dry run just before it matched the one above. The run
+modified 725 entries — 81 films, 141 tv, 376 games, 127 books — and its own
+recount found 0 null override keys left.
+
+Afterwards every live entry was compared with the script's pre-run backup of
+its collection: the 725 differ from it by their null keys alone, and the other
+3,095 are identical, `updatedDate` included. Entry counts were unchanged, and
+the audit found no entry pointing at a missing work in any collection.
+
 ## Documents nothing can reach
 
 `scripts/prune_unreachable_documents.js` is two prunes under one roof, because
