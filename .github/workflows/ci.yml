@@ -28,9 +28,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -114,7 +114,7 @@ jobs:
   lockfile:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Node 24 like every other job here, which is not only tidiness:
       # `scripts/check_function_dependencies.js` reads every `node-version:`
@@ -123,7 +123,7 @@ jobs:
       # Node 24, rather than had for free by running this job on the Node 22
       # that still bundles it. Which is the better shape anyway: the version
       # this job turns on is then asked for by name rather than inherited.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -186,14 +186,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Matches `netlify.toml`'s `NODE_VERSION`, and the script below asserts
       # it rather than leaving this comment to be believed. The point of
       # building here is to build the way Netlify does — and since Netlify
       # derives the functions runtime from the build, this number is also what
       # the deployed API runs on (#198).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
