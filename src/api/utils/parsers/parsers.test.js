@@ -209,6 +209,14 @@ test('an update may not rewrite the fields that decide ownership', options, () =
   assert.deepEqual(update, { score: 9 })
 })
 
+test('an entry keeps when it was added, and an update may not move it', options, () => {
+  // Kept on the create path, which is what stamps it. The history tells the
+  // entry as added by this date, so a save that could rewrite it could forge
+  // which version was the original. #461.
+  assert.equal(parsed(parsers.bookEntries, { ...ENTRY, addedDate: 1694558400000 }).addedDate, 1694558400000)
+  assert.deepEqual(parsed(updates.bookEntries, { score: 9, addedDate: 1 }), { score: 9 })
+})
+
 test('an update may be empty, and may set a single field', options, () => {
   assert.deepEqual(parsed(updates.bookEntries, {}), {})
   assert.deepEqual(parsed(updates.bookEntries, { status: 'Dropped' }), {

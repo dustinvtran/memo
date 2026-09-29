@@ -30,24 +30,16 @@ const SIMPLE_FIELDS = REVISION_FIELDS.filter((field) => field !== 'overrides')
 const MAX_REVISIONS_PER_ENTRY = 50
 
 /**
- * How far apart an entry's id and the date on its oldest version may be and
- * still describe the same moment. The create path stamps `updatedDate` a
- * moment before the insert that mints the id, and the id only counts whole
- * seconds, so the two land within a second of each other; the rest is slack.
+ * When an entry was added: the `addedDate` the create path stamps on it, or
+ * `null` for an entry made before that field existed.
+ *
+ * Not read out of the id. `_create` mints a UUID, which carries no time, and
+ * the older entries have Fauna's 18-digit ids, which may carry one but have
+ * not been shown to (#461). An unknown date is `null` rather than a guess.
+ * @type {(entry: unknown) => number | null}
  */
-const SAME_MOMENT_MS = 5000
-
-/**
- * When an entry was added, read out of its id. Entries carry no creation date
- * of their own, but an ObjectId begins with the second it was minted in, and
- * the insert on the create path is what mints it. Anything that is not an
- * ObjectId's 24 hex characters answers `null` rather than a guess.
- * @type {(entryId: unknown) => number | null}
- */
-const addedDateOf = (entryId) => {
-  const hex = String(entryId ?? '')
-  return /^[0-9a-f]{24}$/i.test(hex) ? parseInt(hex.slice(0, 8), 16) * 1000 : null
-}
+const addedDateOf = (entry) =>
+  typeof entry?.addedDate === 'number' ? entry.addedDate : null
 
 /**
  * @type {(entryData?: object, reviewText?: string) => object}
@@ -85,9 +77,11 @@ const hasChanges = (before, after) => changedFields(before, after).length > 0
  * changed relative to the version before it.
  *
  * The oldest version is also marked `isOriginal` when it is the entry exactly
- * as it was added — when its date is the moment the entry's id was minted.
- * Otherwise the history begins partway through: the entry predates it, or
- * predates `updatedDate`, and what it was added with is not known.
+ * as it was added. The create path stamps `addedDate` and `updatedDate` from
+ * one clock reading, and a save dates the version it replaces by the entry's
+ * `updatedDate`, so the version an entry was added as carries its `addedDate`
+ * to the millisecond. Otherwise the history begins partway through, or the
+ * entry predates `addedDate`, and what it was added with is not known.
  *
  * @typedef {{ id: string, createdDate?: number, snapshot: object }} Version
  * @type {(current: Version, revisions: Version[], addedDate?: number | null) => (Version & { isCurrent: boolean, isOriginal: boolean, changes: string[] })[]}
@@ -147,9 +141,7 @@ export {
 const byNewestFirst = (a, b) => (b.createdDate ?? 0) - (a.createdDate ?? 0)
 
 const isSameMoment = (date, addedDate) =>
-  typeof date === 'number' &&
-  typeof addedDate === 'number' &&
-  Math.abs(date - addedDate) < SAME_MOMENT_MS
+  typeof date === 'number' && typeof addedDate === 'number' && date === addedDate
 
 /**
  * A field the form left empty, one the form cleared to null and one the

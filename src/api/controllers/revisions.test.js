@@ -146,13 +146,20 @@ const call = async (route, method, url, { as, body } = {}) => {
   }
 }
 
+/**
+ * An entry from before the move to Mongo, which kept its Fauna id and has no
+ * `addedDate`: the shape of 3,164 of production's 3,820 entries. The rest have
+ * the UUID `_create` mints, and none has an ObjectId. #461.
+ */
+const ENTRY = '361538496209371213'
+
 const seed = () => {
-  // The work `e1` points at. Without it the save path refuses the entry as a
+  // The work the entry points at. Without it the save path refuses the entry as a
   // dangling reference, which is a shape production has none of.
   store.films = [{ _id: 'w1', englishTranslatedTitle: 'A Film', releaseYear: 1970 }]
   store.filmEntries = [
     {
-      _id: 'e1',
+      _id: ENTRY,
       userId: 'u1',
       status: 'InProgress',
       score: 7,
@@ -162,7 +169,7 @@ const seed = () => {
     },
   ]
   store.filmReviews = [
-    { _id: 'r1', entryRef: 'e1', text: 'first note\nsecond line' },
+    { _id: 'r1', entryRef: ENTRY, text: 'first note\nsecond line' },
   ]
   store.entryRevisions = []
 }
@@ -187,7 +194,7 @@ const edit = (extra) => ({
 test('a save records the version it replaced, review included', options, async () => {
   seed()
 
-  const { statusCode } = await call(entries, 'PATCH', 'entries/films/e1', {
+  const { statusCode } = await call(entries, 'PATCH', `entries/films/${ENTRY}`, {
     as: 'u1',
     body: edit(),
   })
@@ -197,7 +204,7 @@ test('a save records the version it replaced, review included', options, async (
 
   const [revision] = store.entryRevisions
   assert.equal(revision.kind, 'revision')
-  assert.equal(revision.entryRef, 'e1')
+  assert.equal(revision.entryRef, ENTRY)
   assert.equal(revision.entryType, 'Film')
   assert.equal(revision.userId, 'u1')
   assert.equal(revision.createdDate, 1700000000000)
@@ -216,12 +223,12 @@ test('a save records the version it replaced, review included', options, async (
 
 test('the history reads back newest first, saying what each version changed', options, async () => {
   seed()
-  await call(entries, 'PATCH', 'entries/films/e1', { as: 'u1', body: edit() })
+  await call(entries, 'PATCH', `entries/films/${ENTRY}`, { as: 'u1', body: edit() })
 
   const { statusCode, body } = await call(
     revisions,
     'GET',
-    'revisions/films/e1',
+    `revisions/films/${ENTRY}`,
     { as: 'u1' }
   )
 
@@ -246,8 +253,8 @@ test('the history reads back newest first, saying what each version changed', op
 
 test('a save that changes nothing records nothing', options, async () => {
   seed()
-  await call(entries, 'PATCH', 'entries/films/e1', { as: 'u1', body: edit() })
-  await call(entries, 'PATCH', 'entries/films/e1', { as: 'u1', body: edit() })
+  await call(entries, 'PATCH', `entries/films/${ENTRY}`, { as: 'u1', body: edit() })
+  await call(entries, 'PATCH', `entries/films/${ENTRY}`, { as: 'u1', body: edit() })
 
   assert.equal(store.entryRevisions.length, 1)
 })
@@ -256,7 +263,7 @@ test('an entry saved before updatedDate existed still gets a history', options, 
   seed()
   delete store.filmEntries[0].updatedDate
 
-  await call(entries, 'PATCH', 'entries/films/e1', { as: 'u1', body: edit() })
+  await call(entries, 'PATCH', `entries/films/${ENTRY}`, { as: 'u1', body: edit() })
 
   assert.equal(store.entryRevisions.length, 1)
   assert.equal(typeof store.entryRevisions[0].createdDate, 'number')
@@ -270,7 +277,7 @@ test('history is capped, and it is the oldest versions that go', options, async 
     // millisecond would date them all the same, leaving "the oldest" up to
     // the sort. Nobody edits that fast; the test shouldn't pretend to.
     await tick()
-    await call(entries, 'PATCH', 'entries/films/e1', {
+    await call(entries, 'PATCH', `entries/films/${ENTRY}`, {
       as: 'u1',
       body: edit({ review: `note ${i}` }),
     })
@@ -286,13 +293,13 @@ test('history and drafts belong to the owner alone', options, async () => {
   seed()
 
   assert.equal(
-    (await call(revisions, 'GET', 'revisions/films/e1', { as: 'someone-else' }))
+    (await call(revisions, 'GET', `revisions/films/${ENTRY}`, { as: 'someone-else' }))
       .statusCode,
     401
   )
   assert.equal(
     (
-      await call(revisions, 'PUT', 'revisions/films/e1/draft', {
+      await call(revisions, 'PUT', `revisions/films/${ENTRY}/draft`, {
         as: 'someone-else',
         body: edit(),
       })
@@ -305,18 +312,18 @@ test('history and drafts belong to the owner alone', options, async () => {
 test('a draft is stored, read back, and replaced rather than piled up', options, async () => {
   seed()
 
-  await call(revisions, 'PUT', 'revisions/films/e1/draft', {
+  await call(revisions, 'PUT', `revisions/films/${ENTRY}/draft`, {
     as: 'u1',
     body: edit({ review: 'a draft in progress' }),
   })
-  await call(revisions, 'PUT', 'revisions/films/e1/draft', {
+  await call(revisions, 'PUT', `revisions/films/${ENTRY}/draft`, {
     as: 'u1',
     body: edit({ review: 'a draft, further along' }),
   })
 
   assert.equal(store.entryRevisions.length, 1)
 
-  const { body } = await call(revisions, 'GET', 'revisions/films/e1/draft', {
+  const { body } = await call(revisions, 'GET', `revisions/films/${ENTRY}/draft`, {
     as: 'u1',
   })
   assert.equal(body.draft.snapshot.review, 'a draft, further along')
@@ -326,21 +333,21 @@ test('a draft is stored, read back, and replaced rather than piled up', options,
 
 test('a draft is not history until it is saved for real', options, async () => {
   seed()
-  await call(revisions, 'PUT', 'revisions/films/e1/draft', {
+  await call(revisions, 'PUT', `revisions/films/${ENTRY}/draft`, {
     as: 'u1',
     body: edit({ review: 'a draft in progress' }),
   })
 
-  const versions = await call(revisions, 'GET', 'revisions/films/e1', {
+  const versions = await call(revisions, 'GET', `revisions/films/${ENTRY}`, {
     as: 'u1',
   })
   assert.equal(versions.body.versions.length, 1)
   assert.equal(versions.body.versions[0].isCurrent, true)
 
   // Saving the entry is what the draft was waiting for, so it goes.
-  await call(entries, 'PATCH', 'entries/films/e1', { as: 'u1', body: edit() })
+  await call(entries, 'PATCH', `entries/films/${ENTRY}`, { as: 'u1', body: edit() })
 
-  const draft = await call(revisions, 'GET', 'revisions/films/e1/draft', {
+  const draft = await call(revisions, 'GET', `revisions/films/${ENTRY}/draft`, {
     as: 'u1',
   })
   assert.equal(draft.body.draft, null)
@@ -348,14 +355,14 @@ test('a draft is not history until it is saved for real', options, async () => {
 
 test('deleting an entry takes its history and its draft with it', options, async () => {
   seed()
-  await call(entries, 'PATCH', 'entries/films/e1', { as: 'u1', body: edit() })
-  await call(revisions, 'PUT', 'revisions/films/e1/draft', {
+  await call(entries, 'PATCH', `entries/films/${ENTRY}`, { as: 'u1', body: edit() })
+  await call(revisions, 'PUT', `revisions/films/${ENTRY}/draft`, {
     as: 'u1',
     body: edit({ review: 'a draft' }),
   })
   assert.equal(store.entryRevisions.length, 2)
 
-  const { statusCode } = await call(entries, 'DELETE', 'entries/films/e1', {
+  const { statusCode } = await call(entries, 'DELETE', `entries/films/${ENTRY}`, {
     as: 'u1',
   })
 
@@ -367,12 +374,12 @@ test('an unknown sub-resource is a 404, and so is an unknown type', options, asy
   seed()
 
   assert.equal(
-    (await call(revisions, 'GET', 'revisions/films/e1/whatever', { as: 'u1' }))
+    (await call(revisions, 'GET', `revisions/films/${ENTRY}/whatever`, { as: 'u1' }))
       .statusCode,
     404
   )
   assert.equal(
-    (await call(revisions, 'GET', 'revisions/nonsense/e1', { as: 'u1' }))
+    (await call(revisions, 'GET', `revisions/nonsense/${ENTRY}`, { as: 'u1' }))
       .statusCode,
     404
   )
@@ -381,7 +388,7 @@ test('an unknown sub-resource is a 404, and so is an unknown type', options, asy
 test('an entry that has never been edited is its current version alone', options, async () => {
   seed()
 
-  const { body } = await call(revisions, 'GET', 'revisions/films/e1', {
+  const { body } = await call(revisions, 'GET', `revisions/films/${ENTRY}`, {
     as: 'u1',
   })
 
@@ -393,4 +400,91 @@ test('an entry that has never been edited is its current version alone', options
     workRef: 'w1',
     review: 'first note\nsecond line',
   })
+})
+
+///////////////////////////////////////////////////////////////////////////////
+// When an entry was added. #461: the history used to read it out of an
+// ObjectId, which no entry has, so it was null for every entry there is.
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** A film added through the real create path, and its history read back. */
+const addAndRead = async (body) => {
+  const created = await call(entries, 'POST', 'entries/films', {
+    as: 'u1',
+    body: edit({ overrides: { englishTranslatedTitle: 'A New One' }, ...body }),
+  })
+  assert.equal(created.statusCode, 200)
+
+  const stored = store.filmEntries.at(-1)
+  const history = await call(revisions, 'GET', `revisions/films/${stored._id}`, {
+    as: 'u1',
+  })
+  return { stored, history: history.body }
+}
+
+test('an entry just added knows when, and is its own original', options, async () => {
+  seed()
+  const before = Date.now()
+  const { stored, history } = await addAndRead()
+
+  assert.match(stored._id, UUID)
+  assert.equal(typeof stored.addedDate, 'number')
+  assert.ok(stored.addedDate >= before)
+  assert.equal(stored.updatedDate, stored.addedDate)
+
+  assert.equal(history.addedDate, stored.addedDate)
+  assert.equal(history.versions.length, 1)
+  assert.equal(history.versions[0].isOriginal, true)
+})
+
+test('an entry added and then edited ends on the version it was added as', options, async () => {
+  seed()
+  const { stored } = await addAndRead({ status: 'Planned', score: null, startedDate: null, completedDate: null })
+  await tick()
+  await call(entries, 'PATCH', `entries/films/${stored._id}`, {
+    as: 'u1',
+    body: edit({ overrides: { englishTranslatedTitle: 'A New One' } }),
+  })
+
+  const { body } = await call(revisions, 'GET', `revisions/films/${stored._id}`, {
+    as: 'u1',
+  })
+
+  assert.equal(body.addedDate, stored.addedDate)
+  assert.deepEqual(
+    body.versions.map(({ isCurrent, isOriginal }) => ({ isCurrent, isOriginal })),
+    [
+      { isCurrent: true, isOriginal: false },
+      { isCurrent: false, isOriginal: true },
+    ]
+  )
+  assert.equal(body.versions[1].snapshot.status, 'Planned')
+})
+
+test('neither the create nor a save can choose when an entry was added', options, async () => {
+  seed()
+  const { stored } = await addAndRead({ addedDate: 1, updatedDate: 1 })
+  assert.notEqual(stored.addedDate, 1)
+  assert.equal(stored.updatedDate, stored.addedDate)
+
+  const addedDate = stored.addedDate
+  await tick()
+  await call(entries, 'PATCH', `entries/films/${stored._id}`, {
+    as: 'u1',
+    body: edit({ overrides: { englishTranslatedTitle: 'A New One' }, addedDate: 1 }),
+  })
+
+  assert.equal(store.filmEntries.at(-1).addedDate, addedDate)
+})
+
+test('an entry from before addedDate existed does not know when it was added', options, async () => {
+  seed()
+
+  const { body } = await call(revisions, 'GET', `revisions/films/${ENTRY}`, {
+    as: 'u1',
+  })
+
+  assert.equal(body.addedDate, null)
+  assert.equal(body.versions.at(-1).isOriginal, false)
 })

@@ -112,13 +112,24 @@ const spaceOdyssey = {
   externalUrls: [{ name: "tmdb", url: "https://www.themoviedb.org/movie/62" }],
 };
 
+/**
+ * An entry's id is one of two shapes, and neither says when it was made: the
+ * UUID `_create` mints, or the 18-digit id an entry from before the move to
+ * Mongo kept from Fauna. So only an entry created since `addedDate` existed
+ * carries one, and the Fauna-id row here has none, as 3,164 of production's
+ * entries do not. #461.
+ */
+const LINKED = "0e4cb1bb-95c5-4f2e-9d7a-3b1c8e5a2f60";
+const SEASON = "361538496209371213";
+
 const entries = {
   films: [
     {
       // An ordinary linked entry with nothing overridden. No hint should show
       // on any field, and no link panel at all.
-      dbRef: "e-linked",
+      dbRef: LINKED,
       userId: "u1",
+      addedDate: Date.parse("2023-11-02T19:04:11Z"),
       status: "Completed",
       score: 8,
       completedDate: Date.parse("2024-06-01"),
@@ -128,8 +139,9 @@ const entries = {
     },
     {
       // A film with a stored TMDB poster, for the list thumbnail (#483).
-      dbRef: "e-poster",
+      dbRef: "7d2a9e41-3c6b-4f80-a15e-9b8c0d4e6f23",
       userId: "u1",
+      addedDate: Date.parse("2023-03-12T21:47:05Z"),
       status: "Completed",
       score: 9,
       completedDate: Date.parse("2023-03-12"),
@@ -140,8 +152,9 @@ const entries = {
     {
       // A Planned film. Its completed-date container is hidden, which is why
       // this is the status that carried an invisible date until #370.
-      dbRef: "e-planned",
+      dbRef: "f96cdd50-299b-4a8e-b1d2-6c0e7f3a9b14",
       userId: "u1",
+      addedDate: Date.parse("2026-09-17T08:30:00Z"),
       status: "Planned",
       score: null,
       completedDate: null,
@@ -152,8 +165,9 @@ const entries = {
     {
       // An entry with no work, written for something the databases did not
       // have yet. The link panel belongs on this one and on no other.
-      dbRef: "e-unlinked",
+      dbRef: "ecac07aa-0f8f-4d61-8e3b-2a9c5d7e1f08",
       userId: "u1",
+      addedDate: Date.parse("2026-01-12T20:15:00Z"),
       status: "Planned",
       score: null,
       completedDate: null,
@@ -178,7 +192,7 @@ const entries = {
     {
       // A season: the entry overrides a field of a real work, which is the
       // only shape that renders the override hint.
-      dbRef: "e-season",
+      dbRef: SEASON,
       userId: "u1",
       status: "Completed",
       score: 7,
@@ -235,25 +249,30 @@ const WORKS = {
 };
 
 /**
- * An entry's history, built by the API's own `toVersionList` so its shape
- * cannot drift from what `GET /api/revisions/:type/:ref` answers. The real
- * route reads `addedDate` out of the entry's ObjectId; these dbRefs are not
- * ObjectIds, so each case says its date outright. One case per way the
- * timeline can end:
+ * An entry's history, built by the API's own `addedDateOf` and
+ * `toVersionList` so its shape cannot drift from what
+ * `GET /api/revisions/:type/:ref` answers. One case per way the timeline can
+ * end today:
  *
- * - `e-linked` was added as Planned and edited twice since, so its oldest
+ * - `LINKED` was added as Planned and edited twice since, so its oldest
  *   version *is* the entry as added, and opens to show all of it.
- * - `e-season` is older than its history: the oldest version dates from years
- *   after the entry's id, so the timeline ends on a bare "Added" row.
+ * - `SEASON` has a Fauna id and no `addedDate`, so nothing says when it was
+ *   added and the timeline ends on "What came before it is unknown".
  * - every other entry has never been edited, and its only version is both
  *   the current one and the one it was added with.
+ *
+ * The bare "Added" row, for an entry whose history begins after it was added,
+ * has no case. An entry that knows its `addedDate` has had a history since
+ * then, and reaches that row only when a save that changed nothing moved its
+ * `updatedDate` on before the first real edit.
  */
-const { toVersionList } = require("../src/api/utils/revision_history.js");
+const { addedDateOf, toVersionList } = require("../src/api/utils/revision_history.js");
 
 const DAY = 24 * 60 * 60 * 1000;
+const rowOf = (dbRef) => Object.values(entries).flat().find((row) => row.dbRef === dbRef);
 const HISTORIES = {
-  "e-linked": () => {
-    const added = Date.parse("2023-11-02T19:04:11Z");
+  [LINKED]: () => {
+    const added = addedDateOf(rowOf(LINKED));
     return {
       addedDate: added,
       versions: toVersionList(
@@ -263,15 +282,15 @@ const HISTORIES = {
           snapshot: { status: "Completed", score: 8, completedDate: Date.parse("2024-06-01"), workRef: dune._id, review: "Better the second time.\nThe sound alone." },
         },
         [
-          { id: "r1", createdDate: added + 300, snapshot: { status: "Planned", score: 9, workRef: dune._id } },
+          { id: "r1", createdDate: added, snapshot: { status: "Planned", score: 9, workRef: dune._id } },
           { id: "r2", createdDate: Date.parse("2024-06-01"), snapshot: { status: "Completed", score: 8, completedDate: Date.parse("2024-06-01"), workRef: dune._id, review: "Better the second time." } },
         ],
         added,
       ),
     };
   },
-  "e-season": () => {
-    const added = Date.now() - 6 * 365 * DAY;
+  [SEASON]: () => {
+    const added = addedDateOf(rowOf(SEASON));
     return {
       addedDate: added,
       versions: toVersionList(
@@ -285,12 +304,12 @@ const HISTORIES = {
 
 const versionsOf = (dbRef) => {
   if (HISTORIES[dbRef]) return HISTORIES[dbRef]();
-  const entry = Object.values(entries).flat().find((row) => row.dbRef === dbRef);
-  const added = Date.now() - 12 * DAY;
+  const entry = rowOf(dbRef);
+  const added = addedDateOf(entry);
   return {
     addedDate: added,
     versions: toVersionList(
-      { id: "current", createdDate: added + 500, snapshot: { status: entry?.status ?? "Planned", score: entry?.score, overrides: entry?.overrides } },
+      { id: "current", createdDate: added, snapshot: { status: entry?.status ?? "Planned", score: entry?.score, overrides: entry?.overrides } },
       [],
       added,
     ),
