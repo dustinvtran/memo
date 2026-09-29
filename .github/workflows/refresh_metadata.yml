@@ -130,12 +130,27 @@ jobs:
       # legibly than a nested expression would. Empty means "pass no `--limit`,
       # so each collection takes its own", which is what a scheduled apply
       # wants and what an empty `limit` input asks for.
+      #
+      # The inputs come in through `env:` rather than as `${{ }}` in the
+      # script, which would paste whatever was typed into the shell before it
+      # parsed anything (#488). `limit` is also held to digits, since it goes
+      # on into `$GITHUB_OUTPUT`, where a newline would write an output of its
+      # own.
       - name: Decide whether this run writes, and how big a slice
         id: mode
+        env:
+          INPUT_APPLY: ${{ inputs.apply }}
+          INPUT_LIMIT: ${{ inputs.limit }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            apply="${{ inputs.apply }}"
-            limit="${{ inputs.limit }}"
+            apply="$INPUT_APPLY"
+            limit="$INPUT_LIMIT"
+            case "$limit" in
+              *[!0-9]*)
+                echo "::error::limit must be a whole number or blank"
+                exit 1
+                ;;
+            esac
           elif [ "${{ vars.METADATA_REFRESH_APPLY == 'true' }}" = "true" ]; then
             apply=true
             # Empty, so each collection uses its own `defaultLimit` — the
@@ -216,11 +231,13 @@ jobs:
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           LIMIT: ${{ steps.mode.outputs.limit }}
+          ONLY: ${{ inputs.only || 'films,tv,games,books' }}
+          MAX_AGE_DAYS: ${{ inputs['max-age-days'] || '180' }}
         run: |
           node src/db_maintenance/scripts/backfill_work_metadata.js \
-            --only="${{ inputs.only || 'films,tv,games,books' }}" \
+            --only="$ONLY" \
             ${LIMIT:+--limit="$LIMIT"} \
-            --max-age-days="${{ inputs['max-age-days'] || '180' }}" \
+            --max-age-days="$MAX_AGE_DAYS" \
             --json="$RUNNER_TEMP/refresh.json" \
             ${{ steps.mode.outputs.apply == 'true' && '--apply' || '' }}
 

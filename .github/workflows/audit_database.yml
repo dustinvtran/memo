@@ -163,11 +163,16 @@ jobs:
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          # Typed text reaches the shell as a variable, never as script: an
+          # `${{ }}` inside `run:` is pasted in before the shell parses it
+          # (#488).
+          ONLY: ${{ inputs.only || 'films,tv,games,books' }}
+          MAX_AGE_DAYS: ${{ inputs['max-age-days'] || '180' }}
         run: |
           set -o pipefail
           node src/db_maintenance/scripts/audit_database.js \
-            --only="${{ inputs.only || 'films,tv,games,books' }}" \
-            --max-age-days="${{ inputs['max-age-days'] || '180' }}" \
+            --only="$ONLY" \
+            --max-age-days="$MAX_AGE_DAYS" \
             --json="$RUNNER_TEMP/audit.json" \
             ${{ inputs['verify-shared-refs'] == true && '--verify-shared-refs' || '' }} \
             ${{ inputs['verify-title-years'] == true && '--verify-title-years' || '' }} \
