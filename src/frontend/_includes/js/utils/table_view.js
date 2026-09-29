@@ -97,18 +97,37 @@ const initTable = (selector, rows, settings) => {
   // reason as the panel above — see #219 — and it is scoped to this table so
   // that a page of four sublists ends up with four listeners rather than four
   // copies of one on `document`.
+  //
+  // The controls inside are `<button type="button">`s, so a keyboard reaches
+  // them and Enter or Space arrives here as the same click a mouse sends
+  // (#484, #485). A heading is still matched by its `th` rather than by its
+  // button, so a click on the cell's padding sorts as it always has.
+  //
+  // A redraw replaces the button that was pressed, and focus on a removed
+  // element falls back to `<body>`: a keyboard reader who sorted would have to
+  // Tab back in from the top of the page to sort the other way. So focus is
+  // handed to the new copy — but only when the old one had it, which leaves
+  // the url anchor's scripted `.click()` in `list/index.js` to do its own
+  // scrolling.
   root.addEventListener('click', (event) => {
-    const caret = event.target.closest?.('a.detail-icon')
+    const caret = event.target.closest?.('.detail-icon')
     if (caret) {
-      event.preventDefault()
+      const focused = caret === document.activeElement
       toggleDetail(caret.dataset.ref)
+      if (focused) {
+        grid.querySelector(`.detail-icon[data-ref="${CSS.escape(caret.dataset.ref)}"]`)?.focus()
+      }
       return
     }
 
     const heading = event.target.closest?.('th.sortable')
     if (heading) {
+      const focused = heading.contains(document.activeElement)
       state = TableModel.withSortOn(state, heading.dataset.field)
       draw()
+      if (focused) {
+        grid.querySelector(`th[data-field="${CSS.escape(heading.dataset.field)}"] > button`)?.focus()
+      }
     }
   })
 
@@ -166,6 +185,9 @@ const SEARCH_DEBOUNCE_MS = 200
  *  through `window.icons` and bootstrap-table's `icons` option. */
 const CARET_CLOSED = 'caret-down'
 const CARET_OPEN = 'caret-up'
+
+/** The model's two sort orders, in the words `aria-sort` takes. */
+const ARIA_SORT = { asc: 'ascending', desc: 'descending' }
 
 /** What `initTable` answers when the element it was pointed at is not there. */
 const NO_TABLE = { setSearch: () => undefined }
@@ -252,12 +274,33 @@ const header = (state, options) =>
     `
     : ''
 
-const headerCell = (column, state) => html`
-  <th
-    class="${headerClasses(column, state)}"
-    style="${alignStyle(column)}"
-    data-field="${column.field}">${column.title}</th>
-`
+/**
+ * A heading, and for a sortable one a button to sort by it and the order it is
+ * sorted in (#484). The button is what a keyboard can reach — a bare `th` with
+ * a click handler is a control only a pointer can use — and `aria-sort` is what
+ * a screen reader hears, where the caret `main.css` draws is all a sighted
+ * reader gets. It sits on the `th` rather than the button because that is
+ * where table semantics read it from, and a sortable heading that is not the
+ * sorted one says `none`.
+ */
+const headerCell = (column, state) =>
+  column.sortable
+    ? html`
+      <th
+        class="${headerClasses(column, state)}"
+        style="${alignStyle(column)}"
+        aria-sort="${ariaSort(column, state)}"
+        data-field="${column.field}"><button type="button">${column.title}</button></th>
+    `
+    : html`
+      <th
+        class="${headerClasses(column, state)}"
+        style="${alignStyle(column)}"
+        data-field="${column.field}">${column.title}</th>
+    `
+
+const ariaSort = (column, state) =>
+  state.sortField === column.field ? ARIA_SORT[state.sortOrder] ?? 'none' : 'none'
 
 const headerClasses = (column, state) =>
   [
@@ -298,17 +341,34 @@ const dataRow = (row, index, state, options) => html`
  * The caret names its row in a `data-` attribute, the way the edit button in
  * `utils/columns.js` does, so that the handler above has an id rather than a
  * position — a sort moves the rows and does not move the ids.
+ *
+ * A button rather than the `<a href="#">` it was, because it navigates nowhere
+ * and a link that does not navigate is announced as one anyway; and one that
+ * says whether its panel is open (#485), which the swapped icon only ever told
+ * a reader who could see it. `aria-controls` names the panel even while it is
+ * shut and so not in the document, which `aria-expanded="false"` is what makes
+ * allowable.
  */
 const caretCell = (row, state) => html`
   <td class="entry-table-caret">
-    <a class="detail-icon" href="#" aria-label="Comments" data-ref="${row.dbRef}">
+    <button
+      type="button"
+      class="detail-icon"
+      aria-label="Comments"
+      aria-expanded="${String(TableModel.isExpanded(state, row.dbRef))}"
+      aria-controls="${detailId(row)}"
+      data-ref="${row.dbRef}">
       ${icon(TableModel.isExpanded(state, row.dbRef) ? CARET_OPEN : CARET_CLOSED)}
-    </a>
+    </button>
   </td>
 `
 
+/** The comment panel's id, which is its caret's `aria-controls`. An entry is
+ *  in one sublist only, so its id is unique on the page. */
+const detailId = (row) => `entry-comments-${row.dbRef}`
+
 const detailRow = (row, index, state, options) => html`
-  <tr class="detail-view" data-ref="${row.dbRef}">
+  <tr class="detail-view" id="${detailId(row)}" data-ref="${row.dbRef}">
     <td colspan="${columnCount(state, options)}">${options.detailFormatter?.(index, row)}</td>
   </tr>
 `

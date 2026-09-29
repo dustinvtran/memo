@@ -466,9 +466,24 @@ span:lang(cn) {
   cursor: pointer;
 }
 
+/* A `<button>` since #485, drawn as the link it used to be: the site's rule
+ * for buttons gives them a border, a radius and padding, and the caret had
+ * none of those, only the link blue and its hover.
+*/
 .detail-icon {
   display: block;
+  width: 100%;
   text-align: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #0b7cb3;
+  cursor: pointer;
+}
+
+.detail-icon:hover,
+.detail-icon:focus {
+  color: #0b6f9f;
 }
 
 .review {
@@ -687,6 +702,20 @@ button {
 .entry-table th.sortable {
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* The heading's label is a `<button>` since #484, so that a keyboard can sort,
+ * and it should look like the text it replaced: none of the site's button
+ * chrome, and the weight and alignment of the `th` it sits in. The sort caret
+ * stays on the `th`'s `::after`, which follows the button on the same line.
+*/
+.entry-table th.sortable > button {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: inherit;
+  cursor: pointer;
 }
 
 /* The arrows are Font Awesome's rather than the three base64 PNGs

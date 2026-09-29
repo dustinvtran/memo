@@ -259,13 +259,13 @@ test('an element already on the page is handed over without a wait', async () =>
   const { page, waitForEl } = withFakeDom()
   page.el = 'the icon'
 
-  assert.equal(await waitForEl('a.detail-icon', { timeout: 50 }), 'the icon')
+  assert.equal(await waitForEl('.detail-icon', { timeout: 50 }), 'the icon')
   assert.equal(page.observing, false)
 })
 
 test('an element that arrives ends the wait and the watching', async () => {
   const { page, waitForEl } = withFakeDom()
-  const waiting = waitForEl('a.detail-icon', { timeout: 50 })
+  const waiting = waitForEl('.detail-icon', { timeout: 50 })
 
   page.render('the icon')
 
@@ -275,7 +275,7 @@ test('an element that arrives ends the wait and the watching', async () => {
 
 test('a page that changes into something else is still waited on', async () => {
   const { page, waitForEl } = withFakeDom()
-  const waiting = waitForEl('a.detail-icon', { timeout: 50 })
+  const waiting = waitForEl('.detail-icon', { timeout: 50 })
 
   page.notify()
   assert.equal(page.observing, true)
@@ -286,13 +286,13 @@ test('a page that changes into something else is still waited on', async () => {
 
 test('an element that never arrives gives up rather than watching forever', async () => {
   // The bug the timeout is here for: a logged-out visitor on a list with no
-  // rows in it never produces an `a.detail-icon`, and the wait for one used to
+  // rows in it never produces a `.detail-icon`, and the wait for one used to
   // run a `querySelector` over the whole document on every mutation for the
   // life of the page, holding a promise that never settled.
   const { page, waitForEl } = withFakeDom()
   const started = Date.now()
 
-  assert.equal(await waitForEl('a.detail-icon', { timeout: 30 }), undefined)
+  assert.equal(await waitForEl('.detail-icon', { timeout: 30 }), undefined)
   assert.ok(Date.now() - started >= 20)
   assert.equal(page.observing, false)
 })
