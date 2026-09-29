@@ -67,7 +67,7 @@ const ListPage = () => initComponent({
         // across from the title — the caret is not always the previous one, and
         // a column toggle moves the rest. A real click, so it goes through the
         // same handler in `utils/table_view.js` as a reader's would.
-        element.closest('tr')?.querySelector('a.detail-icon')?.click()
+        element.closest('tr')?.querySelector('.detail-icon')?.click()
 
         // jump to the element, hacky as fuck
         location.hash = '#__nothing'
