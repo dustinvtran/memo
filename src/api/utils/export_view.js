@@ -123,6 +123,41 @@ const toExportDocument = ({ username, lists, siteUrl, generatedAt }) => ({
 })
 
 /**
+ * The origin an export links back to: the one it was fetched from, unless
+ * that was production's own `*.netlify.app` subdomain, which names the site's
+ * address instead. #474.
+ *
+ * That subdomain answers the whole site as a second copy of it, so an export
+ * fetched there linked every page to the copy rather than to the documents
+ * `sitemap.xml` asks crawlers to index. `_redirects` now sends it to the site
+ * before a function runs; this is the half that holds if that rule ever stops
+ * matching.
+ *
+ * Production is recognised by host because nothing else says so at runtime.
+ * Netlify gives a function `URL`, `SITE_NAME` and `SITE_ID` and nothing more —
+ * `CONTEXT` exists only during the build, and neither does a context-scoped
+ * variable from `netlify.toml` reach a function. `URL` alone cannot decide it:
+ * a deploy preview gets production's `URL` too, and a preview's export has to
+ * link to the preview. Every other Netlify host — `deploy-preview-N--`, a
+ * branch, a deploy permalink — carries a `--` before the site name and so is
+ * not this one, and neither is the custom domain, whose origin is already
+ * right.
+ *
+ * Throws when `rawUrl` does not parse, as `new URL` does; the caller decides
+ * what that means.
+ * @type {(rawUrl: string, env?: { URL?: string, SITE_NAME?: string }) => string}
+ */
+const toSiteUrl = (rawUrl, env = {}) => {
+  const requested = new URL(rawUrl)
+  const isProductionSubdomain = Boolean(env.SITE_NAME)
+    && requested.hostname === `${env.SITE_NAME}.netlify.app`
+
+  return isProductionSubdomain && env.URL
+    ? new URL(env.URL).origin
+    : requested.origin
+}
+
+/**
  * Every url this endpoint answers at, for one user.
  *
  * One function because four things name them — the index document below, the
@@ -226,6 +261,7 @@ export {
   toExportEntry,
   toExportList,
   toExportUrls,
+  toSiteUrl,
   toExportDocument,
   toExportIndex,
   toMarkdown,
