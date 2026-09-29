@@ -174,12 +174,13 @@ POST   /api/tokens     { name }      # a new one; the answer carries `token`, on
 DELETE /api/tokens/:id               # revoke it
 ```
 
-A token lasts 90 days, the same cap a signed-in session has, and never
-longer; send `expiresInSeconds` with the name for less. `lastUsedAt` is
-`null` until the token is first used and is kept to within an hour after
-that, so a token you did not expect to see used shows up in the list. An
-expired token answers 401 saying so, stays listed until revoked, and does
-not count towards the 20 a user may hold.
+A token lasts until you revoke it, unless you send `expiresInSeconds` with
+the name — `30 * 24 * 3600` for thirty days — and then `expiresAt` says
+when; it is `null` for one that never expires. `lastUsedAt` is `null` until
+the token is first used and is kept to within an hour after that, so a token
+you did not expect to see used shows up in the list. An expired token
+answers 401 saying so, stays listed until revoked, and does not count
+towards the 20 a user may hold.
 
 These three want the `nf_jwt` session. The quickest way to send it is from the
 browser console on the site while signed in, where the frontend's own request

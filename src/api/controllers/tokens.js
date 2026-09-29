@@ -11,11 +11,11 @@
  * that made it, and only its hash is stored — so a lost token is revoked and
  * replaced, never recovered.
  *
- * A token expires, at `MAX_API_TOKEN_LIFETIME_SECONDS` or sooner if asked
- * (`expiresInSeconds`), and `utils/api_token.js` says why it may not be
- * longer. An expired token still counts as a token here until it is revoked
- * — it is listed, so its owner can see what stopped working — but not towards
- * the cap, since it can no longer do anything the cap is protecting against.
+ * A token never expires unless it is made with `expiresInSeconds`;
+ * `utils/api_token.js` says why that is the default. An expired token is
+ * still listed until it is revoked, so its owner can see what stopped
+ * working, but does not count towards the cap, since it can no longer do
+ * anything the cap is protecting against.
  */
 import { Result, ResultAsync, errAsync, okAsync } from 'neverthrow'
 import * as responses from '../utils/responses.js'
@@ -24,7 +24,6 @@ import * as db from '../utils/db/index.js'
 import { getSessionUserId, getReqBody, getSegment } from './utils.js'
 import { pair, toAsync, toPromise } from '../utils/general.js'
 import {
-  MAX_API_TOKEN_LIFETIME_SECONDS,
   expiresAtOf,
   generateApiToken,
   hashApiToken,
@@ -47,11 +46,10 @@ const MAX_API_TOKENS_PER_USER = 20
  * What a caller is shown of a stored token: never its hash. The hash cannot
  * be turned back into a token, but nothing a client does needs it either.
  *
- * `expiresAt` is the one the token is judged by, so a token minted before the
- * field existed shows the date it will actually stop, not none. `lastUsedAt`
- * is `null` for a token never used, and otherwise good to within
- * `LAST_USED_RESOLUTION_MS`.
- * @type {(stored: any) => { id: string, name: string, createdAt: number, expiresAt: number, lastUsedAt: number | null }}
+ * `expiresAt` is `null` for a token that never expires, including one minted
+ * before the field existed. `lastUsedAt` is `null` for a token never used,
+ * and otherwise good to within `LAST_USED_RESOLUTION_MS`.
+ * @type {(stored: any) => { id: string, name: string, createdAt: number, expiresAt: number | null, lastUsedAt: number | null }}
  */
 const describe = (stored) => ({
   id: stored._id,
@@ -92,14 +90,14 @@ const createApiToken = (event) => toPromise(
                     `there are already ${MAX_API_TOKENS_PER_USER} API tokens; revoke one first`
                   ))
             )
-            .andThen(([validName, lifetime = MAX_API_TOKEN_LIFETIME_SECONDS]) => {
+            .andThen(([validName, lifetime]) => {
               const token = generateApiToken()
               return db.create_(COLLECTION, {
                 userId,
                 name: validName,
                 tokenHash: hashApiToken(token),
                 createdAt: now,
-                expiresAt: now + lifetime * 1000,
+                expiresAt: lifetime == null ? null : now + lifetime * 1000,
               })
                 .map((stored) => ({ ...describe(stored), token }))
             })

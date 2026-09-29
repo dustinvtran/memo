@@ -9,13 +9,6 @@
  * wants something that does not need a page open to stay alive, and that its
  * owner can take back on its own.
  *
- * What it must not be is longer-lived than the session that made it. #177
- * capped a session at `MAX_SESSION_SECONDS` so that a credential taken once is
- * not good forever and an account disabled in Auth0 loses access; a token
- * with no end would be a way round both, mintable by anyone who held `nf_jwt`
- * for a moment. So a token expires, at the session cap unless its owner asks
- * for sooner, and never later. See #464.
- *
  * So an API token is not a JWT. It is 32 random bytes behind a fixed prefix,
  * handed to its owner once, and stored as its SHA-256 and nothing else. A
  * plain hash rather than a slow one is deliberate: a slow hash is for secrets
@@ -26,11 +19,18 @@
  * without trying one and falling back to the other, and it is also what a
  * secret scanner matches on when one is pasted somewhere it should not be.
  *
- * Nothing but `node:crypto` and the equally bare `session_token.js` is
- * imported, so the suite exercises all of this with no install.
+ * A token lasts until it is revoked unless its owner gives it an end when
+ * making it, which is the policy the Anthropic and OpenAI consoles have for
+ * their own keys. #464 first capped every token at the 90-day session limit
+ * instead, and that was the wrong place to defend: what makes a key that
+ * never expires risky is how easily someone else can mint one or use one
+ * unnoticed, so those are what get defended — `lastUsedAt` for the second,
+ * and for the first, a session cookie script cannot read (#501).
+ *
+ * Nothing but `node:crypto` is imported, so the suite exercises all of this
+ * with no install.
  */
 import { createHash, randomBytes } from 'node:crypto'
-import { MAX_SESSION_SECONDS } from './session_token.js'
 
 const API_TOKEN_PREFIX = 'memo_pat_'
 
@@ -44,10 +44,11 @@ const API_TOKEN_PATTERN = /^memo_pat_[A-Za-z0-9_-]{43}$/
 const MAX_API_TOKEN_NAME_LENGTH = 64
 
 /**
- * The longest a token may live, and how long one lives unless its owner asks
- * for less: the session cap, for the reason the file header gives.
+ * The longest lifetime a token may be *given*. Not a policy — a token that is
+ * given none never expires — only a bound that keeps `createdAt` plus the
+ * lifetime an exact number of milliseconds.
  */
-const MAX_API_TOKEN_LIFETIME_SECONDS = MAX_SESSION_SECONDS
+const MAX_API_TOKEN_LIFETIME_SECONDS = 100 * 365 * 24 * 3600
 
 /**
  * How stale a stored `lastUsedAt` may be before a request writes it again.
@@ -84,18 +85,21 @@ const hashApiToken = (token) =>
   createHash('sha256').update(token).digest('hex')
 
 /**
- * When a stored token stops working, in milliseconds like its `createdAt`.
+ * When a stored token stops working, in milliseconds like its `createdAt`, or
+ * `null` for never.
  *
  * A token minted before `expiresAt` was written — #458's, of which production
- * holds one — is given the default lifetime from when it was made, rather
- * than being either immortal or cut off on deploy.
- * @type {(stored: { createdAt: number, expiresAt?: number }) => number}
+ * holds one — has no field at all, and is read as never, which is what it was
+ * minted as.
+ * @type {(stored: { expiresAt?: number | null }) => number | null}
  */
-const expiresAtOf = ({ createdAt, expiresAt }) =>
-  expiresAt ?? createdAt + MAX_API_TOKEN_LIFETIME_SECONDS * 1000
+const expiresAtOf = ({ expiresAt }) => expiresAt ?? null
 
-/** @type {(stored: { createdAt: number, expiresAt?: number }, nowMs: number) => boolean} */
-const isExpired = (stored, nowMs) => nowMs >= expiresAtOf(stored)
+/** @type {(stored: { expiresAt?: number | null }, nowMs: number) => boolean} */
+const isExpired = (stored, nowMs) => {
+  const expiresAt = expiresAtOf(stored)
+  return expiresAt !== null && nowMs >= expiresAt
+}
 
 /**
  * Whether this use of a token is worth writing down, which is when it has

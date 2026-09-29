@@ -274,21 +274,34 @@ test('a session token still works everywhere it did', options, async () => {
   assert.equal(body.username, 'nil')
 })
 
-test('a token expires at the session cap unless asked for sooner', options, async () => {
+test('a token never expires unless it is given a lifetime', options, async () => {
   seed()
 
-  const { body: longest } = await issue('u1', 'longest')
-  assert.equal(longest.expiresAt, longest.createdAt + MAX_API_TOKEN_LIFETIME_SECONDS * 1000)
-  assert.equal(store.apiTokens[0].expiresAt, longest.expiresAt)
+  const { body: forever } = await issue('u1', 'forever')
+  assert.equal(forever.expiresAt, null)
+  assert.equal(store.apiTokens[0].expiresAt, null)
 
-  const { body: shorter } = await issue('u1', 'shorter', { expiresInSeconds: 3600 })
-  assert.equal(shorter.expiresAt, shorter.createdAt + 3600 * 1000)
+  const { body: explicit } = await issue('u1', 'explicit', { expiresInSeconds: null })
+  assert.equal(explicit.expiresAt, null)
+
+  for (const days of [30, 90]) {
+    const { body } = await issue('u1', `${days} days`, { expiresInSeconds: days * 24 * 3600 })
+    assert.equal(body.expiresAt, body.createdAt + days * 24 * 3600 * 1000)
+  }
 })
 
-test('a lifetime longer than the cap, or not a whole positive number, is refused', options, async () => {
+test('a never-expiring token still works long after it was made', options, async () => {
+  seed()
+  const { body: { token } } = await issue()
+  store.apiTokens[0].createdAt = Date.now() - 10 * 365 * DAY_MS
+
+  assert.equal((await callRoute(name, 'GET', 'name', { bearer: token })).statusCode, 200)
+})
+
+test('a lifetime that is not a whole positive number, or is absurdly long, is refused', options, async () => {
   seed()
 
-  for (const expiresInSeconds of [MAX_API_TOKEN_LIFETIME_SECONDS + 1, 0, -5, 1.5, '3600', null]) {
+  for (const expiresInSeconds of [MAX_API_TOKEN_LIFETIME_SECONDS + 1, 0, -5, 1.5, '3600']) {
     const { statusCode } = await issue('u1', 'claude', { expiresInSeconds })
     assert.equal(statusCode, 400, String(expiresInSeconds))
   }
@@ -306,19 +319,16 @@ test('an expired token is a 401 that says so', options, async () => {
   assert.match(body.message, /expired/)
 })
 
-test('a token minted before expiresAt existed expires a session cap after it was made', options, async () => {
+test('a token minted before expiresAt existed never expires', options, async () => {
   seed()
   const { body: { token } } = await issue()
   const [stored] = store.apiTokens
   delete stored.expiresAt
+  stored.createdAt = Date.now() - 10 * 365 * DAY_MS
 
-  stored.createdAt = Date.now() - 10 * DAY_MS
   assert.equal((await callRoute(name, 'GET', 'name', { bearer: token })).statusCode, 200)
   const { body: [listed] } = await callRoute(tokens, 'GET', 'tokens', { as: 'u1' })
-  assert.equal(listed.expiresAt, stored.createdAt + MAX_API_TOKEN_LIFETIME_SECONDS * 1000)
-
-  stored.createdAt = Date.now() - MAX_API_TOKEN_LIFETIME_SECONDS * 1000 - 1
-  assert.equal((await callRoute(name, 'GET', 'name', { bearer: token })).statusCode, 401)
+  assert.equal(listed.expiresAt, null)
 })
 
 test('using a token records when, at most once an hour', options, async () => {

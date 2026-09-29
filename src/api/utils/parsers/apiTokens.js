@@ -10,11 +10,10 @@ import { MAX_API_TOKEN_LIFETIME_SECONDS, MAX_API_TOKEN_NAME_LENGTH } from '../ap
 const apiTokenNameParser = z.string().trim().min(1).max(MAX_API_TOKEN_NAME_LENGTH)
 
 /**
- * How long a new token should live, when its owner wants less than the most.
- * Longer than the most is a refusal rather than a quiet clamp, so a caller
- * asking for a year is told they are not getting one.
+ * How long a new token should live, in seconds. Absent or `null` is never
+ * expiring, which is the default.
  */
-const apiTokenLifetimeParser = z.number().int().positive().max(MAX_API_TOKEN_LIFETIME_SECONDS)
+const apiTokenLifetimeParser = z.number().int().positive().max(MAX_API_TOKEN_LIFETIME_SECONDS).nullish()
 
 /**
  * The stored half of a token. There is no field for the token itself: a
@@ -26,7 +25,7 @@ const apiTokenParser = z.object({
   name: apiTokenNameParser,
   tokenHash: z.string().regex(/^[0-9a-f]{64}$/),
   createdAt: z.number(),
-  expiresAt: z.number(),
+  expiresAt: z.number().nullable(),
 }).strict()
 
 /** @type Validator<z.infer<typeof apiTokenParser>> */
@@ -35,8 +34,8 @@ const apiTokens = (x) => validate(apiTokenParser, x)
 /** @type Validator<string> */
 const apiTokenName = (x) => validate(apiTokenNameParser, x)
 
-/** @type Validator<number | undefined> */
-const apiTokenLifetime = (x) => validate(apiTokenLifetimeParser.optional(), x)
+/** @type Validator<number | null | undefined> */
+const apiTokenLifetime = (x) => validate(apiTokenLifetimeParser, x)
 
 export {
   apiTokens,
