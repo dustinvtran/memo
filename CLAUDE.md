@@ -114,9 +114,13 @@ gh pr list --state all --limit 100 --json headRefName,state,number
 ```
 
 A branch with a merged pull request is safe. A branch with no pull request at
-all is the one to look at rather than delete — `origin/chore/140-ci-build` and
-`origin/chore/143-unused-deps` are two of those, from 2026-08, and they are
-still there deliberately.
+all is the one to look at rather than delete, and *looking* means asking
+whether its work landed some other way. `origin/chore/140-ci-build` and
+`origin/chore/143-unused-deps` were two, from 2026-08, with no pull request
+and a diff against `main` of 282 files: five weeks of `main` moving on, not
+unique work. What they set out to do — a `build` job in CI, the webpack and
+babel packages gone — had both already landed by other routes, so they were
+deleted on 2026-09-29.
 
 **Check a worktree before removing it, not after.** `git -C <path> status
 --porcelain` is the whole check, and `git worktree remove` refuses a dirty one
