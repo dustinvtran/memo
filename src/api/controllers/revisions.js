@@ -27,7 +27,7 @@ const COLLECTION = 'entryRevisions'
 
 /**
  * The whole version list of an entry, newest first, starting with the entry
- * as it stands now, each version carrying what it changed — and when the
+ * as it stands now, each version carrying what it changed â€” and when the
  * entry was added, which is known even where its first version is not.
  * @type {(event: Event) => Promise<Response>}
  */
