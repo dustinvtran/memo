@@ -116,7 +116,7 @@ const Menu = () => initComponent({
     .memo-menu-links > li > a:hover,
     .memo-menu-links > li > a:focus {
       text-decoration: none;
-      background: #eee;
+      background: light-dark(#eee, #2a2d32);
     }
 
     @media (max-width: 768px) {

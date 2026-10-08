@@ -62,8 +62,8 @@ const LinkToWork = (type, data) => initComponent({
   `,
   style: () => css`
     .link-to-work {
-      border: 1px solid #f0c060;
-      background: #fffaf0;
+      border: 1px solid light-dark(#f0c060, #7a5f1e);
+      background: light-dark(#fffaf0, #2e2614);
       border-radius: 7px;
       padding: 12px 15px;
       margin: 0 0 15px;
@@ -86,7 +86,7 @@ const LinkToWork = (type, data) => initComponent({
       align-items: baseline;
       gap: 6px;
       padding: 5px 0;
-      border-top: 1px solid #f0e0c0;
+      border-top: 1px solid light-dark(#f0e0c0, #4a3d22);
       font-size: 13px;
     }
     .link-to-work-label {
@@ -98,7 +98,7 @@ const LinkToWork = (type, data) => initComponent({
       overflow-wrap: anywhere;
     }
     .link-to-work-mine {
-      color: #e0480e;
+      color: light-dark(#e0480e, #f0743f);
     }
     .link-to-work-who {
       text-transform: uppercase;

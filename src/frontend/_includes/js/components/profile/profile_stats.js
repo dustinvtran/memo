@@ -74,6 +74,13 @@ const ProfileStatsOfType = (username, type, stats) => initComponent({
     .profile-stats .apexcharts-toolbar {
       right: 16px;
     }
+    /* ApexCharts sits its menu button on a box of 85% white, which on the
+       dark page is a white tile beside every chart and on the light one is
+       nothing anyone could see. #523. */
+    .profile-stats .apexcharts-toolbar,
+    #profile-global-stats .apexcharts-toolbar {
+      background: transparent;
+    }
     @media (max-width: 600px) {
       .profile-stats {
         width: 100%;
@@ -113,7 +120,7 @@ const StatsFreshness = (updatedDate) => initComponent({
     .stats-freshness {
       text-align: right;
       font-size: 11px;
-      color: #aaa;
+      color: light-dark(#aaa, #6b7079);
     }
   `
 })
@@ -285,6 +292,18 @@ const toChartOptions = (relevantStats) => ({
   chart: {
     type: 'bar',
     height: 250,
+    // ApexCharts writes its label colours into the SVG as attributes, where
+    // no rule in `main.css` reaches them, and its default is a dark grey that
+    // vanishes on the dark page. `currentColor` hands the decision back to
+    // CSS, so the labels are the page's text colour in either scheme — and
+    // follow a change of scheme made on this same page without a redraw. #523.
+    foreColor: 'currentColor',
+  },
+  // Its default, #e0e0e0, is a bright line on the dark page. Half-grey at a
+  // quarter strength lands within a shade of that on white and as a quiet
+  // line on the dark background, so one value serves both.
+  grid: {
+    borderColor: 'rgba(128, 128, 128, 0.25)',
   },
   plotOptions: {
     bar: {

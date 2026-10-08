@@ -33,6 +33,7 @@ const INCLUDES = path.join(__dirname, "..");
 const FRONTEND = path.join(INCLUDES, "..");
 const BUNDLE = path.join(FRONTEND, "js", "bundle.njk");
 const STYLESHEET_TEMPLATE = path.join(FRONTEND, "css", "main.njk");
+const THEME_TEMPLATE = path.join(FRONTEND, "js", "theme.njk");
 const LAYOUT = path.join(INCLUDES, "layouts", "base.njk");
 const ROOT = path.join(FRONTEND, "..", "..");
 const DATA = path.join(FRONTEND, "_data", "assets.js");
@@ -57,6 +58,15 @@ test("every file the bundle lists exists", () => {
   assert.ok(
     fs.existsSync(path.join(INCLUDES, plan.STYLESHEET)),
     `asset_plan.js names ${plan.STYLESHEET}, which does not exist`
+  );
+  assert.ok(
+    fs.existsSync(path.join(INCLUDES, plan.THEME_SCRIPT)),
+    `asset_plan.js names ${plan.THEME_SCRIPT}, which does not exist`
+  );
+  assert.ok(
+    !plan.BUNDLED_FILES.includes(plan.THEME_SCRIPT),
+    `${plan.THEME_SCRIPT} is bundled as well as loaded on its own, so it ` +
+      "runs twice, and the second time after the page has been painted"
   );
 });
 
@@ -91,6 +101,42 @@ test("main.njk emits the stylesheet at the shared url", () => {
     source,
     /\{\{-?\s*assets\.css\.code\s*\|\s*safe\s*-?\}\}/,
     "css/main.njk must emit assets.css.code"
+  );
+});
+
+test("theme.njk emits the theme script at the shared url", () => {
+  const source = read(THEME_TEMPLATE);
+
+  assert.match(
+    source,
+    /^---\r?\n(?:.*\r?\n)*?permalink:\s*["']?\{\{\s*assets\.theme\.url\s*\}\}["']?\s*\r?$/m,
+    "js/theme.njk must take its permalink from assets.theme.url"
+  );
+  assert.match(
+    source,
+    /\{\{-?\s*assets\.theme\.code\s*\|\s*safe\s*-?\}\}/,
+    "js/theme.njk must emit assets.theme.code"
+  );
+});
+
+test("the theme script blocks, and runs before the stylesheet is waited on", () => {
+  // The whole of what it is for is deciding the scheme before the first
+  // paint. `defer` or `async` would let the page paint in the system's scheme
+  // and then swap — the flash #523 asked not to have. And a blocking script
+  // that comes after a stylesheet waits for that stylesheet to load before it
+  // runs, so it goes above the <link>.
+  const layout = read(LAYOUT);
+  const tag = layout.match(/<script[^>]*\bsrc="\{\{\s*assets\.theme\.url\s*\}\}"[^>]*>/);
+
+  assert.ok(tag, "base.njk must load the theme script from assets.theme.url");
+  assert.doesNotMatch(
+    tag[0],
+    /\b(?:defer|async|type="module")\b/,
+    "the theme script must not be deferred; it has to run before the first paint"
+  );
+  assert.ok(
+    tag.index < layout.indexOf('<link rel="stylesheet"'),
+    "the theme script must come before the stylesheet <link>"
   );
 });
 
@@ -154,6 +200,7 @@ test("only asset_plan.js decides what the assets are called", () => {
     ["base.njk", LAYOUT],
     ["bundle.njk", BUNDLE],
     ["css/main.njk", STYLESHEET_TEMPLATE],
+    ["js/theme.njk", THEME_TEMPLATE],
   ].forEach(([name, file]) =>
     assert.doesNotMatch(
       read(file),
@@ -174,6 +221,12 @@ test("a change to any bundled file changes the url", () => {
 
   assert.notEqual(plan.bundleUrl(plan.digest(one)), plan.bundleUrl(plan.digest(other)));
   assert.match(plan.bundleUrl(plan.digest(one)), new RegExp(plan.digest(one)));
+  assert.match(plan.themeUrl(plan.digest(one)), new RegExp(plan.digest(one)));
+  assert.notEqual(
+    plan.themeUrl(plan.digest(one)),
+    plan.bundleUrl(plan.digest(one)),
+    "the theme script and the bundle must not be able to share a name"
+  );
   assert.match(
     plan.stylesheetUrl(plan.digest(one)),
     new RegExp(plan.digest(one)),
@@ -209,6 +262,7 @@ test("the hashed assets are exempt from the SPA catch-all", () => {
   const assets = [
     plan.bundleUrl(hash),
     plan.stylesheetUrl(hash),
+    plan.themeUrl(hash),
     // Only <link> and <script> load assets. The <noscript> block links
     // `/films/nil` and `/api/export/films/nil`, which are a page and a
     // function — both of them are supposed to reach the catch-all.
@@ -235,7 +289,7 @@ test("the immutable headers cover the directories the assets are emitted to", ()
   const headers = read(HEADERS).replace(/^\s*#.*$/gm, "");
   const hash = plan.digest("sample");
 
-  [plan.bundleUrl(hash), plan.stylesheetUrl(hash)].forEach((url) => {
+  [plan.bundleUrl(hash), plan.stylesheetUrl(hash), plan.themeUrl(hash)].forEach((url) => {
     const directory = url.slice(0, url.indexOf("/", 1) + 1);
     const rule = new RegExp(
       `^${directory.replace("/", "\\/")}\\*\\s*$\\s*^\\s+Cache-Control:\\s*[^\\n]*immutable`,
@@ -445,6 +499,12 @@ test("every name a bundled file destructures is one the bundle sets", () => {
   const missing = [];
   let checked = 0;
 
+  // The theme script is its own <script>, above the bundle, so the browser has
+  // run it — and set `Theme` — before the bundle's first file is read.
+  vm.runInContext(read(path.join(INCLUDES, plan.THEME_SCRIPT)), context, {
+    filename: plan.THEME_SCRIPT,
+  });
+
   plan.BUNDLED_FILES.forEach((includePath) => {
     const source = read(path.join(INCLUDES, includePath));
 
@@ -505,8 +565,9 @@ test("every file under _includes/js is bundled, or is a test", () => {
   // The failure this catches is the quiet one: a file nobody added to
   // BUNDLED_FILES is not in the bundle, and nothing says so. The build is
   // green, the deploy is green, and whatever reached for its globals is
-  // `undefined` in the browser. `asset_plan.js` is the one exception because
-  // it is what builds the bundle rather than something in it.
+  // `undefined` in the browser. `asset_plan.js` is an exception because it is
+  // what builds the bundle rather than something in it, and `theme.js` because
+  // it is loaded on its own — which the asset tests above check instead.
   const walk = (directory) =>
     fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const full = path.join(directory, entry.name);
@@ -519,6 +580,7 @@ test("every file under _includes/js is bundled, or is a test", () => {
     .filter((includePath) => includePath.endsWith(".js"))
     .filter((includePath) => !includePath.endsWith(".test.js"))
     .filter((includePath) => includePath !== "js/asset_plan.js")
+    .filter((includePath) => includePath !== plan.THEME_SCRIPT)
     .filter((includePath) => !bundled.has(includePath));
 
   assert.deepEqual(
@@ -558,7 +620,7 @@ test("no bundled file writes behaviour into the markup it builds", () => {
   const withoutComments = (code) =>
     code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-  plan.BUNDLED_FILES.forEach((includePath) => {
+  [...plan.BUNDLED_FILES, plan.THEME_SCRIPT].forEach((includePath) => {
     const code = withoutComments(read(path.join(INCLUDES, includePath)));
 
     assert.doesNotMatch(

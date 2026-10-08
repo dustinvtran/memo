@@ -49,8 +49,8 @@ const DraftNotice = (type, data) => initComponent({
       display: flex;
       align-items: center;
       gap: 10px;
-      background: #f2fafd;
-      border: 1px solid #cfe9f7;
+      background: light-dark(#f2fafd, #142b38);
+      border: 1px solid light-dark(#cfe9f7, #1f4a63);
       border-radius: 6px;
       padding: 10px 14px;
       margin-bottom: 14px;
@@ -68,11 +68,11 @@ const DraftNotice = (type, data) => initComponent({
     }
     .draft-title {
       font-weight: bold;
-      color: #333;
+      color: var(--text);
     }
     .draft-when,
     .draft-summary {
-      color: #777;
+      color: light-dark(#777, #9aa0a6);
     }
     .draft-summary:before {
       content: "\\00b7";
@@ -101,12 +101,12 @@ const DraftNotice = (type, data) => initComponent({
       cursor: pointer;
     }
     .draft-discard:hover {
-      color: #e0480e;
+      color: light-dark(#e0480e, #f0743f);
       text-decoration: underline;
     }
     .draft-status {
       font-size: 11px;
-      color: #aaa;
+      color: light-dark(#aaa, #6b7079);
       text-align: right;
       height: 15px;
     }

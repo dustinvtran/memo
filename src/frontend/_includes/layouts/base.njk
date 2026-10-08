@@ -117,6 +117,13 @@
        every HTML response. The name carries a digest of the file, which is
        what lets `netlify.toml` cache `/css/*` for a year: change the CSS and
        this url changes with it. #}
+    {# Puts `data-theme` on <html> when this browser has chosen Light or Dark
+       over the system's scheme, and has to have done so before anything is
+       painted — so it is the one script of the site's own that blocks, and it
+       sits above the stylesheet because a blocking script after a stylesheet
+       waits for that stylesheet to arrive first. Not inline: `script-src`
+       refuses that. `_includes/js/theme.js` says the rest. #523. #}
+    <script src="{{ assets.theme.url }}"></script>
     <link rel="stylesheet" href="{{ assets.css.url }}">
 
     {# The page cannot draw until every script below has been fetched and run,

@@ -1,3 +1,55 @@
+/* Colour, and which scheme it is drawn in. #523.
+ *
+ * Every colour on the site is written as `light-dark(<light>, <dark>)`: the
+ * shared ones below, and the one-offs in place in the component that uses
+ * them. The light half is always the colour the site was before there was a
+ * dark one, so light mode is unchanged by construction rather than by eye.
+ *
+ * `light-dark()` answers from the element's `color-scheme`, which every
+ * element inherits from here. `light dark` means "whichever the system
+ * prefers", which is the System setting and the default; `js/theme.js` puts
+ * `data-theme` on <html> before the first paint when this browser has chosen
+ * Light or Dark instead, and the two rules under this one pin it. The same
+ * property is what turns the browser's own drawing dark too — scrollbars, the
+ * insides of inputs and selects, a date field's popup — which no rule here
+ * could reach.
+ *
+ * Accent text stays `#0e9ce0` in both: it is 5.73:1 on the dark page, where
+ * it was 3.07:1 on white, so the problem #398 had with it is light-only. The
+ * same blue under white text is unchanged for the reason it always was, and
+ * `#888` and `#999` read at 5:1 and 6:1 on either background. The greys
+ * that do change are the ones whose job is to be faint, which on a dark page
+ * means darker rather than lighter, and `#555`-`#777`, which would sink.
+ *
+ * Ratios on the dark page (#18191c), WCAG relative luminance: text 12.18,
+ * links 7.27 and 9.28 hovered, muted #9aa0a6 6.66, warning #f0743f 6.09.
+*/
+:root {
+  color-scheme: light dark;
+
+  --page-bg: light-dark(#fff, #18191c);
+  --text: light-dark(#333, #d4d7dc);
+  /* Whatever sits above the page: a modal, a menu, a notification, a select. */
+  --raised-bg: light-dark(#fff, #23252a);
+  /* A tint under something hovered or set apart: a table row, a code block. */
+  --surface: light-dark(#f5f5f5, #2a2d32);
+  --border: light-dark(#ddd, #3c4047);
+  --rule: light-dark(#eee, #2e3136);
+  --link: light-dark(#0b7cb3, #4fb0e6);
+  --link-hover: light-dark(#0b6f9f, #7cc5ef);
+  /* The site draws an input's edge as a shadow, which is invisible black on
+     black, so in the dark it is a light one. */
+  --control-edge: light-dark(rgba(0, 0, 0, 0.5), rgba(255, 255, 255, 0.3));
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
 /* The base layer, which was Bootstrap's until #269 step 6.
  *
  * The Bootstrap class names the markup carried are replaced further down,
@@ -23,8 +75,8 @@ body {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 14px;
   line-height: 1.42857143;
-  color: #333;
-  background: #fff;
+  color: var(--text);
+  background: var(--page-bg);
 }
 
 /* Form controls inherit neither the document's font nor its colour on their
@@ -69,13 +121,13 @@ optgroup {
  * text on white, so it is deliberately not a find-and-replace.
 */
 a {
-  color: #0b7cb3;
+  color: var(--link);
   text-decoration: none;
 }
 
 a:hover,
 a:focus {
-  color: #0b6f9f;
+  color: var(--link-hover);
   text-decoration: underline;
 }
 
@@ -141,7 +193,7 @@ hr {
   margin-top: 20px;
   margin-bottom: 20px;
   border: 0;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--rule);
 }
 
 img {
@@ -197,7 +249,7 @@ blockquote {
   padding: 10px 20px;
   margin: 0 0 20px;
   font-size: 17.5px;
-  border-left: 5px solid #eee;
+  border-left: 5px solid var(--rule);
 }
 
 blockquote p:last-child,
@@ -216,8 +268,8 @@ samp {
 code {
   padding: 2px 4px;
   font-size: 90%;
-  color: #c7254e;
-  background: #f9f2f4;
+  color: light-dark(#c7254e, #f08aa5);
+  background: light-dark(#f9f2f4, #33242a);
   border-radius: 4px;
 }
 
@@ -227,11 +279,11 @@ pre {
   margin: 0 0 10px;
   font-size: 13px;
   line-height: 1.42857143;
-  color: #333;
+  color: var(--text);
   word-break: break-all;
   overflow-wrap: break-word;
-  background: #f5f5f5;
-  border: 1px solid #ccc;
+  background: var(--surface);
+  border: 1px solid light-dark(#ccc, #3c4047);
   border-radius: 4px;
 }
 
@@ -428,7 +480,7 @@ span:lang(cn) {
   position: relative;
 }
 .is-collapsed {
-  color: #ccc;
+  color: light-dark(#ccc, #555a61);
 }
 /* `margin-right: 15px` where this was `margin-right: 10px` above plus a
  * `padding-right: 5px` here: the same gap, moved. `box-sizing: border-box` is
@@ -445,7 +497,7 @@ span:lang(cn) {
  * file rather than this one.
 */
 .is-collapsed:before {
-  color: #ccc;
+  color: light-dark(#ccc, #555a61);
   -webkit-mask-image: var(--icon-angle-down);
   mask-image: var(--icon-angle-down);
   margin-right: 15px;
@@ -477,13 +529,13 @@ span:lang(cn) {
   padding: 0;
   border: 0;
   background: none;
-  color: #0b7cb3;
+  color: var(--link);
   cursor: pointer;
 }
 
 .detail-icon:hover,
 .detail-icon:focus {
-  color: #0b6f9f;
+  color: var(--link-hover);
 }
 
 .review {
@@ -555,7 +607,7 @@ h1 {
 }
 
 select {
-  background: white;
+  background: var(--raised-bg);
 }
 
 input,
@@ -565,7 +617,7 @@ textarea {
   border: 1px solid transparent;
   border-radius: 5px;
   padding: 2px 5px;
-  box-shadow: 0px 0px 3px rgba(0, 0, 0, 0.5);
+  box-shadow: 0px 0px 3px var(--control-edge);
 }
 
 button {
@@ -590,7 +642,7 @@ button {
   width: 100%;
   max-width: 100%;
   margin-bottom: 0;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
 }
 
 .entry-table-scroll > table > thead > tr > th,
@@ -602,7 +654,7 @@ button {
   padding: 8px;
   line-height: 1.42857143;
   vertical-align: middle;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
 }
 
 .entry-table-scroll > table > thead > tr > th {
@@ -610,7 +662,7 @@ button {
 }
 
 .entry-table-scroll > table > tbody > tr:hover {
-  background: #f5f5f5;
+  background: var(--surface);
 }
 
 .entry-table-scroll {
@@ -660,7 +712,7 @@ button {
   padding: 2px 8px;
   border: 1px solid transparent;
   border-radius: 5px;
-  box-shadow: 0px 0px 3px rgba(0, 0, 0, 0.5);
+  box-shadow: 0px 0px 3px var(--control-edge);
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -680,8 +732,8 @@ button {
   overflow: auto;
   padding: 5px 0;
   text-align: left;
-  background: white;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: var(--raised-bg);
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.12));
   border-radius: 4px;
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.175);
 }
@@ -696,7 +748,7 @@ button {
 }
 
 .entry-table-columns-menu label:hover {
-  background: #f5f5f5;
+  background: var(--surface);
 }
 
 .entry-table th.sortable {
@@ -754,4 +806,20 @@ button {
 
 .entry-table .no-records-found td {
   text-align: center;
+}
+
+/* The date picker on the entry form, which is litepicker's and brings its own
+ * stylesheet: a white box of #333 text whatever the page is. It reads its
+ * colours from custom properties, and the three that matter are exactly the
+ * light values of three of ours, so pointing them here changes nothing in
+ * light and darkens it with the page. Set on the picker rather than on
+ * `:root`, where litepicker sets its own -- its <style> is put in at the top
+ * of <head>, and a rule on the element itself does not have to care which
+ * came first. #523.
+*/
+.litepicker {
+  --litepicker-container-months-color-bg: var(--raised-bg);
+  --litepicker-container-months-box-shadow-color: var(--border);
+  --litepicker-month-header-color: var(--text);
+  --litepicker-day-color: var(--text);
 }

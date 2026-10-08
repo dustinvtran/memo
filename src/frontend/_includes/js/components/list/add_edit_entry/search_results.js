@@ -42,7 +42,7 @@ const SearchResults = (type, listing, onPick) => initComponent({
   style: () => css`
     .search-results-discarded {
       font-size: 12px;
-      color: #666;
+      color: light-dark(#666, #9aa0a6);
       margin: 8px 0 0;
     }
   `
@@ -106,7 +106,7 @@ const Result = (type, { title, year, imageUrl, ref }, onPick) => initComponent({
       margin-left: 7px;
     }
     .search-result:nth-child(odd) {
-      background: #efefef;
+      background: light-dark(#efefef, #2a2d32);
       border-radius: 5px;
     }
   `,

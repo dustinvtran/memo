@@ -44,7 +44,7 @@ const ExternalFields = (row, type) => {
         .override-hint {
           font-size: 10px;
           margin-top: 4px;
-          color: #E0480E;
+          color: light-dark(#E0480E, #f0743f);
         }
       `,
     })
