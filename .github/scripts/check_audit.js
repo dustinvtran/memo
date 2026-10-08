@@ -33,18 +33,25 @@
 /**
  * Package name -> why an advisory against it does not stop the build today.
  *
- * Empty, and that is the point rather than an oversight. The last entry was
- * `uuid`, under better-queue, under apicalypse, under igdb-api-node, and it
- * said the advisory had no forward fix — true, and still true: better-queue
- * 3.8.12 is the latest and it still declares `uuid@^9.0.0`. What cleared it
- * was going around the declared range instead of waiting for it, with an
- * `overrides` entry in package.json pinning uuid to the patched 11.1.1.
+ * Before adding a name, ask whether an `overrides` entry gets around it. The
+ * entry before `braces` was `uuid`, under better-queue, under apicalypse,
+ * under igdb-api-node, and it said the advisory had no forward fix — true,
+ * and still true: better-queue 3.8.12 is the latest and it still declares
+ * `uuid@^9.0.0`. What cleared it was going around the declared range instead
+ * of waiting for it, with an override pinning uuid to the patched 11.1.1.
+ * `braces` is here because it has no patched release at all to pin to.
  *
  * The check below is what made that a deletion rather than a stale note: an
  * entry whose advisory has stopped being reported fails the build, so an
  * accepted advisory cannot outlive its fix.
  */
-const ACCEPTED = {}
+const ACCEPTED = {
+  braces:
+    'GHSA-vfj7-8cjw-p6xm has no patched release. Reached only through ' +
+    "Eleventy 3's chokidar 3, at build time, on this repo's own watch globs; " +
+    'forcing chokidar 4 drops the glob support Eleventy 3 relies on. ' +
+    'Clears with Eleventy 4 (chokidar 5). #524',
+}
 
 /** Severities that stop the build. Matches `--audit-level=high`. */
 const BLOCKING = new Set(['high', 'critical'])
@@ -141,7 +148,13 @@ const main = async () => {
   console.log('Nothing new at high or above, and nothing listed that has gone away.')
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+// Exported so the test can build a report that matches the list as it
+// stands, rather than one that only passes while the list is empty.
+module.exports = { ACCEPTED }
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })
+}
