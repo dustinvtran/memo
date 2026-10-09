@@ -386,7 +386,7 @@ const formatValue = (field, value) => {
 const historyStyle = css`
   .entry-history {
     margin-top: 45px;
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--rule);
   }
   .history-header {
     display: flex;
@@ -401,7 +401,7 @@ const historyStyle = css`
   }
   .history-title {
     font-weight: bold;
-    color: #333;
+    color: var(--text);
   }
   .history-count {
     color: #999;
@@ -409,7 +409,7 @@ const historyStyle = css`
   }
   .history-chevron {
     margin-left: auto;
-    color: #bbb;
+    color: light-dark(#bbb, #6b7079);
     font-size: 12px;
     transition: transform 0.15s ease;
   }
@@ -438,7 +438,7 @@ const historyStyle = css`
     top: 0;
     bottom: 0;
     width: 2px;
-    background: #e6e8ea;
+    background: light-dark(#e6e8ea, #3c4047);
   }
   .version:first-child:before {
     top: 14px;
@@ -454,8 +454,8 @@ const historyStyle = css`
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #fff;
-    border: 2px solid #ddd;
+    background: var(--page-bg);
+    border: 2px solid var(--border);
   }
   .version.is-current .version-dot {
     border-color: #0e9ce0;
@@ -471,11 +471,11 @@ const historyStyle = css`
     cursor: pointer;
   }
   .version-row:hover {
-    background: #f6f8fa;
+    background: light-dark(#f6f8fa, #2a2d32);
   }
   .version-when {
     font-size: 13px;
-    color: #333;
+    color: var(--text);
     white-space: nowrap;
   }
   .version.is-current .version-when {
@@ -486,8 +486,8 @@ const historyStyle = css`
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: #0e9ce0;
-    border: 1px solid #b8e2f6;
-    background: #f2fafd;
+    border: 1px solid light-dark(#b8e2f6, #1f4a63);
+    background: light-dark(#f2fafd, #142b38);
     border-radius: 9px;
     padding: 1px 7px;
   }
@@ -499,15 +499,15 @@ const historyStyle = css`
   }
   .version-chip {
     font-size: 11px;
-    color: #555;
-    background: #f0f2f4;
+    color: light-dark(#555, #9aa0a6);
+    background: light-dark(#f0f2f4, #2e3136);
     border-radius: 9px;
     padding: 1px 8px;
     white-space: nowrap;
   }
   .version-chip.is-added {
     color: #0e9ce0;
-    background: #f2fafd;
+    background: light-dark(#f2fafd, #142b38);
   }
   .version-row.is-static {
     cursor: default;
@@ -525,7 +525,7 @@ const historyStyle = css`
   }
   .version-caret {
     margin-left: auto;
-    color: #ccc;
+    color: light-dark(#ccc, #555a61);
     font-size: 11px;
     transition: transform 0.15s ease;
   }
@@ -533,8 +533,8 @@ const historyStyle = css`
     transform: rotate(180deg);
   }
   .version-detail {
-    background: #fbfcfd;
-    border: 1px solid #eef0f2;
+    background: light-dark(#fbfcfd, #1d1f23);
+    border: 1px solid light-dark(#eef0f2, #2e3136);
     border-radius: 6px;
     padding: 12px 14px;
     margin: 2px 0 10px;
@@ -572,19 +572,19 @@ const historyStyle = css`
     white-space: nowrap;
   }
   .field-old {
-    color: #a33;
+    color: light-dark(#a33, #f47067);
     text-decoration: line-through;
-    text-decoration-color: rgba(170, 51, 51, 0.4);
+    text-decoration-color: light-dark(rgba(170, 51, 51, 0.4), rgba(244, 112, 103, 0.4));
   }
   .field-arrow {
-    color: #ccc;
+    color: light-dark(#ccc, #555a61);
     font-size: 10px;
   }
   .field-new {
-    color: #1a7f37;
+    color: light-dark(#1a7f37, #4ac26b);
   }
   .value-empty {
-    color: #bbb;
+    color: light-dark(#bbb, #6b7079);
     font-style: italic;
     text-decoration: none;
   }
@@ -599,21 +599,21 @@ const historyStyle = css`
     margin-bottom: 4px;
   }
   .diff-added {
-    color: #1a7f37;
+    color: light-dark(#1a7f37, #4ac26b);
     font-size: 12px;
     font-weight: bold;
   }
   .diff-removed {
-    color: #c33;
+    color: light-dark(#c33, #f47067);
     font-size: 12px;
     font-weight: bold;
   }
   .review-diff-body {
-    border: 1px solid #e6e8ea;
+    border: 1px solid light-dark(#e6e8ea, #3c4047);
     border-radius: 5px;
     overflow: auto;
     max-height: 320px;
-    background: #fff;
+    background: var(--page-bg);
   }
   .diff-line {
     display: flex;
@@ -625,8 +625,8 @@ const historyStyle = css`
     flex: none;
     width: 26px;
     text-align: center;
-    color: #b0b4b8;
-    background: rgba(0, 0, 0, 0.02);
+    color: light-dark(#b0b4b8, #6b7079);
+    background: light-dark(rgba(0, 0, 0, 0.02), rgba(255, 255, 255, 0.03));
     user-select: none;
   }
   .diff-text {
@@ -635,21 +635,21 @@ const historyStyle = css`
     word-break: break-word;
   }
   .diff-line.is-added {
-    background: #e6ffec;
+    background: light-dark(#e6ffec, #1a3324);
   }
   .diff-line.is-added .diff-gutter {
-    color: #1a7f37;
-    background: #ccffd8;
+    color: light-dark(#1a7f37, #4ac26b);
+    background: light-dark(#ccffd8, #23502f);
   }
   .diff-line.is-removed {
-    background: #ffebe9;
+    background: light-dark(#ffebe9, #3d1f1f);
   }
   .diff-line.is-removed .diff-gutter {
-    color: #c33;
-    background: #ffd7d5;
+    color: light-dark(#c33, #f47067);
+    background: light-dark(#ffd7d5, #5c2a2a);
   }
   .diff-line.is-folded {
-    background: #f6f8fa;
+    background: light-dark(#f6f8fa, #2a2d32);
     color: #999;
     font-style: italic;
   }
@@ -661,8 +661,8 @@ const historyStyle = css`
   .restore-button {
     font-size: 12px;
     color: #0e9ce0;
-    background: #fff;
-    border: 1px solid #b8e2f6;
+    background: var(--page-bg);
+    border: 1px solid light-dark(#b8e2f6, #1f4a63);
     border-radius: 5px;
     padding: 4px 12px;
     cursor: pointer;

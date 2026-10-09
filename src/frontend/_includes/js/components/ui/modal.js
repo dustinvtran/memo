@@ -41,7 +41,7 @@ const Modal_ = ({ title, content, showCloseConfirmationDialog }) => initComponen
       padding: 50px;
       transform: translate(-50%, -50%);
       overflow: hidden;
-      background: #fff;
+      background: var(--raised-bg);
       border-radius: 5px;
       width: min(90%, 1100px);
       height:min(90%, 900px);
@@ -58,16 +58,16 @@ const Modal_ = ({ title, content, showCloseConfirmationDialog }) => initComponen
     }
     .td-modal-content-wrapper::-webkit-scrollbar-track
     {
-      background-color: white;
+      background-color: var(--raised-bg);
     }
     .td-modal-content-wrapper::-webkit-scrollbar
     {
       width: 7px;
-      background-color: #F5F5F5;
+      background-color: var(--surface);
     }
     .td-modal-content-wrapper::-webkit-scrollbar-thumb
     {
-      background-color: #E5E5E5;
+      background-color: light-dark(#E5E5E5, #3c4047);
       border-radius: 3px;
     }
   `,
@@ -91,7 +91,7 @@ const ModalHeader = (title, parentId, showCloseConfirmationDialog) => initCompon
        contributes is the line and the space above it and nothing else. */
     .td-modal-header {
       padding: 15px;
-      border-bottom: 1px solid #e5e5e5;
+      border-bottom: 1px solid light-dark(#e5e5e5, #3c4047);
     }
     .td-modal-title {
       position: absolute;

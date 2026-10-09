@@ -22,7 +22,7 @@ const Notification = (message) => initComponent({
       position: fixed;
       top: 20px;
       left: 50%;
-      background: white;
+      background: var(--raised-bg);
       border-radius: 5px;
       z-index: 9999999999999999999999999;
       transform: translateX(-50%);

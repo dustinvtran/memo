@@ -51,14 +51,14 @@ const ApiTokensSection = (userdata) => initComponent({
     #api-tokens td {
       text-align: left;
       padding: 6px 8px;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid var(--border);
       vertical-align: middle;
     }
     #api-tokens .api-token-expired td {
       color: #888;
     }
     #api-tokens .api-token-expired-label {
-      color: #b3261e;
+      color: light-dark(#b3261e, #f2665c);
       font-weight: bold;
     }
     #api-token-form label {

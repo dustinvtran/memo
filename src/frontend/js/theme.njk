@@ -1,0 +1,11 @@
+---
+permalink: "{{ assets.theme.url }}"
+eleventyExcludeFromCollections: true
+---
+{#- `_includes/js/theme.js`, emitted under a name that carries a digest of it.
+
+   Not part of the bundle, because it has to run before the page is first
+   painted and the bundle is deferred until after; see the file itself. The
+   trimmed delimiters and the missing final newline are for the same reason as
+   in `bundle.njk`: the bytes served are exactly the bytes that were hashed. -#}
+{{- assets.theme.code | safe -}}

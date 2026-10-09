@@ -1,5 +1,6 @@
 /**
- * @file The bundle and the stylesheet, as global data every template can read.
+ * @file The bundle, the stylesheet and the theme script, as global data every
+ * template can read.
  *
  * This exists to solve an ordering problem. The filename of the bundle has to
  * carry a digest of the bundle's contents, and `layouts/base.njk` has to know
@@ -68,9 +69,11 @@ const minify = (code) => {
 module.exports = () => {
   const bundle = minify(plan.concatenate(plan.BUNDLED_FILES.map(read)));
   const stylesheet = read(plan.STYLESHEET);
+  const theme = minify(read(plan.THEME_SCRIPT));
 
   return {
     js: { url: plan.bundleUrl(plan.digest(bundle)), code: bundle },
     css: { url: plan.stylesheetUrl(plan.digest(stylesheet)), code: stylesheet },
+    theme: { url: plan.themeUrl(plan.digest(theme)), code: theme },
   };
 };

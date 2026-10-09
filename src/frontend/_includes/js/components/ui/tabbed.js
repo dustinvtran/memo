@@ -60,10 +60,10 @@ const Tabbed = (title, pages) => initComponent({
       cursor: pointer;
       padding: 8px 20px;
       font-size: 13px;
-      background: #ddd;
+      background: light-dark(#ddd, #2e3136);
       border-radius: 8px;
       display: inline-block;
-      color: #aaa;
+      color: light-dark(#aaa, #8b9096);
       font-weight: bold;
     }
     .tab-title.tab-active {

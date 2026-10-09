@@ -13,3 +13,10 @@ and whatever reached for its globals is `undefined` in the browser, so
 
 Mind include order as modules may only use objects from modules which have
 been included before them.
+
+`theme.js` is the one exception, and is named as `THEME_SCRIPT` instead. It
+decides between the light and dark colour schemes, which has to happen before
+the page is first painted, and the bundle is deferred until after that — so
+`layouts/base.njk` loads it on its own, blocking, ahead of everything else.
+It sets the `Theme` global, which is therefore there for any bundled file to
+read.

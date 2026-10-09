@@ -1,5 +1,5 @@
 /**
- * @file What the two hashed assets are made of and what they are called. No
+ * @file What the three hashed assets are made of and what they are called. No
  * dependencies and no I/O, so the tests can hold this without an install —
  * `_data/assets.js` does the reading and the minifying and calls in here.
  *
@@ -52,6 +52,7 @@ const BUNDLED_FILES = [
   "js/components/profile/profile_stats.js",
   "js/components/profile/biography.js",
   "js/components/profile/api_tokens.js",
+  "js/components/profile/appearance.js",
   "js/components/profile/index.js",
   "js/components/home/index.js",
   "js/components/list/add_edit_entry/buttons.js",
@@ -75,6 +76,13 @@ const BUNDLED_FILES = [
 
 /** The stylesheet, named relative to `_includes` the way the scripts are. */
 const STYLESHEET = "css/main.css";
+
+/**
+ * The one script that is not in the bundle: it picks the colour scheme, and has
+ * to run before the first paint, which the deferred bundle runs after. It is
+ * loaded on its own and blocking, so it gets its own hashed name. #523.
+ */
+const THEME_SCRIPT = "js/theme.js";
 
 /**
  * Each file gets its own scope. Concatenated they share one global scope, so
@@ -104,12 +112,16 @@ const bundleUrl = (hash) => `/js/bundle.${hash}.js`;
 
 const stylesheetUrl = (hash) => `/css/main.${hash}.css`;
 
+const themeUrl = (hash) => `/js/theme.${hash}.js`;
+
 module.exports = {
   BUNDLED_FILES,
   STYLESHEET,
+  THEME_SCRIPT,
   wrapInIife,
   concatenate,
   digest,
   bundleUrl,
   stylesheetUrl,
+  themeUrl,
 };
