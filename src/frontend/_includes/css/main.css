@@ -669,21 +669,17 @@ button {
   overflow-x: auto;
 }
 
-/* Colour alone is not enough to mark a link (#398, WCAG 1.4.1), and in a cell
- * colour alone is all there is: the rule at the top of this file takes the
- * underline off every link on the site, which is fine in the menu and in
- * prose, where position says what is clickable, and is not fine in a table
- * where most of the text is links and nothing tells them from the text that
- * is not. The site's own convention for the answer is already here -- a
- * hovered link underlines -- so this is that state made permanent inside a
- * cell rather than a new treatment.
- *
- * A descendant selector on purpose, unlike the rules above it: a link inside
- * a review's markdown, in the detail row, is a link too and wants the same.
+/* Links in a cell are not underlined until hovered or focused, like every
+ * other link on the site, and that is a decision rather than an omission.
+ * #414 underlined them permanently for WCAG 1.4.1 (#398): colour is all that
+ * marks them, and --link is under 3:1 against --text in both schemes (2.74
+ * light, 1.68 dark), so the colour alone does not pass. #531 took the
+ * underline off again because a table of nothing but underlines is the worse
+ * page to read. No blue fixes that in the light scheme: 3:1 against #333
+ * and 4.5:1 against white cannot both hold. So re-adding the underline is
+ * the only fix if the trade is ever revisited, and it should be argued on
+ * #531, not slipped in as a bug fix.
 */
-.entry-table td a {
-  text-decoration: underline;
-}
 
 .entry-table-toolbar {
   display: flex;
