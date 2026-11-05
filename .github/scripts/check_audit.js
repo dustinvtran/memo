@@ -33,25 +33,21 @@
 /**
  * Package name -> why an advisory against it does not stop the build today.
  *
- * Before adding a name, ask whether an `overrides` entry gets around it. The
- * entry before `braces` was `uuid`, under better-queue, under apicalypse,
+ * Before adding a name, ask whether an `overrides` entry gets around it. One
+ * past entry was `uuid`, under better-queue, under apicalypse,
  * under igdb-api-node, and it said the advisory had no forward fix — true,
  * and still true: better-queue 3.8.12 is the latest and it still declares
  * `uuid@^9.0.0`. What cleared it was going around the declared range instead
  * of waiting for it, with an override pinning uuid to the patched 11.1.1.
- * `braces` is here because it has no patched release at all to pin to.
+ * Another was `braces`, which had no patched release at all to pin to, and
+ * went when Eleventy 3.1.8 swapped chokidar 3 for chokidar 4, which does not
+ * depend on it (#524) — well before the Eleventy 4 it was expected to wait for.
  *
- * The check below is what made that a deletion rather than a stale note: an
+ * The check below is what made both a deletion rather than a stale note: an
  * entry whose advisory has stopped being reported fails the build, so an
- * accepted advisory cannot outlive its fix.
+ * accepted advisory cannot outlive its fix. Empty is the normal state.
  */
-const ACCEPTED = {
-  braces:
-    'GHSA-vfj7-8cjw-p6xm has no patched release. Reached only through ' +
-    "Eleventy 3's chokidar 3, at build time, on this repo's own watch globs; " +
-    'forcing chokidar 4 drops the glob support Eleventy 3 relies on. ' +
-    'Clears with Eleventy 4 (chokidar 5). #524',
-}
+const ACCEPTED = {}
 
 /** Severities that stop the build. Matches `--audit-level=high`. */
 const BLOCKING = new Set(['high', 'critical'])
@@ -64,6 +60,37 @@ const read = (stream) =>
     stream.on('end', () => resolve(text))
     stream.on('error', reject)
   })
+
+/**
+ * What a report says against a list of accepted packages: every advisory, the
+ * packages they are against, the ones at high or above that the list does not
+ * cover, and the list's entries nothing reports any more.
+ *
+ * The list is a parameter rather than read from ACCEPTED so the stale-entry
+ * rule can be tested while ACCEPTED is empty, which is its normal state — CI
+ * refuses a skipped test, so a test that could only run with an entry present
+ * would fail the build exactly when there is nothing to accept.
+ */
+const assess = (report, accepted) => {
+  /* `via` holds either an advisory or the name of the dependency that brought
+     one in. Only the objects are advisories, and the same one appears under
+     every package it reaches, so they are collected by url rather than counted. */
+  const advisories = new Map()
+  for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
+    for (const via of vulnerability.via ?? []) {
+      if (typeof via === 'string') continue
+      advisories.set(via.url, { ...via, package: via.name })
+    }
+  }
+
+  const affected = new Set([...advisories.values()].map((a) => a.package))
+  const unexpected = [...advisories.values()]
+    .filter((a) => BLOCKING.has(a.severity) && !(a.package in accepted))
+    .sort((a, b) => a.package.localeCompare(b.package))
+  const stale = Object.keys(accepted).filter((name) => !affected.has(name))
+
+  return { advisories, affected, unexpected, stale }
+}
 
 const main = async () => {
   const report = JSON.parse(await read(process.stdin))
@@ -82,22 +109,7 @@ const main = async () => {
     process.exit(1)
   }
 
-  /* `via` holds either an advisory or the name of the dependency that brought
-     one in. Only the objects are advisories, and the same one appears under
-     every package it reaches, so they are collected by url rather than counted. */
-  const advisories = new Map()
-  for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
-    for (const via of vulnerability.via ?? []) {
-      if (typeof via === 'string') continue
-      advisories.set(via.url, { ...via, package: via.name })
-    }
-  }
-
-  const affected = new Set([...advisories.values()].map((a) => a.package))
-  const unexpected = [...advisories.values()]
-    .filter((a) => BLOCKING.has(a.severity) && !(a.package in ACCEPTED))
-    .sort((a, b) => a.package.localeCompare(b.package))
-  const stale = Object.keys(ACCEPTED).filter((name) => !affected.has(name))
+  const { advisories, affected, unexpected, stale } = assess(report, ACCEPTED)
 
   console.log(
     `${advisories.size} advisories against the ${
@@ -150,7 +162,7 @@ const main = async () => {
 
 // Exported so the test can build a report that matches the list as it
 // stands, rather than one that only passes while the list is empty.
-module.exports = { ACCEPTED }
+module.exports = { ACCEPTED, assess }
 
 if (require.main === module) {
   main().catch((error) => {

@@ -6,7 +6,7 @@ const assert = require('node:assert/strict')
 // Here rather than beside the script because `node --test` does not look
 // inside `.github`, so a test there would never run.
 const SCRIPT = path.join(__dirname, '..', '.github', 'scripts', 'check_audit.js')
-const { ACCEPTED } = require(SCRIPT)
+const { ACCEPTED, assess } = require(SCRIPT)
 
 /** Runs the check with `report` on stdin, as CI does with a file. */
 const run = (report) =>
@@ -51,15 +51,24 @@ test('a clean report passes', () => {
   )
 })
 
-test(
-  'an accepted entry nothing reports any more fails',
-  { skip: !Object.keys(ACCEPTED).length && 'nothing is accepted today' },
-  () => {
-    const result = run({ ...CLEAN, vulnerabilities: {} })
-    assert.equal(result.status, 1)
-    assert.match(result.stdout, /out of date and should\s+be deleted:/)
-  }
-)
+// Against a list of its own rather than ACCEPTED, which is usually empty: CI
+// refuses a skipped test, so this has to run whatever the list holds today.
+test('an accepted entry nothing reports any more is stale', () => {
+  const accepted = { braces: 'no patched release', leftpad: 'still reported' }
+  const report = { ...CLEAN, vulnerabilities: advisory('leftpad') }
+
+  const { stale, unexpected } = assess(report, accepted)
+
+  assert.deepEqual(stale, ['braces'])
+  assert.deepEqual(unexpected, [])
+})
+
+test('an advisory nothing accepts is unexpected', () => {
+  const { stale, unexpected } = assess({ ...CLEAN, vulnerabilities: advisory('leftpad') }, {})
+
+  assert.deepEqual(stale, [])
+  assert.deepEqual(unexpected.map((a) => a.package), ['leftpad'])
+})
 
 // What `npm audit --json` writes when it cannot reach the registry.
 test('a failed audit fails, and says why', () => {
