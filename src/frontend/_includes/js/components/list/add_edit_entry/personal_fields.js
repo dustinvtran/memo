@@ -113,6 +113,11 @@ const PersonalFields = (data, type) => {
       // reports its own failures for the same reason.
       attachDatePickers(['started-date', 'completed-date'])
 
+      // A field with no saved date in it holds the form's default or nothing,
+      // so whatever is there now is the form's own guess.
+      if (!data.startedDate) markAutofilled('started-date')
+      if (!data.completedDate) markAutofilled('completed-date')
+
       const status = el('#status')
 
       on(status, 'change', () => {
@@ -138,7 +143,7 @@ const PersonalFields = (data, type) => {
           // Only when there is nothing there. Filling an empty field is a
           // convenience; writing over a date someone typed is the same silent
           // edit this handler used to make everywhere else.
-          if (!fieldValue('completed-date')) setField('completed-date', today())
+          if (!fieldValue('completed-date')) fillToday('completed-date')
           hide('#progress-container')
           // A `.val()` on `#progress-container`, given the `.html()` of
           // `#episodes`, used to follow — and it did nothing twice over.
@@ -151,10 +156,11 @@ const PersonalFields = (data, type) => {
           setScoreLabel('Score')
           show('#started-date-container')
           if (!fieldValue('started-date')) {
-            setField(
-              'started-date',
-              data.startedDate ? timestampToString(data.startedDate) : today()
-            )
+            if (data.startedDate) {
+              setField('started-date', timestampToString(data.startedDate))
+            } else {
+              fillToday('started-date')
+            }
           }
           hideIfEmpty('#completed-date-container', 'completed-date')
           show('#progress-container')
@@ -209,9 +215,40 @@ const attachDatePickers = async (ids) => {
     const Litepicker = await loadLitepicker()
     elements
       .filter((element) => element.isConnected)
-      .forEach((element) => new Litepicker({ element }))
+      .forEach((element) => {
+        const picker = new Litepicker({ element })
+        const sync = () => syncPicker(picker, element.value)
+        // Before it draws, so the calendar opens on what the field says, and
+        // on every keystroke, so a field emptied while open stays empty.
+        picker.on('before:show', sync)
+        element.addEventListener('input', sync)
+      })
   } catch (error) {
     console.error(`the date fields are plain text fields: ${error.message}`)
+  }
+}
+
+/**
+ * Tells a picker what its field says, which it otherwise never asks.
+ *
+ * Litepicker keeps the date it last saw and writes it back into the field
+ * every time it closes. It reads the field again only on a `change` event and
+ * only when the field holds a whole date, so an emptied field was refilled on
+ * the next click outside it, and a "To play" game could not be saved: the
+ * started date it may not carry came straight back (#544). The same applied
+ * to anything this form writes from script — a status change filling in
+ * today, a restored draft — since assigning to `.value` fires nothing.
+ *
+ * A half-typed date is left alone; there is nothing to tell the picker yet.
+ *
+ * @type {(picker: any, value: string) => void}
+ */
+const syncPicker = (picker, value) => {
+  const text = value.trim()
+  if (text === '') {
+    if (picker.getDate()) picker.clearSelection()
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    if (picker.getDate()?.format('YYYY-MM-DD') !== text) picker.setDate(text)
   }
 }
 
@@ -236,8 +273,50 @@ const fieldValue = (id) => el(`#${id}`)?.value ?? ''
  * @type {(container: string, field: string) => void}
  */
 const hideIfEmpty = (container, field) => {
+  takeBackAutofill(field)
   if (fieldValue(field)) show(container)
   else hide(container)
+}
+
+/**
+ * Remembers that what is in a date field is the form's guess and not a date
+ * anybody gave it: today, filled in for a new entry or on a status change.
+ *
+ * The value itself is what is remembered, not a flag, so the guess stops
+ * counting as one the moment the field says something else — typed, picked
+ * from the calendar or restored from a draft — without anything having to
+ * notice the change.
+ *
+ * @type {(id: string) => void}
+ */
+const markAutofilled = (id) => {
+  const field = document.getElementById(id)
+  if (field?.value) field.dataset.autofilled = field.value
+}
+
+/** Fills a field with today, as a guess `takeBackAutofill` may undo. */
+const fillToday = (id) => {
+  setField(id, today())
+  markAutofilled(id)
+}
+
+/**
+ * Empties a date field whose value is still the form's own guess.
+ *
+ * `hideIfEmpty` keeps a filled field on screen so that the person is the one
+ * who clears it — a date somebody typed is theirs. A date the form typed is
+ * not, and leaving it there is what made a new game unsaveable as "To play":
+ * the started date it is offered for "Playing", the first status, stayed when
+ * the status changed, and a Planned entry may not carry one (#544). Films had
+ * the same with the completed date.
+ *
+ * @type {(id: string) => void}
+ */
+const takeBackAutofill = (id) => {
+  const field = document.getElementById(id)
+  if (!field?.dataset.autofilled) return
+  if (field.value === field.dataset.autofilled) field.value = ''
+  delete field.dataset.autofilled
 }
 
 const setScoreLabel = (text) => {
