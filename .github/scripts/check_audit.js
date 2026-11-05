@@ -61,6 +61,37 @@ const read = (stream) =>
     stream.on('error', reject)
   })
 
+/**
+ * What a report says against a list of accepted packages: every advisory, the
+ * packages they are against, the ones at high or above that the list does not
+ * cover, and the list's entries nothing reports any more.
+ *
+ * The list is a parameter rather than read from ACCEPTED so the stale-entry
+ * rule can be tested while ACCEPTED is empty, which is its normal state — CI
+ * refuses a skipped test, so a test that could only run with an entry present
+ * would fail the build exactly when there is nothing to accept.
+ */
+const assess = (report, accepted) => {
+  /* `via` holds either an advisory or the name of the dependency that brought
+     one in. Only the objects are advisories, and the same one appears under
+     every package it reaches, so they are collected by url rather than counted. */
+  const advisories = new Map()
+  for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
+    for (const via of vulnerability.via ?? []) {
+      if (typeof via === 'string') continue
+      advisories.set(via.url, { ...via, package: via.name })
+    }
+  }
+
+  const affected = new Set([...advisories.values()].map((a) => a.package))
+  const unexpected = [...advisories.values()]
+    .filter((a) => BLOCKING.has(a.severity) && !(a.package in accepted))
+    .sort((a, b) => a.package.localeCompare(b.package))
+  const stale = Object.keys(accepted).filter((name) => !affected.has(name))
+
+  return { advisories, affected, unexpected, stale }
+}
+
 const main = async () => {
   const report = JSON.parse(await read(process.stdin))
 
@@ -78,22 +109,7 @@ const main = async () => {
     process.exit(1)
   }
 
-  /* `via` holds either an advisory or the name of the dependency that brought
-     one in. Only the objects are advisories, and the same one appears under
-     every package it reaches, so they are collected by url rather than counted. */
-  const advisories = new Map()
-  for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
-    for (const via of vulnerability.via ?? []) {
-      if (typeof via === 'string') continue
-      advisories.set(via.url, { ...via, package: via.name })
-    }
-  }
-
-  const affected = new Set([...advisories.values()].map((a) => a.package))
-  const unexpected = [...advisories.values()]
-    .filter((a) => BLOCKING.has(a.severity) && !(a.package in ACCEPTED))
-    .sort((a, b) => a.package.localeCompare(b.package))
-  const stale = Object.keys(ACCEPTED).filter((name) => !affected.has(name))
+  const { advisories, affected, unexpected, stale } = assess(report, ACCEPTED)
 
   console.log(
     `${advisories.size} advisories against the ${
@@ -146,7 +162,7 @@ const main = async () => {
 
 // Exported so the test can build a report that matches the list as it
 // stands, rather than one that only passes while the list is empty.
-module.exports = { ACCEPTED }
+module.exports = { ACCEPTED, assess }
 
 if (require.main === module) {
   main().catch((error) => {
