@@ -181,13 +181,13 @@
        rather than the newest convenient one. 2.3.5 was four years and a major
        behind, with a critical prototype pollution (GHSA-p3vf-v8qc-cwcr, fixed
        in 2.4.2) and a nesting mXSS (GHSA-gx9m-whjm-85jf, fixed in 2.5.0)
-       against it. Every 3.x below 3.4.13 is reported against too, which is
+       against it. Every 3.x below 3.4.17 is reported against too, which is
        why this lands on the newest rather than somewhere comfortable.
        The call is `DOMPurify.sanitize(html)` with no configuration, in
        `components/common.js` and `components/profile/biography.js`, and that
        signature is unchanged across the major — 3.0 dropped IE, which is the
        whole of what it broke. #}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.14/purify.min.js" integrity="sha384-46dPGH1XlTmj7bc50bqLjTdORXs/3EP2QpA/6EWbelYWOY9VGp+87RT61S3Mcslb" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.17/purify.min.js" integrity="sha384-P0JNneQf81HOl9VwNXK76cQ9VMD6Nfsnepxb0cCOg8+UzEdzgPHAPV4wVQrvYQSx" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     {# ApexCharts and litepicker were both here, and neither is any more. This
        layout is every page — `_redirects` rewrites every url to this one
        document — so a tag here is a file every visitor fetches, and `defer`
