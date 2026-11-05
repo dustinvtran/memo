@@ -19,7 +19,7 @@ const vm = require("node:vm");
 const source = fs.readFileSync(path.join(__dirname, "personal_fields.js"), "utf8");
 
 /** An input, as far as anything under test here looks at one. */
-const anInput = () => ({ isConnected: true });
+const anInput = () => ({ isConnected: true, addEventListener: () => {} });
 
 /**
  * The script in a context of its own, with the document and the loader it
@@ -45,6 +45,7 @@ const load = () => {
   const Litepicker = function ({ element }) {
     state.constructed.push(element);
   };
+  Litepicker.prototype.on = () => {};
 
   // Stubs, not the real thing: nothing under test draws any markup. They exist
   // because the file destructures all of these at load time, and because its
@@ -230,4 +231,124 @@ test("only films default at all", () => {
 test("a date already on the entry wins over every default", () => {
   const stored = Date.parse("2024-03-01");
   assert.equal(completedDateValue()({ status: "Planned", completedDate: stored }, "films"), "2024-03-01");
+});
+
+/**
+ * #544: a cleared date came back on the next click outside the field, and a
+ * new game could not be saved as "To play" because of it.
+ *
+ * Two halves. Litepicker writes the date it last saw back into the field when
+ * it closes, so it has to be told when the field is emptied (`syncPicker`).
+ * And the date it kept writing back was today, put there by the form for
+ * "Playing" — so when the status moves to one that may not carry a date, the
+ * form takes back a date it filled in itself (`takeBackAutofill`), and leaves
+ * one anybody else put there for the server to refuse out loud.
+ */
+const internals = () => {
+  const elements = new Map();
+  const shown = new Set();
+  const context = vm.createContext({
+    Utils: { html: () => "", css: () => "" },
+    Dom: {
+      el: (selector) => elements.get(selector.replace(/^#/, "")),
+      on: () => {},
+      show: (selector) => shown.add(selector),
+      hide: (selector) => shown.delete(selector),
+    },
+    Components: { initComponent: () => {}, WithRemoteData: () => {}, List: {} },
+    Tables: { statuses: [], filmStatuses: [] },
+    Conversions: { statusToTitle: () => "" },
+    ReviewTemplate: { initialReviewText: () => "" },
+    LoadScript: { loadLitepicker: () => new Promise(() => {}) },
+    document: { getElementById: (id) => elements.get(id) ?? null },
+    Date,
+  });
+  const fns = vm.runInContext(
+    `(() => {\n${source}\n;return ({ syncPicker, markAutofilled, fillToday, hideIfEmpty })\n})()`,
+    context
+  );
+  const field = (id, value) => {
+    const element = { value, dataset: {} };
+    elements.set(id, element);
+    return element;
+  };
+  return { ...fns, field, shown };
+};
+
+/** A picker holding `date`, recording what it was told. */
+const aPicker = (date) => {
+  const calls = [];
+  let held = date;
+  return {
+    calls,
+    getDate: () => held && { format: () => held },
+    clearSelection: () => { calls.push(["clear"]); held = null; },
+    setDate: (value) => { calls.push(["set", value]); held = value; },
+  };
+};
+
+test("a field emptied while its picker holds a date empties the picker", () => {
+  const { syncPicker } = internals();
+  const picker = aPicker("2026-11-04");
+  syncPicker(picker, "");
+  assert.deepEqual(picker.calls.map((c) => [...c]), [["clear"]]);
+  // Whitespace is as empty as nothing, to `readForm` too.
+  const again = aPicker("2026-11-04");
+  syncPicker(again, "   ");
+  assert.equal(again.calls.length, 1);
+});
+
+test("a whole date typed into the field becomes the picker's date", () => {
+  const { syncPicker } = internals();
+  const picker = aPicker("2026-11-04");
+  syncPicker(picker, "2025-01-31");
+  assert.deepEqual(picker.calls.map((c) => [...c]), [["set", "2025-01-31"]]);
+});
+
+test("a half-typed date and an unchanged one tell the picker nothing", () => {
+  const { syncPicker } = internals();
+  const picker = aPicker("2026-11-04");
+  syncPicker(picker, "2025-0");
+  syncPicker(picker, "2026-11-04");
+  assert.equal(picker.calls.length, 0);
+  // Nor does an empty field over an empty picker.
+  const empty = aPicker(null);
+  syncPicker(empty, "");
+  assert.equal(empty.calls.length, 0);
+});
+
+test("a date the form filled in is taken back when its field is hidden", () => {
+  const { fillToday, hideIfEmpty, field, shown } = internals();
+  const started = field("started-date", "");
+  fillToday("started-date");
+  assert.equal(started.value, todayString());
+
+  hideIfEmpty("#started-date-container", "started-date");
+
+  assert.equal(started.value, "");
+  assert.equal(shown.has("#started-date-container"), false);
+});
+
+test("a date somebody changed is theirs, and stays on screen", () => {
+  const { markAutofilled, hideIfEmpty, field, shown } = internals();
+  const started = field("started-date", todayString());
+  markAutofilled("started-date");
+  // Picked from the calendar, typed, or restored from a draft: all of them
+  // are a value the form did not put there.
+  started.value = "2026-10-01";
+
+  hideIfEmpty("#started-date-container", "started-date");
+
+  assert.equal(started.value, "2026-10-01");
+  assert.equal(shown.has("#started-date-container"), true);
+});
+
+test("a field never marked as a guess is left alone", () => {
+  const { hideIfEmpty, field, shown } = internals();
+  const started = field("started-date", todayString());
+
+  hideIfEmpty("#started-date-container", "started-date");
+
+  assert.equal(started.value, todayString());
+  assert.equal(shown.has("#started-date-container"), true);
 });
