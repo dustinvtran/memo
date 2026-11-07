@@ -27,7 +27,7 @@
     "mongodb": "^7.8.0",
     "neverthrow": "^8.2.0",
     "node-themoviedb": "^0.2.8",
-    "openid-client": "^6.8.8",
+    "openid-client": "^6.8.9",
     "ramda": "^0.32.0",
     "ts-pattern": "^5.9.2",
     "uglify-js": "^3.19.3",
